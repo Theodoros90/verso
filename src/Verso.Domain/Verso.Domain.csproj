@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Domain model (entities, invariants). No dependencies on other Verso projects or frameworks. Empty until M2. -->
+</Project>

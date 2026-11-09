@@ -1,0 +1,500 @@
+# Verso — MVP architecture and delivery plan
+
+Status: **Approved 2026-11-09.** Version, hosting and identity questions answered the same day (§10). Working rules for implementation live in `CLAUDE.md` at the repo root.
+
+Date: 2026-11-09
+
+---
+
+## 1. What the design reference tells us
+
+`design-reference/verso-docgen_4.html` is a single-file, no-backend prototype. What carries over as **visual and product direction**:
+
+| Area | Carry over | Do not carry over |
+|---|---|---|
+| Visual language | Color tokens (`--ink`, `--cyan`, `--magenta`, status colors, category colors for workflow nodes), light/dark themes, Schibsted Grotesk / Source Serif 4 / IBM Plex Mono, Lucide icons, dense 14px base | Google Fonts / jsDelivr CDN loading (bank environment: fonts and icons get bundled locally) |
+| Navigation | Left sidebar: Overview, Template designer, Workflow designer, Document preview, Jobs, Archive, Audit | Assistant (AI) and Integrations screens: deferred |
+| Template designer | A4 sheet canvas, element palette (text, data field, repeating table, image, QR, barcode, divider, box, signature, conditional block), properties panel, element tree, "show sample data" toggle, `{{binding}}` chips, "unmapped" warnings | Absolute-positioned-everything layout as the storage model (see D4), string-built HTML |
+| Workflow designer | Node categories (Input, Processing, Logic, Document, AI, Output), node card design, typed output ports (`valid`/`invalid`, `success`/`failed`), per-node config panels, "incomplete/configured" node status, test run with step timeline | Client-side simulation as the source of truth, the 30-node catalog |
+| Data conventions | `{{path}}` and `{{path\|filter}}` tokens with a small filter set (`date`, `money`, `year`, `month`, `upper`…), Validate step = required fields + typed checks (Date, Number, Email, EU VAT, IBAN), archive folder pattern + metadata key/values + retention | JS-eval transforms, JSONata (deferred) |
+| Sample data | Synthetic issuer/customer/invoice shape (`invoice`, `customer`, `lines[]`, `totals`, `payment`), plus a deliberately broken payload for validation testing | — |
+
+## 2. Architecture overview
+
+```
+ Browser (React SPA)
+     │ HTTPS: REST + SignalR
+     ▼
+┌──────────────────────┐          ┌──────────────────────────┐
+│  Verso.Api (ASP.NET) │          │  Verso.Worker (.NET host)│
+│  - REST controllers  │          │  - Hangfire server        │
+│  - SignalR hub       │          │  - Execution engine       │
+│  - Event relay       │          │  - Playwright + Chromium  │
+│  - Hangfire client   │          │  - Storage writer         │
+└─────────┬────────────┘          └───────────┬──────────────┘
+          │  EF Core                          │  EF Core
+          ▼                                   ▼
+     ┌────────────────────── SQL Server ───────────────────────┐
+     │ schemas: templates · workflows · executions · documents │
+     │          audit · HangFire                               │
+     └─────────────────────────────────────────────────────────┘
+                                   │
+                      IDocumentStore (configurable)
+                      MVP: local/network file system
+```
+
+Principles:
+
+- **Modular monolith.** One codebase, layered projects with module folders (§3); two deployable processes (API, Worker) that share the same code.
+- **The API never runs Chromium.** All PDF rendering happens in the Worker. The API can render HTML previews (pure C#, no browser).
+- **Workflow and template designers are separate** screens, modules and data models. A workflow references a template *version*; it never embeds template content.
+- **Everything executed is pinned and immutable**: an execution records the exact workflow version and template version it ran with.
+- **No real outbound integrations.** Email/print/ERP/SFTP nodes are not in the MVP catalog. Archive writes to the configured local store only.
+- **AI is deferred.** No AI nodes or Assistant screen. The node catalog is extensible so they can be added later without schema changes.
+
+## 3. Repository structure
+
+Revised 2026-11-09 at M1: the user chose a lighter layered structure instead of one project per module. Modules (Templates, Workflows, Executions, Documents, Audit) are **folders inside the layered projects**, not separate projects. Further projects (e.g. `Verso.Rendering`) are added only when a milestone needs the separation.
+
+```
+verso/
+├─ Verso.slnx
+├─ Directory.Build.props          # net10.0, nullable, warnings-as-errors, analyzers
+├─ Directory.Packages.props       # central, pinned NuGet versions (+ security pins)
+├─ dotnet-tools.json              # repo-local dotnet-ef
+├─ design-reference/              # prototype, read-only reference
+├─ docs/
+│  ├─ plan/                       # this document
+│  ├─ adr/                        # architecture decisions (as they arise)
+│  ├─ setup.md                    # local setup and verification
+│  └─ api.md                      # implemented endpoints
+├─ src/
+│  ├─ Verso.Api/                  # composition root: HTTP endpoints, (later) auth, SignalR, OpenAPI
+│  ├─ Verso.Worker/               # composition root: (later) Hangfire server, engine, Playwright
+│  ├─ Verso.Application/          # use cases, per-module folders (Templates/, Workflows/, …)
+│  ├─ Verso.Domain/               # entities and invariants, per-module folders
+│  ├─ Verso.Infrastructure/       # EF Core DbContext, configurations, migrations, storage, health checks
+│  └─ verso-web/                  # React + Vite SPA
+│     └─ src/
+│        ├─ app/                  # router, layout shell, navigation, theme
+│        ├─ components/ui/        # shadcn/ui components (owned source)
+│        ├─ features/             # health/, overview/, later templates/, workflows/, executions/, archive/
+│        ├─ lib/api/              # API client (generated OpenAPI types once real resources exist)
+│        └─ styles/index.css      # design tokens ported from the prototype
+├─ tests/
+│  └─ Verso.Api.Tests/            # API + real SQL Server (LocalDB) integration tests
+│     (later: Verso.Domain.Tests, Verso.Rendering.Tests, fixtures/ with synthetic invoices)
+└─ tools/synthetic-data/          # (later) synthetic invoice generator — no real data, ever
+```
+
+Dependency rules:
+
+- `Domain` → nothing. `Application` → `Domain`. `Infrastructure` → `Application`. `Api` and `Worker` → `Application` + `Infrastructure`.
+- Module folders don't reach into each other's internals; cross-module calls go through an interface in `Application`.
+- One `VersoDbContext`, but each module's tables live in its own SQL schema. No cross-schema foreign keys; references across modules are by id.
+- Rendering code has no dependency on EF, ASP.NET, or Playwright. Only the Worker references the Playwright adapter.
+
+## 4. Main entities
+
+All ids are GUIDs (sequential for clustered-index friendliness). All timestamps are UTC `datetimeoffset`. User identity comes from the IdP; we store a subject id and display name, not a user table.
+
+### Templates module (`templates` schema)
+
+**Template**
+- `Id`, `Key` (unique, e.g. `INV-STD`), `Name`, `Description`, `DocumentType` (`Invoice` for MVP)
+- `CreatedAt/By`, `RowVersion`
+
+**TemplateVersion**
+- `Id`, `TemplateId`, `VersionNumber` (int, assigned on publish; draft has none)
+- `Status`: `Draft` | `Published` | `Retired`
+- `Layout` (JSON, versioned schema `layoutSchemaVersion`) — pages, regions, elements, bindings
+- `DataSchema` (JSON Schema describing the data the template expects)
+- `SampleData` (JSON, synthetic, used by the designer and previews)
+- `PageSettings` (size A4, margins, orientation)
+- `ContentHash` (SHA-256 of canonicalized layout + schema; set on publish)
+- `PublishedAt/By`, `RowVersion`
+- Invariants: at most one `Draft` per template; `Published` versions are never modified.
+
+### Workflows module (`workflows` schema)
+
+**Workflow**
+- `Id`, `Key` (unique, used in the submit URL, e.g. `invoice-standard`), `Name`, `Description`, `CreatedAt/By`, `RowVersion`
+
+**WorkflowVersion**
+- `Id`, `WorkflowId`, `VersionNumber`, `Status` (`Draft` | `Published` | `Retired`)
+- `Definition` (JSON): `{ nodes: [{ id, type, title, position, config }], edges: [{ id, source, sourcePort, target, targetPort }] }` — same shape as the prototype, and directly mappable to React Flow
+- `ContentHash`, `PublishedAt/By`, `RowVersion`
+- Invariants: a published definition passed server-side graph validation (§5.4); a `generate-pdf` node references a **specific published template version**, or `latest-published`, which is resolved to a specific version at submission time.
+
+**Node catalog** is code, not data: each node type declares its category, ports, config JSON Schema, and a handler. Exposed read-only via the API so the designer renders config panels from it.
+
+MVP node types: `api-trigger`, `validate`, `generate-pdf`, `archive`. Planned next (not MVP): `manual-trigger`, `map-fields`, `if-else`, `switch`.
+
+### Executions module (`executions` schema)
+
+**Execution**
+- `Id`, `WorkflowVersionId`, `ResolvedTemplateVersionIds` (JSON map nodeId → templateVersionId)
+- `Status`: `Queued` | `Running` | `Succeeded` | `Rejected` | `Failed` (see §6)
+- `IdempotencyKey` (unique per workflow), `CorrelationId`
+- `InputPayload` (JSON, size-limited), `InputHash`
+- `SubmittedAt/By`, `StartedAt`, `CompletedAt`, `Attempt`
+- `FailureCode`, `FailureMessage` (sanitized, no payload content)
+
+**ExecutionStep**
+- `Id`, `ExecutionId`, `NodeId`, `NodeType`, `Sequence`
+- `Status`: `Pending` | `Running` | `Succeeded` | `Failed` | `Skipped`
+- `OutputPort` (which port it exited by: `valid`, `invalid`, `success`, `failed`)
+- `Attempt`, `StartedAt`, `CompletedAt`, `DurationMs`
+- `Result` (JSON summary, e.g. validation issues list or document id — no full payloads)
+
+**ExecutionEvent** (append-only; drives live progress and the history timeline)
+- `Id` (bigint identity — monotonic watermark), `ExecutionId`, `StepId?`, `Type`, `OccurredAt`, `Data` (JSON)
+
+### Documents module (`documents` schema)
+
+**Document**
+- `Id`, `ExecutionId`, `StepId`, `TemplateVersionId`
+- `FileName` (from the node's filename pattern, sanitized), `ContentType`, `SizeBytes`, `Sha256`
+- `StorageProvider`, `StorageKey`
+- `Status`: `Generated` | `Archived`
+- `CreatedAt`
+
+**ArchiveRecord** (write-once)
+- `Id`, `DocumentId` (unique), `ArchivedAt`, `RetentionUntil`, `FolderPath` (resolved pattern), `Metadata` (JSON key/values from the node config, e.g. `InvoiceNumber`, `Customer`, `Total`)
+- DB-enforced: no UPDATE/DELETE permission for the application login on this table.
+
+### Audit module (`audit` schema)
+
+**AuditEntry** (append-only)
+- `Id`, `OccurredAt`, `ActorId`, `ActorName`, `Action` (`TemplateDraftSaved`, `TemplatePublished`, `WorkflowPublished`, `ExecutionSubmitted`, `DocumentDownloaded`, …), `EntityType`, `EntityId`, `Details` (JSON), `CorrelationId`
+
+## 5. API contracts
+
+Conventions:
+- Base path `/api/v1`. JSON, camelCase. OpenAPI document generated from the API and checked in; frontend types are generated from it.
+- Errors: RFC 9457 `application/problem+json`, with `errors` for field-level validation and a stable `code`.
+- Optimistic concurrency: `ETag` on GET, `If-Match` required on PUT/publish; `412` on mismatch.
+- Pagination: `?page=&pageSize=` (max 100), response `{ items, page, pageSize, total }`.
+
+### 5.1 Templates
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/templates` | List templates with latest published version + draft indicator |
+| POST | `/templates` | Create template (creates empty draft) |
+| GET | `/templates/{id}` | Template metadata |
+| GET | `/templates/{id}/versions` | Version history |
+| GET | `/templates/{id}/versions/{versionId}` | One version (layout, schema, sample) |
+| GET | `/templates/{id}/draft` | Current draft |
+| PUT | `/templates/{id}/draft` | Save draft (`If-Match`) |
+| POST | `/templates/{id}/draft/preview/html` | Render draft + sample (or supplied) data to HTML (API-side, no Chromium) |
+| POST | `/templates/{id}/draft/preview/pdf` | Queue a PDF preview job → `202 { previewId }`; result via SignalR or `GET /previews/{previewId}` |
+| POST | `/templates/{id}/draft/publish` | Validate + freeze draft as next version (`If-Match`) |
+
+Draft save body (abridged):
+
+```json
+{
+  "name": "Commercial invoice",
+  "pageSettings": { "size": "A4", "orientation": "portrait", "marginsMm": [18, 16, 18, 16] },
+  "layout": {
+    "layoutSchemaVersion": 1,
+    "regions": {
+      "header": { "heightMm": 70, "elements": [ { "id": "e1", "type": "field", "x": 0, "y": 30, "w": 220, "h": 20,
+                    "props": { "binding": "invoice.number", "label": "Invoice no.", "format": "text" } } ] },
+      "body":   { "flow": [ { "id": "t1", "type": "table", "props": { "binding": "lines", "columns": ["description","qty","unitPrice","amount"] } } ] },
+      "footer": { "heightMm": 40, "elements": [] }
+    }
+  },
+  "dataSchema": { "type": "object", "required": ["invoice","customer","lines","totals"], "properties": { } },
+  "sampleData": { "invoice": { "number": "INV-2026-003901" } }
+}
+```
+
+### 5.2 Workflows
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/node-types` | Node catalog: type, category, ports, config JSON Schema, defaults |
+| GET | `/workflows` | List |
+| POST | `/workflows` | Create (empty draft containing an `api-trigger` node) |
+| GET | `/workflows/{id}` · `/workflows/{id}/versions` · `/workflows/{id}/draft` | Read |
+| PUT | `/workflows/{id}/draft` | Save draft definition (`If-Match`) |
+| POST | `/workflows/{id}/draft/validate` | Graph + config validation → list of issues per node |
+| POST | `/workflows/{id}/draft/publish` | Validate + freeze (`If-Match`) |
+
+Validation response:
+
+```json
+{ "valid": false,
+  "issues": [
+    { "nodeId": "n3", "severity": "error", "code": "config.required", "message": "Template is required" },
+    { "nodeId": "n2", "port": "invalid", "severity": "warning", "code": "port.unconnected", "message": "Invalid records will end the run as Rejected" }
+  ] }
+```
+
+### 5.3 Executions
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/workflows/{key}/executions` | Submit synthetic invoice JSON to the latest **published** version |
+| GET | `/executions` | History: filter by workflow, status, date range, correlation id |
+| GET | `/executions/{id}` | Detail incl. steps, resolved versions, documents |
+| GET | `/executions/{id}/events?after={eventId}` | Event timeline (catch-up for live view) |
+| GET | `/executions/{id}/input` | Submitted payload (restricted role) |
+| POST | `/executions/{id}/retry` | Retry a `Failed` execution from the failed step (not allowed for `Rejected`) |
+
+Submit:
+
+```http
+POST /api/v1/workflows/invoice-standard/executions
+Idempotency-Key: 6f1c2f0e-0c55-4b1e-9f61-6a2b1d0d4c11
+Content-Type: application/json
+
+{ "data": { "invoice": { "number": "INV-2026-003901", "date": "2026-11-02", "...": "..." } } }
+```
+
+```http
+202 Accepted
+Location: /api/v1/executions/0193a6c2-...
+
+{ "executionId": "0193a6c2-...", "status": "Queued", "workflowVersion": 3, "correlationId": "..." }
+```
+
+Same `Idempotency-Key` + same payload hash → `200` with the original execution. Same key + different payload → `409`. No key → `400`.
+
+Execution detail (abridged):
+
+```json
+{ "id": "0193a6c2-...", "status": "Rejected", "workflow": { "key": "invoice-standard", "version": 3 },
+  "submittedAt": "2026-11-09T10:42:03Z", "completedAt": "2026-11-09T10:42:03.410Z",
+  "steps": [
+    { "nodeId": "n1", "type": "api-trigger", "status": "Succeeded", "outputPort": "out", "durationMs": 2 },
+    { "nodeId": "n2", "type": "validate", "status": "Succeeded", "outputPort": "invalid", "durationMs": 31,
+      "result": { "issues": [ { "path": "invoice.billingAddress", "rule": "required", "message": "missing or empty" },
+                              { "path": "invoice.date", "rule": "type:date", "message": "expected YYYY-MM-DD" } ] } },
+    { "nodeId": "n3", "type": "generate-pdf", "status": "Skipped" },
+    { "nodeId": "n4", "type": "archive", "status": "Skipped" }
+  ],
+  "documents": [] }
+```
+
+### 5.4 Documents / archive
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/documents` | Archive search: document type, customer, invoice number (metadata), date range |
+| GET | `/documents/{id}` | Metadata incl. hash, retention, source execution |
+| GET | `/documents/{id}/content` | Stream PDF (audited) |
+
+### 5.5 Real-time (SignalR)
+
+Hub `/hubs/executions` (authenticated, same roles as `GET /executions`).
+
+- Client → server: `SubscribeExecution(executionId)`, `SubscribeWorkflow(workflowId)`, `Unsubscribe…`
+- Server → client: `ExecutionUpdated { executionId, status, eventId }`, `StepUpdated { executionId, nodeId, status, outputPort, eventId }`, `PreviewReady { previewId }`
+- Messages are **notifications, not the source of truth**. On (re)connect the client catches up with `GET /executions/{id}/events?after=`.
+
+## 6. Execution lifecycle
+
+### 6.1 States
+
+```
+Execution:  Queued ──► Running ──► Succeeded
+                          │   └──► Rejected   (business: data failed validation; not retryable)
+                          └──────► Failed     (technical: render/storage/timeout; retryable)
+                Failed ──(retry)──► Queued
+
+Step:       Pending ──► Running ──► Succeeded(port) | Failed
+            Pending ──► Skipped   (branch not taken / run ended)
+```
+
+The **Rejected vs Failed** split matters for a bank: a data problem goes back to the sender; a technical problem goes to operations.
+
+### 6.2 Flow
+
+1. **Submit (API).** Authorize → enforce size/depth limits → check idempotency → resolve latest published workflow version and `latest-published` template refs → in **one transaction**: insert `Execution(Queued)`, `ExecutionEvent(Submitted)`, `AuditEntry`, and enqueue the Hangfire job (Hangfire SQL storage enlisted in the same transaction, so there is no "row without job" or "job without row"). Return `202`.
+2. **Pick up (Worker).** Hangfire job `RunExecution(executionId)`. Load execution + pinned versions. Mark `Running`. Hangfire's own automatic retry is off for this job; the engine owns retries.
+3. **Walk the graph.** From the trigger node, run each node's handler; persist `ExecutionStep` + `ExecutionEvent` before and after; follow the edge from the returned port. Unconnected optional port → end of path.
+4. **Validate.** JSON Schema of the workflow trigger + Validate node rules (required, typed checks). Exit `valid` or `invalid`. `invalid` with no outgoing edge → execution `Rejected` with issue list.
+5. **Generate PDF.** Map data → `Verso.Rendering` produces HTML (fonts and images inlined) → `Verso.Rendering.Pdf` prints with Chromium → bytes written to `IDocumentStore` staging area → `Document(Generated)` with SHA-256.
+6. **Archive.** Resolve folder pattern and metadata tokens → commit to archive location in `IDocumentStore` → re-verify hash → `ArchiveRecord` + `Document(Archived)`.
+7. **Complete.** Terminal status + event + audit entry.
+8. **Progress relay (API).** A hosted service in the API reads new `ExecutionEvent` rows by id watermark (~500 ms) and pushes them to SignalR groups. This avoids a direct Worker→API channel and needs no extra infrastructure (no Redis). Latency ≈ 1 s, which is fine for this use.
+
+### 6.3 Failure handling
+
+- **Step retry policy** (per node type, MVP default: 3 attempts, exponential backoff) for technical errors only. Implemented by rescheduling the Hangfire job; the engine resumes at the first non-succeeded step.
+- **Idempotent steps.** Each handler checks for its existing result before doing work (e.g. a `Document` already exists for this step → reuse). A worker crash mid-step is therefore safe to re-run.
+- **Timeouts.** Render: 30 s per document (assumption). Whole execution: 5 min (assumption).
+- **Exhausted retries** → `Failed` with sanitized `FailureCode`. Operator can `retry`.
+- **Chromium health.** Browser process is pooled and recycled after N renders or on crash.
+
+## 7. Security boundaries
+
+| Boundary | Control |
+|---|---|
+| Browser → API | OIDC bearer tokens from the bank's IdP (to be confirmed, §10). HTTPS only. CORS limited to the SPA origin. Anti-forgery not needed with bearer tokens (no cookies) — revisit if the bank requires cookie sessions/BFF. |
+| Authorization | Role-based policies on every endpoint and the hub. Proposed roles: `TemplateAuthor`, `WorkflowAuthor`, `Operator` (submit, retry, view runs), `Viewer` (read-only history/archive), `Auditor` (audit trail, payload access), `Admin`. Endpoint × role matrix tested automatically. |
+| Dev authentication | A development-only auth handler with seeded synthetic users, compiled in but refused at startup unless `ASPNETCORE_ENVIRONMENT=Development`. |
+| Submitted data | Payload size cap (1 MB, assumption), JSON depth cap, schema validation before processing. Payloads are never written to logs. Payload read endpoint restricted to `Auditor`/`Admin`. Synthetic data only in all environments for the MVP. |
+| API ↔ Worker | No network channel between them. They share the database only. The Worker exposes no inbound HTTP (except an optional localhost health probe). |
+| Database | Separate SQL logins for API and Worker, least privilege per schema. Migrations run by a separate deploy-time identity, not by the app at startup in non-dev environments. Archive and audit tables: INSERT/SELECT only. |
+| Chromium rendering | Runs only in the Worker. Templates are structured layout JSON rendered by our code — **no raw author HTML/JS in the MVP**. All bound values HTML-encoded. Page JavaScript disabled. All network requests from the page aborted (fonts/images inlined as data URIs). Per-render timeout. Browser runs as the low-privilege worker service account. |
+| Document storage | Accessed through `IDocumentStore`. Storage keys are generated ids, never user-supplied paths (folder patterns are sanitized metadata, not filesystem paths). API has read access; only the Worker writes. SHA-256 recorded and verified on read. True WORM/immutability is a property of the production storage target (§10). |
+| Secrets | Connection strings and keys from environment / bank secret store; nothing in the repo. |
+| Supply chain | Central package version pinning (NuGet and npm lockfile), no runtime CDN usage, fonts/icons self-hosted, dependency list for bank approval, vulnerability scanning in CI. |
+| Audit | Publishing, submission, retry, document download, and role-sensitive reads are written to the append-only audit log with actor and correlation id. |
+
+## 8. Test strategy
+
+| Layer | What | Tooling (subject to approval) |
+|---|---|---|
+| Unit — backend | Binding/filter engine, validation rules (incl. IBAN/VAT/date types), layout → HTML renderer, graph validator, execution state machine, idempotency rules | xUnit, FluentAssertions-equivalent or Shouldly (license check required) |
+| Golden rendering | Renderer HTML snapshots for each element type and the invoice template; PDF assertions by text extraction (page count, invoice number, totals, line count) — not pixel diffing in MVP | Verify-style snapshot library, PdfPig |
+| Integration — backend | Real API host (`WebApplicationFactory`) + real SQL Server + in-process Hangfire server + real Chromium: submit → poll → assert archived document and hash | Testcontainers for SQL Server **or** a shared dev SQL instance / LocalDB if Docker isn't allowed (§10) |
+| Architecture | Module boundary rules from §3 | NetArchTest or ArchUnitNET |
+| Security | Endpoint × role matrix; payload limits; template referencing an external URL produces no network request; dev auth refuses to start outside Development; no payload content in log output | xUnit |
+| Contract | OpenAPI document snapshot; CI fails if generated frontend types are stale | openapi-typescript |
+| Frontend unit/component | Designer logic (element ops, binding lookup, graph validity, React Flow ⇄ definition mapping), key components | Vitest, React Testing Library |
+| End-to-end | The 7 MVP steps as browser scenarios: edit + publish template, build + publish workflow, submit valid payload → Succeeded + downloadable PDF, submit broken payload → Rejected with issues, history shows both | Playwright (Node test runner) — or Playwright for .NET to keep one toolchain; decision in §10 |
+| Fixtures | Synthetic generator + checked-in fixtures: valid invoice, 1-line, 60-line (multi-page), missing fields, wrong types, Greek text, huge payload | `tools/synthetic-data` |
+
+Rule: every milestone ships with its tests; CI is green before a milestone is called done.
+
+## 9. Milestones
+
+Each milestone is a vertical slice that ends in something runnable. Sizes are relative.
+
+### M1 — Application foundation (S) — ✅ accepted 2026-11-09
+Scope as agreed 2026-11-09 (replaces the earlier "walking skeleton" scope):
+- Layered solution (§3), central package management.
+- API with `GET /api/health` (database connectivity + pending migrations), structured JSON logging, no committed secrets.
+- EF Core on local SQL Server (LocalDB), initial migration creating the module schemas.
+- Worker process skeleton (startup DB check + heartbeat).
+- SPA shell: Verso navigation, light/dark theme from ported tokens, self-hosted fonts, live API status.
+- Setup instructions (`docs/setup.md`).
+
+**Acceptance:** backend builds; frontend builds; frontend calls the health endpoint; migration applies to the development database; tests pass.
+
+Moved out of M1: Hangfire (→ M5/M7, when the Worker first runs jobs), dev auth / Entra (→ before M2's write endpoints need roles; to schedule), CI pipeline (CI system still unknown, §10), architecture tests (project references enforce the layers for now).
+
+### M2 — Template storage (S)
+- Template + TemplateVersion entities, draft save with ETag, publish, version history, audit entries.
+
+**Acceptance:** create template; save draft twice; stale `If-Match` → 412; publish → v1 immutable (PUT to published → 409); second draft → v2; history lists both; audit shows each action; all via API tests.
+
+### M3 — Rendering engine (M)
+- Layout model v1 (§D4), element types for MVP: text, data field, repeating table, divider, box, image (embedded), signature line. QR/barcode/conditional block: deferred to post-MVP unless you want them now.
+- Binding `{{path|filter}}`, HTML encoding, number/currency/date formatting (locale: §10).
+- `POST …/preview/html`.
+
+**Acceptance:** golden HTML for each element; invoice sample renders all fields; missing binding renders a visible placeholder in preview and is reported as an issue; HTML-injection fixture is escaped; renderer has no I/O dependencies.
+
+### M4 — Template designer UI (L)
+- Template list; designer with canvas, palette, properties panel, element tree, sample-data toggle, binding picker from the data schema, unmapped warnings, undo, save/publish, HTML preview pane.
+
+**Acceptance:** an author can build the Commercial Invoice from an empty template without editing JSON; saving and reloading round-trips exactly; publish disabled while there are errors; keyboard-accessible element selection; matches prototype visual direction.
+
+### M5 — PDF generation in the Worker (M)
+- `Verso.Rendering.Pdf` with pooled Chromium, network blocking, JS disabled, timeout, recycling.
+- PDF preview job (`…/preview/pdf`) and `PreviewReady` notification.
+- Offline Chromium installation procedure documented.
+
+**Acceptance:** invoice fixture → PDF whose extracted text contains invoice number, customer, all line descriptions and totals; 60-line fixture paginates with repeated table header; external-URL fixture makes zero network requests; render of a 1-page invoice < 3 s p95 on the reference machine (assumption); killing Chromium mid-render → retried successfully.
+
+### M6 — Workflow definitions and designer (L)
+- Node catalog endpoint; MVP nodes `api-trigger`, `validate`, `generate-pdf`, `archive`.
+- Server-side graph validation (single trigger, reachable nodes, no cycles, required ports connected, config valid against node schema, referenced template version exists and is published).
+- React Flow designer: palette by category, node cards with ports and status, config side panel generated from node schema, validation issues on nodes, save/publish.
+
+**Acceptance:** build the "Invoice standard" workflow (trigger → validate → generate PDF → archive) in the UI; disconnected/invalid graphs show per-node issues and cannot be published; reload round-trips node positions and config; draft referencing a template draft (not published) is rejected on publish.
+
+### M7 — Execution engine (L)
+- Submit endpoint with idempotency, transactional enqueue, engine, step handlers, events, local file-system `IDocumentStore`, archive records, Rejected/Failed semantics, retry.
+
+**Acceptance:** valid fixture → `Succeeded`, one archived document with matching SHA-256 at the resolved folder path; broken fixture → `Rejected` with each failed rule listed, no document; duplicate submit with same key → same execution; same key with different body → 409; stop the Worker mid-run and restart → execution completes without duplicate documents; storage failure → `Failed`, retry → `Succeeded`.
+
+### M8 — Execution history and live progress (M)
+- Executions list (filters), execution detail with step timeline (prototype's run view), live updates via SignalR relay, input payload view (restricted), document download, archive search screen.
+
+**Acceptance:** submitting from a second browser tab shows step progress live within ~2 s; reconnecting mid-run catches up with no missing steps; filters by status/date/workflow work; download returns the archived bytes (hash verified); Viewer can't see payloads.
+
+### M9 — MVP hardening (M)
+- Role matrix enforcement + tests, audit trail screen (read-only), limits, structured logging with correlation ids, E2E suite for the 7 MVP steps, runbook (setup, Chromium offline install, backup notes).
+
+**Acceptance:** all E2E scenarios pass in CI; security tests pass; no payload content in logs during the full E2E run; a new developer sets up from the runbook alone.
+
+**MVP done = M1–M9 accepted.**
+
+Not in MVP: email/print/SFTP/ERP/API delivery, AI nodes and Assistant, map-fields/branching nodes, DOCX/HTML email output, QR/barcode, maker-checker publishing, multi-tenant issuers, production storage adapters, dashboard/overview metrics.
+
+## 10. Assumptions and unresolved decisions
+
+### Answered 2026-11-09 (Q1–Q3)
+
+The user chose these answers. They are working assumptions until the bank formally confirms its approved environment.
+
+| Topic | Decision |
+|---|---|
+| Runtime | .NET 10 LTS, ASP.NET Core 10, EF Core 10 |
+| Database | SQL Server 2022 |
+| Frontend tooling | Node 22 LTS (build only), React 19, TypeScript 5.x, Vite, @xyflow/react 12, Tailwind CSS 4, shadcn/ui; exact patch versions pinned at M1 |
+| Packages | Public nuget.org / npmjs feeds, pinned via central package management and lockfiles; designed so an internal mirror can be swapped in through `nuget.config` / `.npmrc` |
+| Hangfire | Open-source edition (LGPL), used unmodified |
+| Hosting | Windows Server: API under IIS (in-process), Worker as a Windows service. Chromium installed from an offline Playwright browser bundle placed on the server (`PLAYWRIGHT_BROWSERS_PATH`); the Worker never downloads at runtime |
+| Identity | Microsoft Entra ID via OIDC (SPA: auth code + PKCE with MSAL; API: JWT bearer). Verso roles mapped from Entra/AD security groups through configuration. Development-only fake sign-in with synthetic users |
+
+Consequences for the plan:
+- M1 includes an Entra app-registration checklist (SPA + API registrations, exposed API scope, group claims or app roles) — the registrations themselves are created by the bank's identity team.
+- Group overage (users in more than ~200 groups) must be handled: prefer **Entra app roles assigned to groups** over raw group claims. To confirm with the identity team.
+- Runbook gains: IIS hosting bundle install, Worker service install, offline Chromium bundle procedure and the Windows fonts/locale prerequisites for rendering.
+- Testcontainers (Docker) remains open (D8); on Windows-only dev machines the fallback is LocalDB / SQL Server Developer edition.
+
+### Originally blocking before M1 (now answered, kept for the record)
+
+**Q1. Approved versions.** I have no information about the bank's approved environment, so I have not selected versions. Candidates I would propose, each pending your confirmation:
+- **.NET 10 (LTS)** + ASP.NET Core 10 + EF Core 10. Note: .NET 8 LTS support ends on **10 Nov 2026** (tomorrow), so starting on .NET 8 isn't advisable even if it's the currently approved runtime.
+- **SQL Server**: which edition and version is approved (2019 / 2022 / 2025)? This determines the minimum compatibility level and JSON features available.
+- **Hangfire** 1.8.x (open-source LGPL edition; check whether LGPL is acceptable, and whether Hangfire Pro is needed — it is not for the MVP).
+- **Playwright for .NET** 1.x latest at M1, with its pinned Chromium revision.
+- **Node.js** LTS (22 or 24) for build tooling only; **React 19**, **TypeScript 5.x**, **Vite**, **@xyflow/react 12** (React Flow), **Tailwind CSS 4**, **shadcn/ui** (copied source, so the real dependencies are Radix UI primitives).
+- Is there an internal NuGet/npm mirror (Artifactory/Nexus) we must resolve packages from?
+
+**Q2. Hosting target.** Windows Server + IIS / Windows services, or Linux containers (Kubernetes/OpenShift)? Affects how Chromium is installed (Playwright downloads browsers from the internet by default; an offline/mirrored install will almost certainly be needed) and how the Worker runs.
+
+**Q3. Identity provider.** Entra ID, on-prem ADFS, or another OIDC provider? Or Windows Integrated Authentication? And are roles sourced from AD groups?
+
+### Needs your answer before the milestone named (non-blocking for M1)
+
+- **D4 — Template layout model (before M3).** The prototype positions every element absolutely on a fixed A4 sheet. That can't handle invoices whose line count varies (a 60-line invoice must flow onto page 2). **My recommendation:** fixed **header** and **footer** regions where elements are absolutely positioned (as in the prototype), plus a flowing **body** region where blocks stack and the repeating table breaks across pages with repeated headers. The designer still looks like the prototype. Alternative: pure flow layout (simpler engine, less designer freedom).
+- **D5 — PDF/A (before M5).** The prototype shows "PDF/A-3". Chromium cannot produce PDF/A. If archive compliance requires PDF/A, we need a post-processing step (likely a licensed library) — that's a new dependency for approval. MVP proposal: standard PDF, with PDF/A as a follow-up.
+- **D6 — Production storage (before production, not MVP).** Which target: network file share, SQL Server (FILESTREAM / varbinary), S3-compatible object storage with object lock, or the bank's existing DMS/ECM? Is WORM required by regulation? MVP ships with the local file-system adapter only.
+- **D7 — Maker-checker (before M9 or post-MVP).** Should publishing a template or workflow require a second person's approval (four-eyes)? Common in banks; it changes the publish flow. Proposed: post-MVP.
+- **D8 — Test infrastructure (before M2).** Is Docker available on developer machines and CI (for Testcontainers SQL Server)? If not, integration tests use LocalDB or a shared dev SQL instance.
+- **Languages and locale (before M3).** Greek-language documents? If yes, fonts must cover Greek — **verified at M1: Schibsted Grotesk has no Greek glyphs** (Latin and Latin Extended only); Source Serif 4 does include Greek. Greek documents would need a different sans font. Also: number/date formats (`1.234,56 €` vs `€1,234.56`), currency (EUR only?).
+- **Retention (before M7).** Retention period per document type (prototype shows 7 years for invoices, 10 for statements) and what happens at expiry (MVP: record only, no deletion).
+- **Issuer model.** The prototype shows a bank (Atlas Mutual) producing invoices for a corporate issuer (Halcyon Energy). Is Verso used by the bank for its own documents, or on behalf of corporate clients (multi-tenant)? MVP assumes **single tenant, single issuer**.
+- **E2E tooling.** Playwright Test (Node) for browser E2E is the most productive option but adds a second Playwright distribution to approve; Playwright for .NET can do it with one toolchain at some convenience cost.
+- **CI system.** Azure DevOps, GitHub, GitLab, Jenkins? Determines pipeline files.
+
+### Assumptions I'm making (tell me if any is wrong)
+
+1. All data in all environments during MVP is synthetic; no real customer data.
+2. Single organization, single issuer, single language for the first template (English), EUR currency.
+3. Expected volume for MVP is low (interactive submissions, tens per minute at most); batch volumes like the prototype's 18,000-statement jobs are a later concern, but the design (Hangfire queues, stateless worker) can scale out.
+4. One worker instance is enough for MVP; the design allows several.
+5. Template authors are trusted staff, but templates are still treated as untrusted input to the renderer (no raw HTML/JS).
+6. Fonts are SIL OFL licensed (Schibsted Grotesk, Source Serif 4, IBM Plex Mono) and may be embedded in PDFs and self-hosted.
+7. Browsers: current Edge/Chrome on bank desktops; no IE/legacy support.
+8. Hangfire dashboard is exposed only in development (or to `Admin` behind auth), never publicly.
+
+### Decisions I made (my calls — open to override)
+
+- **D1** ~~Per-module DbContext~~ Revised at M1: one `VersoDbContext`, one SQL schema per module, in one database (fits the lighter layered structure the user chose).
+- **D2** Server-side C# renderer is the single source of truth for document output; the designer canvas is an editing view and uses the server HTML preview for fidelity. Rejected: running a Node/React renderer in the Worker (second runtime in a bank server environment).
+- **D3** Progress delivery via DB event table + API relay instead of Worker→API calls or a Redis backplane.
+- Rejected vs Failed as distinct terminal states.
+- Hangfire job per execution with engine-owned step retries, rather than one Hangfire job per step.
+- Executions always run against **published** versions; drafts can only be previewed.
+- `{{path|filter}}` binding syntax kept from the prototype; no expression language/scripting in MVP.

@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Use cases and ports. Depends on Domain only. Empty until M2. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Verso.Domain\Verso.Domain.csproj" />
+  </ItemGroup>
+</Project>

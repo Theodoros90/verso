@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Verso.Api/Verso.Api.csproj" />
+    <Project Path="src/Verso.Application/Verso.Application.csproj" />
+    <Project Path="src/Verso.Domain/Verso.Domain.csproj" />
+    <Project Path="src/Verso.Infrastructure/Verso.Infrastructure.csproj" />
+    <Project Path="src/Verso.Worker/Verso.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Verso.Api.Tests/Verso.Api.Tests.csproj" />
+  </Folder>
+</Solution>

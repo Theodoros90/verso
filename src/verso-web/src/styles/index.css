@@ -1,0 +1,177 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* Dark mode follows the data-theme attribute set by src/app/theme.ts (and the inline script in index.html). */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* ---------------------------------------------------------------------------
+   Verso design tokens, ported from design-reference/verso-docgen_4.html.
+   Change colors here, not in components.
+   --------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+  --bg: #edf0f3;
+  --surface: #ffffff;
+  --surface-2: #f6f8fa;
+  --surface-3: #eef2f5;
+  --line: #dde3e9;
+  --line-strong: #c4cdd6;
+  --ink: #13202b;
+  --ink-2: #4a5866;
+  --ink-3: #7b8895;
+  --cyan: #0a6e8a;
+  --cyan-strong: #075a72;
+  --cyan-soft: #e0eff4;
+  --on-cyan: #ffffff;
+  --magenta: #a82e6b;
+  --magenta-soft: #f6e5ee;
+  --ok: #1e8556;
+  --ok-soft: #e2f2e9;
+  --warn: #a86e12;
+  --warn-soft: #faefd9;
+  --err: #be3d37;
+  --err-soft: #fae6e4;
+
+  /* Workflow node categories (used from the workflow designer milestone). */
+  --cat-input: #0a6e8a;
+  --cat-process: #b7791f;
+  --cat-logic: #5b6773;
+  --cat-doc: #6b4fa0;
+  --cat-ai: #a82e6b;
+  --cat-output: #1e8556;
+
+  --font: 'Schibsted Grotesk Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif-stack: 'Source Serif 4 Variable', Georgia, 'Times New Roman', serif;
+  --font-mono-stack: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* shadcn/ui semantic variables, mapped onto Verso tokens. */
+  --radius: 0.5rem;
+  --background: var(--bg);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--cyan);
+  --primary-foreground: var(--on-cyan);
+  --secondary: var(--surface-3);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ink-3);
+  --accent: var(--surface-2);
+  --accent-foreground: var(--ink);
+  --destructive: var(--err);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--cyan);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0e141a;
+  --surface: #151d25;
+  --surface-2: #1a232d;
+  --surface-3: #202b36;
+  --line: #26323d;
+  --line-strong: #354350;
+  --ink: #e3e9ef;
+  --ink-2: #a7b3bf;
+  --ink-3: #76838f;
+  --cyan: #4db4d1;
+  --cyan-strong: #7ccbe0;
+  --cyan-soft: #11303a;
+  --on-cyan: #06202a;
+  --magenta: #e57db1;
+  --magenta-soft: #38192a;
+  --ok: #4bc28a;
+  --ok-soft: #12301f;
+  --warn: #e0a84a;
+  --warn-soft: #33260f;
+  --err: #ee7a72;
+  --err-soft: #3a1715;
+  --cat-input: #4db4d1;
+  --cat-process: #e0a84a;
+  --cat-logic: #9aa6b2;
+  --cat-doc: #a892da;
+  --cat-ai: #e57db1;
+  --cat-output: #4bc28a;
+}
+
+@theme inline {
+  --font-sans: var(--font);
+  --font-serif: var(--font-serif-stack);
+  --font-mono: var(--font-mono-stack);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Verso palette as Tailwind colors: bg-surface, text-ink-3, bg-cyan-soft, text-ok, ... */
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-cyan: var(--cyan);
+  --color-cyan-strong: var(--cyan-strong);
+  --color-cyan-soft: var(--cyan-soft);
+  --color-magenta: var(--magenta);
+  --color-magenta-soft: var(--magenta-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-err: var(--err);
+  --color-err-soft: var(--err-soft);
+
+  --radius-sm: calc(var(--radius) - 3px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  :focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+}

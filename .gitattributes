@@ -1,0 +1,4 @@
+# Normalise line endings in the repo; checkouts get LF on every platform.
+* text=auto eol=lf
+*.png binary
+*.woff2 binary
