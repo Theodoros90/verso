@@ -80,6 +80,117 @@ namespace Verso.Infrastructure.Persistence.Migrations
                     b.ToTable("AuditEntries", "audit");
                 });
 
+            modelBuilder.Entity("Verso.Domain.Templates.PdfPreview", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<byte[]>("Content")
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Data")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Issues")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Layout")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("NotifiedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TemplateName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("TemplateVersionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.ComplexProperty(typeof(Dictionary<string, object>), "PageSettings", "Verso.Domain.Templates.PdfPreview.PageSettings#PageSettings", b1 =>
+                        {
+                            b1.IsRequired();
+
+                            b1.Property<decimal>("MarginBottomMm")
+                                .HasPrecision(5, 2)
+                                .HasColumnType("decimal(5,2)")
+                                .HasColumnName("MarginBottomMm");
+
+                            b1.Property<decimal>("MarginLeftMm")
+                                .HasPrecision(5, 2)
+                                .HasColumnType("decimal(5,2)")
+                                .HasColumnName("MarginLeftMm");
+
+                            b1.Property<decimal>("MarginRightMm")
+                                .HasPrecision(5, 2)
+                                .HasColumnType("decimal(5,2)")
+                                .HasColumnName("MarginRightMm");
+
+                            b1.Property<decimal>("MarginTopMm")
+                                .HasPrecision(5, 2)
+                                .HasColumnType("decimal(5,2)")
+                                .HasColumnName("MarginTopMm");
+
+                            b1.Property<string>("Orientation")
+                                .IsRequired()
+                                .HasMaxLength(16)
+                                .HasColumnType("nvarchar(16)")
+                                .HasColumnName("PageOrientation");
+
+                            b1.Property<string>("Size")
+                                .IsRequired()
+                                .HasMaxLength(16)
+                                .HasColumnType("nvarchar(16)")
+                                .HasColumnName("PageSize");
+                        });
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompletedAt")
+                        .HasDatabaseName("IX_PdfPreviews_Unnotified")
+                        .HasFilter("[NotifiedAt] IS NULL AND [CompletedAt] IS NOT NULL");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("IX_PdfPreviews_CreatedAt");
+
+                    b.HasIndex("TemplateVersionId");
+
+                    b.ToTable("PdfPreviews", "templates");
+                });
+
             modelBuilder.Entity("Verso.Domain.Templates.Template", b =>
                 {
                     b.Property<Guid>("Id")
@@ -244,6 +355,15 @@ namespace Verso.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_TemplateVersions_PublishedFields", "([Status] = 'Draft' AND [VersionNumber] IS NULL AND [ContentHash] IS NULL AND [PublishedAt] IS NULL) OR ([Status] = 'Published' AND [VersionNumber] IS NOT NULL AND [ContentHash] IS NOT NULL AND [PublishedAt] IS NOT NULL)");
                         });
+                });
+
+            modelBuilder.Entity("Verso.Domain.Templates.PdfPreview", b =>
+                {
+                    b.HasOne("Verso.Domain.Templates.TemplateVersion", null)
+                        .WithMany()
+                        .HasForeignKey("TemplateVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Verso.Domain.Templates.TemplateVersion", b =>

@@ -10,6 +10,7 @@ public interface IVersoDbContext
     DbSet<Template> Templates { get; }
     DbSet<TemplateVersion> TemplateVersions { get; }
     DbSet<AuditEntry> AuditEntries { get; }
+    DbSet<PdfPreview> PdfPreviews { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

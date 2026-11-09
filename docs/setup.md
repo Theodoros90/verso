@@ -45,13 +45,42 @@ Expected: `Done.` The database `Verso_Dev` now has the schemas `templates`, `wor
 
 Migrations are applied by this command only. The API and Worker never migrate the database on startup.
 
-## 2. Backend
+The same migrations also create the `hangfire` schema (background job storage). Hangfire never creates or changes it at startup.
+
+## 2. Chromium (PDF printing, Worker only)
+
+The Worker prints PDFs with Chromium through Playwright for .NET 1.64.1, which is pinned to **Chromium 156.0.8078.4 (Playwright build 1248)**. Only the headless shell is needed. The Worker never downloads a browser at runtime: if Chromium is missing, PDF jobs fail and the Worker logs how to fix it.
+
+**Developer machine** (downloads about 100 MB from Playwright's CDN once, into `%LOCALAPPDATA%\ms-playwright`):
+
+```powershell
+dotnet build src/Verso.Worker
+powershell -ExecutionPolicy Bypass -File src/Verso.Worker/bin/Debug/net10.0/playwright.ps1 install --only-shell chromium
+```
+
+Note: the installer also deletes older Playwright browser builds in that folder that no other installed Playwright still references.
+
+**Servers (offline bundle).** On a machine with internet access, build the same Worker version and download into a dedicated folder:
+
+```powershell
+$env:PLAYWRIGHT_BROWSERS_PATH = "C:\verso-browsers"
+powershell -ExecutionPolicy Bypass -File src/Verso.Worker/bin/Release/net10.0/playwright.ps1 install --only-shell chromium
+Compress-Archive C:\verso-browsers\* verso-chromium-1248.zip
+```
+
+Copy the zip to the server, extract it to, for example, `D:\Verso\browsers`, and set `PLAYWRIGHT_BROWSERS_PATH=D:\Verso\browsers` as a machine environment variable (or in the Worker service's environment). The folder must be readable by the Worker's service account. When the Worker starts it logs `Chromium 156.0.8078.4 started for PDF printing`. A Playwright upgrade means a new bundle: the revision is tied to the package version.
+
+Fonts need nothing installed: the document fonts (Schibsted Grotesk, Source Serif 4, IBM Plex Mono; SIL Open Font License) are embedded in `Verso.Rendering.Pdf` and inlined into every printed document.
+
+## 3. Backend
 
 ```powershell
 dotnet build Verso.slnx
 dotnet run --project src/Verso.Api        # http://localhost:5122
-dotnet run --project src/Verso.Worker     # separate terminal; logs a DB check and a heartbeat every minute
+dotnet run --project src/Verso.Worker     # separate terminal: runs background jobs (PDF previews), starts Chromium, logs a heartbeat
 ```
+
+PDF printing settings are in the `Pdf` section of `src/Verso.Worker/appsettings.json`: `RenderTimeout` (default 30 s), `RecycleAfterRenders` (100) and `MaxConcurrentRenders` (2). `Worker:JobWorkers` sets the number of job threads (4).
 
 Check the API directly:
 
@@ -63,7 +92,7 @@ Expected: `"status": "Healthy"` with a `database` check showing `pendingMigratio
 
 Logs are JSON lines on the console (one object per event, with timestamp, level, category, message, structured state and scopes such as `TraceId`). Each HTTP request logs method, path, status and duration only, never headers or bodies.
 
-## 3. Frontend
+## 4. Frontend
 
 ```powershell
 cd src/verso-web
@@ -71,7 +100,7 @@ npm ci
 npm run dev        # http://localhost:5180
 ```
 
-The dev server forwards `/api/*` to `http://localhost:5122` (override with `$env:VERSO_API_URL`). Open http://localhost:5180: the top bar shows **API healthy**, and Overview → System status lists the database check.
+The dev server forwards `/api/*` and the SignalR hub `/hubs/*` (WebSockets) to `http://localhost:5122` (override with `$env:VERSO_API_URL`). Open http://localhost:5180: the top bar shows **API healthy**, and Overview → System status lists the database check.
 
 **Template designer (M4):**
 1. Open Template designer, choose **New template**, and enter a key and a name.
@@ -80,14 +109,18 @@ The dev server forwards `/api/*` to `http://localhost:5122` (override with `$env
 4. **Save draft** (Ctrl+S), then **Preview** to see the server-rendered HTML of the saved draft.
 5. **Publish**. It stays disabled while the status bar shows errors or unmapped fields.
 
+**PDF preview (M5):** in the preview pane, switch to **PDF**. The API queues a job, the Worker prints the saved draft with Chromium, and the PDF appears when the API's SignalR hub announces it (about 2–3 s once Chromium is warm). It needs the Worker running and Chromium installed (step 2). In development, React's StrictMode runs the effect twice, so each PDF request queues two renders; production builds queue one.
+
 After an API change, regenerate the OpenAPI snapshot (see the commands in CLAUDE.md), then run `npm run gen:api` to regenerate `src/lib/api/generated.ts`. A test fails while that file is out of date.
 
-## 4. Tests
+## 5. Tests
 
 ```powershell
-dotnet test Verso.slnx                 # needs LocalDB (or set VERSO_TEST_SQL_SERVER)
+dotnet test Verso.slnx                 # needs LocalDB (or set VERSO_TEST_SQL_SERVER) and Chromium (step 2)
 cd src/verso-web; npm run typecheck; npm test; npm run build
 ```
+
+`tests/Verso.Pdf.Tests` prints with real Chromium (the M5 acceptance tests: PDF text, pagination, zero network requests, speed, crash recovery). Two of its tests force-kill the processes they started (their own Chromium, found by a unique switch on its command line, and their own Playwright driver, found by its path under the test's output folder); nothing else is touched.
 
 Backend integration tests create uniquely named `Verso_Test_*` databases and drop them afterwards; they never touch `Verso_Dev`. To run them against another SQL Server instance: `$env:VERSO_TEST_SQL_SERVER = "localhost"`.
 
@@ -104,3 +137,7 @@ The API only starts in the `Development` or `Testing` environment: there is no s
 | **API unhealthy**, "Database is unreachable or does not exist" | LocalDB not started or database not created. `sqllocaldb start MSSQLLocalDB`, then step 1. |
 | `npm ci` fails with `notsup … node` | Node is older than 22.22. Update Node 22 LTS. |
 | API fails at startup: "Connection string 'Verso' is not configured" | Running outside Development without `ConnectionStrings__Verso` set. |
+| PDF preview stays on "Rendering PDF in the Worker…" | The Worker isn't running, or it can't reach the database. Previews wait in the queue until a Worker picks them up. |
+| PDF preview fails / Worker logs "Chromium for Playwright is not installed" | Install Chromium (step 2). On servers, check `PLAYWRIGHT_BROWSERS_PATH` and that the service account can read it. |
+| Worker logs "Could not register recurring jobs" | The `hangfire` schema is missing: run the `database update` command in step 1. |
+| `dotnet build` fails: file in `bin\Debug` "being used by another process" | A running API or Worker locks its build output. Stop it, or build and test with `-c Release`. |

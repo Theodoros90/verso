@@ -24,6 +24,8 @@ export default defineConfig({
     ...(process.env.VITEST ? { fs: { allow: [repoRoot] } } : {}),
     proxy: {
       '/api': { target: apiTarget, changeOrigin: false },
+      // SignalR hub (WebSockets).
+      '/hubs': { target: apiTarget, changeOrigin: false, ws: true },
     },
   },
   test: {

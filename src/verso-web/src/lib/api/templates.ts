@@ -3,6 +3,7 @@ import { request, type Tagged } from './client'
 import type {
   CreateTemplateRequest,
   HtmlPreviewDto,
+  PdfPreviewDto,
   PageResultOfTemplateSummaryDto,
   PageSettingsDto,
   TemplateDto,
@@ -50,4 +51,19 @@ export const templatesApi = {
       method: 'POST',
       body: data === undefined ? undefined : { data },
     }).then((r) => r.body),
+
+  /** Queues a PDF preview of the saved draft (rendered by the Worker). */
+  queuePdfPreview: (id: string, data?: unknown) =>
+    request<PdfPreviewDto>(`${base}/${id}/draft/preview/pdf`, {
+      method: 'POST',
+      body: data === undefined ? undefined : { data },
+    }).then((r) => r.body),
+}
+
+/** PDF previews (docs/api.md#pdf-previews). */
+export const previewsApi = {
+  get: (previewId: string, signal?: AbortSignal) =>
+    request<PdfPreviewDto>(`/api/v1/previews/${previewId}`, { signal }).then((r) => r.body),
+
+  contentUrl: (previewId: string) => `/api/v1/previews/${previewId}/content`,
 }

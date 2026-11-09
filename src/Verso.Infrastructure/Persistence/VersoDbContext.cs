@@ -14,6 +14,7 @@ public sealed class VersoDbContext(DbContextOptions<VersoDbContext> options) : D
     public DbSet<Template> Templates => Set<Template>();
     public DbSet<TemplateVersion> TemplateVersions => Set<TemplateVersion>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<PdfPreview> PdfPreviews => Set<PdfPreview>();
 
     public void SetOriginalRowVersion(TemplateVersion version, byte[] rowVersion) =>
         Entry(version).Property(v => v.RowVersion).OriginalValue = rowVersion;

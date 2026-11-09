@@ -426,12 +426,34 @@ Decisions made while implementing M4 (2026-11-09):
 - Generated frontend types: `src/verso-web/src/lib/api/generated.ts` is generated from `docs/openapi/v1.json` by a dependency-free script (`npm run gen:api`), and a drift test fails when it is out of date.
 - Template name and description stay read-only in the designer (no edit endpoint, as in M2).
 
-### M5 — PDF generation in the Worker (M)
+### M5 — PDF generation in the Worker (M) — ✅ accepted 2026-11-09
 - `Verso.Rendering.Pdf` with pooled Chromium, network blocking, JS disabled, timeout, recycling.
 - PDF preview job (`…/preview/pdf`) and `PreviewReady` notification.
 - Offline Chromium installation procedure documented.
 
 **Acceptance:** invoice fixture → PDF whose extracted text contains invoice number, customer, all line descriptions and totals; 60-line fixture paginates with repeated table header; external-URL fixture makes zero network requests; render of a 1-page invoice < 3 s p95 on the reference machine (assumption); killing Chromium mid-render → retried successfully.
+
+Decisions made while implementing M5 (2026-11-09):
+- **D5 decided:** standard PDF for the MVP. PDF/A stays a later decision, once the bank's archive requirements are known; it would need a post-processing library.
+- New project `Verso.Rendering.Pdf` (Playwright 1.64.1, Chromium 156 / build 1248, headless shell), referenced only by the Worker. The contract `IPdfPrinter` lives in pure `Verso.Rendering`.
+  - One shared browser, a fresh isolated context per document, JavaScript off, offline, every request aborted and counted.
+  - 30 s render timeout; recycled after 100 documents; at most 2 at once.
+  - If Chromium or Playwright's own driver process dies, it is replaced and the document is retried once. The Worker starts Chromium at startup.
+- Fonts (deferred from M3): static 400/600 weights of the three document fonts (SIL OFL), embedded in `Verso.Rendering.Pdf` and inlined at print time. Variable fonts were rejected because Chromium embeds them as Type 3 outlines.
+  - Every face is preloaded in the body, and the rules use `font-display:swap`: a font used only in the header template was otherwise still loading when Chromium drew the header, and the text went missing.
+- PDF preview flow: the API stores a `PdfPreview` row holding a snapshot of the draft's page settings, layout and data, then queues a Hangfire job. The Worker renders it (preview mode) and stores the PDF bytes in the row. The API's relay sends `PreviewReady` over SignalR (`/hubs/executions`).
+  - The preview is saved first and queued second. If queueing fails, the row is marked failed. The same-transaction enqueue in §6 is still planned for executions (M7).
+  - Retries: 3 attempts for technical failures; then `Failed` with the error.
+  - Previews are deleted after 24 h by an hourly recurring job. They're stored in the database, because the document store (M7) is for archived documents.
+  - Endpoints: `POST …/draft/preview/pdf` (202), `GET /previews/{id}`, `GET /previews/{id}/content`.
+- Hangfire 1.8.25 (SQL Server storage, schema `hangfire`). Its schema is created by our EF migration (`AddPdfPreviews`) from Hangfire's own install script, never at startup. Newtonsoft.Json is pinned to 13.0.4, because Hangfire otherwise allows a vulnerable 11.0.1.
+- The relay waits until the database exists and is fully migrated before polling, so it never touches a database mid-migration.
+- Designer: the preview pane has HTML and PDF tabs. The PDF renders when the tab opens, after each save, and on refresh. The designer subscribes over SignalR (`@microsoft/signalr` 10.0.11) and also polls every 3 s.
+- Test-only dependency: PdfPig 0.1.16 (Apache-2.0) for PDF text extraction in `tests/Verso.Pdf.Tests`.
+- Measured on the development machine:
+  - Render (start → stored) about 0.9 s; the first after start about 1.5 s.
+  - Request → PDF on screen 2–3 s, most of it Hangfire's 1 s queue polling.
+  - The printer-level p95 test (20 renders) passes under 3 s.
 
 ### M6 — Workflow definitions and designer (L)
 - Node catalog endpoint; MVP nodes `api-trigger`, `validate`, `generate-pdf`, `archive`.
@@ -498,7 +520,7 @@ Consequences for the plan:
 ### Needs your answer before the milestone named (non-blocking for M1)
 
 - **D4 — Template layout model (before M3).** The prototype positions every element absolutely on a fixed A4 sheet. That can't handle invoices whose line count varies (a 60-line invoice must flow onto page 2). **My recommendation:** fixed **header** and **footer** regions where elements are absolutely positioned (as in the prototype), plus a flowing **body** region where blocks stack and the repeating table breaks across pages with repeated headers. The designer still looks like the prototype. Alternative: pure flow layout (simpler engine, less designer freedom).
-- **D5 — PDF/A (before M5).** The prototype shows "PDF/A-3". Chromium cannot produce PDF/A. If archive compliance requires PDF/A, we need a post-processing step (likely a licensed library) — that's a new dependency for approval. MVP proposal: standard PDF, with PDF/A as a follow-up.
+- **D5 — PDF/A (before M5).** The prototype shows "PDF/A-3". Chromium cannot produce PDF/A. If archive compliance requires PDF/A, we need a post-processing step (likely a licensed library) — that's a new dependency for approval. MVP proposal: standard PDF, with PDF/A as a follow-up. **Decided 2026-11-09: standard PDF for the MVP.**
 - **D6 — Production storage (before production, not MVP).** Which target: network file share, SQL Server (FILESTREAM / varbinary), S3-compatible object storage with object lock, or the bank's existing DMS/ECM? Is WORM required by regulation? MVP ships with the local file-system adapter only.
 - **D7 — Maker-checker (before M9 or post-MVP).** Should publishing a template or workflow require a second person's approval (four-eyes)? Common in banks; it changes the publish flow. Proposed: post-MVP.
 - **D8 — Test infrastructure (before M2).** Is Docker available on developer machines and CI (for Testcontainers SQL Server)? If not, integration tests use LocalDB or a shared dev SQL instance.

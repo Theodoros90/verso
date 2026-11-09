@@ -59,6 +59,8 @@ Formatting is fixed (English, EUR) and doesn't depend on the server's culture. O
 
 Modes: **Preview** shows unresolved values as a dashed `{{path}}` placeholder. **Final** renders them empty. Both report the issue, so the execution engine can reject an incomplete document.
 
+PDF (Verso.Rendering.Pdf, Worker only): Chromium prints the `Print` parts with JavaScript disabled, offline, and every request aborted. Fonts: the HTML names Schibsted Grotesk, Source Serif 4 and IBM Plex Mono, with system fallbacks. The PDF step inlines those fonts (static 400/600 weights, normal and italic; latin subset, including €) as `data:` URIs, so PDFs embed real subset fonts. Static rather than variable fonts, because Chromium turns variable fonts into Type 3 outlines. The screen preview keeps the system fallbacks. Bold (`"bold": true`) is weight 600.
+
 Safety: every text and data value is HTML-encoded (data that looks like `{{…}}` is printed literally, never re-evaluated). CSS values only come from validated numbers, enums and colors. Documents carry a Content-Security-Policy (`default-src 'none'`), so no scripts and no network requests. The renderer has no file, network, database, ASP.NET or Playwright dependencies (checked by `RendererPurityTests`).
 
 ## Issue codes
@@ -75,4 +77,4 @@ An empty list is not an issue: the table shows `emptyText` (if set) or no rows.
 
 ## Not in v1
 
-QR codes, barcodes, conditional blocks, page numbers ("Page X of Y" is supported by Chromium templates and planned as a follow-up), web fonts (the HTML names Schibsted Grotesk / Source Serif 4 / IBM Plex Mono with system fallbacks; embedding comes with the PDF step), side-by-side columns in the body, and per-template locale/currency.
+QR codes, barcodes, conditional blocks, page numbers ("Page X of Y" is supported by Chromium templates and planned as a follow-up), fonts in the screen preview (they're embedded only in PDFs), side-by-side columns in the body, and per-template locale/currency.

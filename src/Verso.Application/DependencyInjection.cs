@@ -12,7 +12,17 @@ public static class DependencyInjection
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<TemplateService>();
         services.AddScoped<TemplatePreview>();
+        services.AddScoped<PdfPreviews>();
         services.AddScoped<AuditQueries>();
+        return services;
+    }
+
+    /// <summary>Use cases that run in the Worker (they need the PDF printer, which only the Worker has).</summary>
+    public static IServiceCollection AddVersoWorkerUseCases(this IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<PdfPreviewRunner>();
+        services.AddScoped<PdfPreviewCleanup>();
         return services;
     }
 }

@@ -27,6 +27,9 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | 409 | `template.draft_exists` | Starting a draft when one already exists |
 | 412 | `precondition.failed` | `If-Match` doesn't match the current draft: someone else changed it, or you used an old ETag |
 | 428 | `precondition.required` | `If-Match` missing (or `*`) |
+| 404 | `preview.not_found` | Unknown PDF preview id (or deleted after 24 hours) |
+| 409 | `preview.not_ready` | PDF content requested while the preview is still queued or rendering |
+| 409 | `preview.failed` | PDF content requested for a preview that failed; read its `error` |
 
 ## Health
 
@@ -58,6 +61,7 @@ A template has at most one draft at a time. Version numbers start at 1 and are a
 | PUT | `/api/v1/templates/{id}/draft` | 200 `TemplateVersion` + new `ETag` | Replace the draft content (`If-Match`) |
 | POST | `/api/v1/templates/{id}/draft/publish` | 200 `TemplateVersion` (published) | Freeze the draft as the next version (`If-Match`) |
 | POST | `/api/v1/templates/{id}/draft/preview/html` | 200 `HtmlPreview` | Render the draft to HTML with sample or supplied data |
+| POST | `/api/v1/templates/{id}/draft/preview/pdf` | 202 `PdfPreview`, `Location` | Queue a PDF rendering of the draft (Worker, Chromium); see [PDF previews](#pdf-previews) |
 
 ### Create: `POST /api/v1/templates`
 
@@ -131,7 +135,7 @@ Without `data` (or without a body), the draft's `sampleData` is used. `data` mus
                 "elementId": "billto", "path": "customer.name" } ] }
 ```
 
-- `html` is a self-contained document (inline CSS, embedded images, a CSP that blocks scripts and network access) showing one continuous A4 sheet. Unresolved values appear as dashed `{{path}}` placeholders. Display it in a sandboxed `<iframe srcdoc>`. Real page breaks are visible in the PDF (M5).
+- `html` is a self-contained document (inline CSS, embedded images, a CSP that blocks scripts and network access) showing one continuous A4 sheet. Unresolved values appear as dashed `{{path}}` placeholders. Display it in a sandboxed `<iframe srcdoc>`. Real page breaks are visible in the PDF preview (below).
 - `issues`: codes and meanings are in [layout-model.md](layout-model.md#issue-codes). An empty list means every binding resolved.
 - Errors: 400 `validation` (bad `data`), 404 `template.not_found`, 409 `template.no_draft`, 409 `template.layout_invalid` (only for drafts saved before layout validation existed; re-save to fix).
 
@@ -140,6 +144,50 @@ Without `data` (or without a body), the draft's `sampleData` is used. `data` mus
 `TemplateSummary`: `{ id, key, name, documentType, latestPublishedVersion, hasDraft, updatedAt }`
 
 `TemplateVersionSummary`: `{ versionId, versionNumber, status, contentHash, updatedAt, updatedBy, publishedAt, publishedBy }`
+
+## PDF previews
+
+A PDF rendering of a template draft, produced by the Worker with Chromium (the API never runs a browser). It is the real output: paginated, with the header and footer repeated on every page and the fonts embedded. Preview mode applies: unresolved values print as `{{path}}` placeholders and are listed in `issues`.
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| POST | `/api/v1/templates/{id}/draft/preview/pdf` | 202 `PdfPreview`, `Location: /api/v1/previews/{previewId}` | Queue a rendering |
+| GET | `/api/v1/previews/{previewId}` | 200 `PdfPreview` | Status, issues, error (the source of truth) |
+| GET | `/api/v1/previews/{previewId}/content` | 200 `application/pdf` | The PDF, once `Succeeded` |
+
+### Queue: `POST /api/v1/templates/{id}/draft/preview/pdf`
+
+Same optional body and validation as the HTML preview: `{ "data": { … } }` (synthetic data, a JSON object of at most 1,000,000 characters); without it, the draft's sample data is used. The draft's page settings, layout and the data are **copied when you call this**, so later draft edits don't change a queued preview. No `If-Match`; nothing is audited.
+
+Errors: 400 `validation`, 404 `template.not_found`, 409 `template.no_draft`, 409 `template.layout_invalid`.
+
+`PdfPreview`:
+
+```json
+{ "previewId": "…", "templateId": "…", "status": "Succeeded",
+  "issues": [ { "severity": "error", "code": "binding.missing", "message": "No value for 'customer.name'.", "elementId": "billto", "path": "customer.name" } ],
+  "error": null, "sizeBytes": 21290, "createdAt": "…", "completedAt": "…" }
+```
+
+- `status`: `Queued` → `Running` → `Succeeded` | `Failed`. A technical failure (Chromium crash, timeout) is retried, 3 attempts in total; while a retry is pending the status is `Queued` again and `error` describes the last attempt. After the third, `Failed`.
+- `sizeBytes`: PDF size once `Succeeded`, otherwise `null`.
+
+### Content: `GET /api/v1/previews/{previewId}/content`
+
+`200 application/pdf` with `Content-Disposition: inline`, `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`. Errors: 404 `preview.not_found`, 409 `preview.not_ready`, 409 `preview.failed`.
+
+Previews are temporary: the Worker deletes them 24 hours after they were requested.
+
+## Real-time notifications (SignalR)
+
+Hub: `/hubs/executions` (plan §5.5). No authentication yet, like the rest of the API.
+
+| Direction | Message | Payload |
+|---|---|---|
+| Client → server | `SubscribePreview(previewId)` / `UnsubscribePreview(previewId)` | — |
+| Server → client | `PreviewReady` | `{ "previewId": "…", "status": "Succeeded" \| "Failed" }` |
+
+Notifications are hints, not the source of truth: after `PreviewReady`, read `GET /api/v1/previews/{previewId}`. Subscribe first, then read once, because the preview may have finished before you subscribed. The API relays finished previews from the database about every 500 ms (the Worker and the API share only the database), so a notification arrives within about a second. Clients should also poll slowly (the designer polls every 3 s) in case WebSockets are blocked.
 
 ## Audit
 

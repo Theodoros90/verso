@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    PrintDocument → PDF with Chromium (Playwright for .NET). Referenced only by Verso.Worker: the API never runs Chromium.
+    Chromium is installed separately (docs/setup.md, "Chromium"); it is never downloaded at runtime.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Verso.Rendering\Verso.Rendering.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Document fonts (SIL Open Font License 1.1; licenses next to the files), inlined into printed documents. -->
+    <EmbeddedResource Include="Fonts\*.woff2" LogicalName="Verso.Fonts.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Verso.Pdf.Tests" />
+  </ItemGroup>
+</Project>

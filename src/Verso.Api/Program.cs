@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.HttpLogging;
 using Verso.Api.Audit;
 using Verso.Api.Common;
 using Verso.Api.Health;
+using Verso.Api.Realtime;
 using Verso.Api.Templates;
 using Verso.Application;
 using Verso.Infrastructure;
+using Verso.Infrastructure.Jobs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -36,6 +38,14 @@ builder.Services.AddVersoPersistence(builder.Configuration);
 builder.Services.AddScoped<ICurrentUser, DevelopmentCurrentUser>();
 builder.Services.AddHealthChecks().AddVersoDatabaseCheck();
 
+// Background jobs: the API only enqueues (Hangfire client); the Worker runs them. Never Chromium here.
+builder.Services.AddVersoJobClient(builder.Configuration);
+
+// Real-time notifications (plan §5.5). The relay reads finished work from the database and pushes it to SignalR.
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<IPreviewNotifier, SignalRPreviewNotifier>();
+builder.Services.AddHostedService<PreviewReadyRelay>();
+
 var app = builder.Build();
 
 app.UseHttpLogging();
@@ -47,7 +57,9 @@ app.MapOpenApi();
 
 app.MapHealthEndpoints();
 app.MapTemplateEndpoints();
+app.MapPdfPreviewEndpoints();
 app.MapAuditEndpoints();
+app.MapHub<ExecutionsHub>(ExecutionsHub.Path);
 
 app.Run();
 

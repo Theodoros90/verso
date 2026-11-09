@@ -12,7 +12,8 @@ Bank-focused document-generation and workflow platform. MVP: maintain an invoice
 **M1: Application foundation** — accepted 2026-11-09.
 **M2: Template storage** — accepted 2026-11-09.
 **M3: Rendering engine** — accepted 2026-11-09. Layout model: docs/layout-model.md.
-**M4: Template designer UI** — accepted 2026-11-09. Next in plan: M5 PDF generation in the Worker. Acceptance criteria are in plan §9.
+**M4: Template designer UI** — accepted 2026-11-09.
+**M5: PDF generation in the Worker** — accepted 2026-11-09. Next in plan: M6 workflow definitions and designer. Acceptance criteria are in plan §9.
 Update this line when a milestone is accepted and the next one is agreed.
 
 ## Commands
@@ -27,6 +28,7 @@ $env:VERSO_UPDATE_OPENAPI = "1"; dotnet test --filter OpenApiDocument   # after 
 $env:VERSO_UPDATE_GOLDEN = "1"; dotnet test --filter Golden            # after an intended rendering change; review the diff of tests/Verso.UnitTests/Rendering/Golden
 cd src/verso-web; npm ci; npm run typecheck; npm test; npm run build
 cd src/verso-web; npm run gen:api            # after the OpenAPI snapshot changes; regenerates src/lib/api/generated.ts (a test checks it)
+powershell -ExecutionPolicy Bypass -File src/Verso.Worker/bin/Debug/net10.0/playwright.ps1 install --only-shell chromium   # once per dev machine (after a build); servers use the offline bundle (docs/setup.md)
 ```
 
 ## Stack (approved 2026-11-09, pending formal bank confirmation)
@@ -37,7 +39,8 @@ cd src/verso-web; npm run gen:api            # after the OpenAPI snapshot change
 - PDF: Playwright for .NET + Chromium, in the Worker only, installed from an offline bundle
 - Frontend: React 19 + TypeScript 5.x + Vite, @xyflow/react (React Flow), Tailwind CSS 4 + shadcn/ui (radix-ui, lucide-react, class-variance-authority, clsx, tailwind-merge, tw-animate-css), react-router, @fontsource fonts (self-hosted); Node 22 LTS ≥ 22.22, used for builds only
 - Frontend tests: Vitest, React Testing Library (+ user-event, jest-dom), jsdom
-- Backend tests: xUnit, Microsoft.AspNetCore.Mvc.Testing, LocalDB for integration tests
+- Backend tests: xUnit, Microsoft.AspNetCore.Mvc.Testing, LocalDB for integration tests; PdfPig (PDF text extraction, test projects only; approved 2026-11-09)
+- SignalR browser client: @microsoft/signalr (approved 2026-11-09)
 - Identity: Microsoft Entra ID (OIDC; MSAL in the SPA, JWT bearer in the API); roles mapped from Entra app roles / security groups; a fake sign-in that only works in Development
 - Hosting: Windows Server; API under IIS, Worker as a Windows service
 - Packages: nuget.org / npmjs, versions pinned (`Directory.Packages.props`, lockfiles)
@@ -47,7 +50,7 @@ Ask before adding a dependency or changing a version not listed here.
 ## Architecture rules
 
 - Modular monolith, not microservices. Two processes: `Verso.Api` and `Verso.Worker`. They share code and the database, and nothing else (no direct network calls between them).
-- Layered projects: `Verso.Domain` → nothing; `Verso.Rendering` → nothing; `Verso.Application` → Domain + Rendering; `Verso.Infrastructure` → Application; `Verso.Api` and `Verso.Worker` → Application + Infrastructure. Frontend in `src/verso-web`. Keep it lightweight: no abstraction or new project without a concrete need.
+- Layered projects: `Verso.Domain` → nothing; `Verso.Rendering` → nothing; `Verso.Rendering.Pdf` → Rendering + Playwright; `Verso.Application` → Domain + Rendering; `Verso.Infrastructure` → Application (+ Hangfire); `Verso.Api` and `Verso.Worker` → Application + Infrastructure; only `Verso.Worker` also references `Verso.Rendering.Pdf`. Frontend in `src/verso-web`. Keep it lightweight: no abstraction or new project without a concrete need.
 - Modules (Templates, Workflows, Executions, Documents, Audit) are folders inside the layered projects. Module folders don't reach into each other's internals. One `VersoDbContext`; each module's tables go in its own SQL schema (`Schemas` class); no cross-schema foreign keys.
 - Template designer and workflow designer are separate modules and screens. Workflows reference template **versions**; they never embed template content.
 - Rendering lives in `Verso.Rendering` (layout JSON + data → HTML; no dependencies, enforced by RendererPurityTests). Only the Worker uses Playwright/Chromium. The API never runs Chromium. PDFs are printed from the renderer's `Print` parts (body + header/footer templates), not from the preview HTML.

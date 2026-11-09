@@ -5,10 +5,12 @@
     <Project Path="src/Verso.Domain/Verso.Domain.csproj" />
     <Project Path="src/Verso.Infrastructure/Verso.Infrastructure.csproj" />
     <Project Path="src/Verso.Rendering/Verso.Rendering.csproj" />
+    <Project Path="src/Verso.Rendering.Pdf/Verso.Rendering.Pdf.csproj" />
     <Project Path="src/Verso.Worker/Verso.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Verso.Api.Tests/Verso.Api.Tests.csproj" />
+    <Project Path="tests/Verso.Pdf.Tests/Verso.Pdf.Tests.csproj" />
     <Project Path="tests/Verso.UnitTests/Verso.UnitTests.csproj" />
   </Folder>
 </Solution>

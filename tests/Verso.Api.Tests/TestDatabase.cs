@@ -56,5 +56,8 @@ internal sealed class TestDatabase
         IntegratedSecurity = true,
         TrustServerCertificate = true,
         ConnectTimeout = 5,
+        // Test databases appear and disappear while hosts run (e.g. the preview relay polls before a test creates
+        // its database). Without this, one failed login makes the pool replay that error for seconds afterwards.
+        PoolBlockingPeriod = PoolBlockingPeriod.NeverBlock,
     }.ConnectionString;
 }

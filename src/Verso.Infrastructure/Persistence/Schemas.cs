@@ -9,5 +9,8 @@ public static class Schemas
     public const string Documents = "documents";
     public const string Audit = "audit";
 
+    /// <summary>Hangfire job storage (created by our migrations, not by Hangfire at startup).</summary>
+    public const string Jobs = "hangfire";
+
     public static readonly IReadOnlyList<string> All = [Templates, Workflows, Executions, Documents, Audit];
 }

@@ -78,6 +78,17 @@ export interface PageSettingsDto {
   marginsMm: null | MarginsDto
 }
 
+export interface PdfPreviewDto {
+  previewId: string
+  templateId: string
+  status: string
+  issues: RenderIssueDto[]
+  error: string | null
+  sizeBytes: number | null
+  createdAt: string
+  completedAt: string | null
+}
+
 export interface PreviewRequest {
   data: null | JsonElement
 }

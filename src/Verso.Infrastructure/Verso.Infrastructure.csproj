@@ -1,11 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- EF Core persistence, migrations, health checks. Later: storage, rendering adapters. -->
+  <!-- EF Core persistence, migrations, health checks, Hangfire job storage. Later: document storage. -->
   <ItemGroup>
     <ProjectReference Include="..\Verso.Application\Verso.Application.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
+    <PackageReference Include="Hangfire.Core" />
+    <PackageReference Include="Hangfire.SqlServer" />
+    <PackageReference Include="Hangfire.NetCore" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Verso.Api.Tests" />
