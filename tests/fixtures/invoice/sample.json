@@ -1,0 +1,34 @@
+{
+  "_comment": "Synthetic test data. Fictional companies; .example domains; IBAN/VAT numbers are made up.",
+  "issuer": {
+    "name": "Halcyon Energy Ltd",
+    "address": "14 Archbishop Makarios III Ave, 1065 Nicosia, Cyprus",
+    "vatNumber": "CY10293847X",
+    "email": "billing@halcyon-energy.example"
+  },
+  "invoice": {
+    "number": "INV-2026-003901",
+    "date": "2026-11-02",
+    "dueDate": "2026-12-02",
+    "currency": "EUR",
+    "poNumber": "PO-55120"
+  },
+  "customer": {
+    "name": "Kestrel Logistics Ltd",
+    "address": "88 Franklin Roosevelt Ave, 3011 Limassol, Cyprus",
+    "vatNumber": "CY99887766K",
+    "email": "ap@kestrel-logistics.example"
+  },
+  "lines": [
+    { "description": "Electricity supply, October 2026 (commercial tariff)", "qty": 18450, "unit": "kWh", "unitPrice": 0.2185, "vatRate": 19, "amount": 4031.33 },
+    { "description": "Reactive power surcharge", "qty": 1, "unit": "month", "unitPrice": 592.04, "vatRate": 19, "amount": 592.04 },
+    { "description": "Meter rental", "qty": 1, "unit": "month", "unitPrice": 12.5, "vatRate": 19, "amount": 12.5 }
+  ],
+  "totals": { "net": 4635.87, "vat": 880.82, "gross": 5516.69 },
+  "payment": {
+    "iban": "CY00 0000 0000 0000 0000 0000 0000",
+    "bic": "TESTCY2N",
+    "reference": "INV-2026-003901",
+    "terms": "Payment due within 30 days. Late payments may incur interest."
+  }
+}

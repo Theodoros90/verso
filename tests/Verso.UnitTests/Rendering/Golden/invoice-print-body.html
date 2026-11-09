@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'">
+<title>Commercial invoice</title>
+<style>
+:root{--v-sans:'Schibsted Grotesk','Segoe UI',Arial,sans-serif;--v-serif:'Source Serif 4',Georgia,'Times New Roman',serif;--v-mono:'IBM Plex Mono',Consolas,'Courier New',monospace}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:var(--v-sans);font-size:10pt;line-height:1.35;color:#1A232C;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.v-area{position:relative;overflow:hidden}
+.v-abs{position:absolute;overflow:hidden}
+.v-abs>*{width:100%;height:100%}
+.v-text,.v-field{white-space:pre-line;overflow-wrap:anywhere}
+.v-label{color:#66727E;margin-right:2mm}
+.v-divider{height:0}
+.v-block>.v-image{display:block;max-width:100%}
+.v-table{width:100%;border-collapse:collapse}
+.v-table thead{display:table-header-group}
+.v-table th{font-weight:600;border-bottom:1pt solid #1A232C;padding:1.2mm 1mm}
+.v-table td{border-bottom:0.5pt solid #E3E7EB;padding:1.2mm 1mm;vertical-align:top}
+.v-table tr{break-inside:avoid}
+.v-empty{color:#66727E;font-style:italic}
+.v-signature{display:flex;flex-direction:column;justify-content:flex-end}
+.v-sigline{border-top:0.75pt solid #1A232C}
+.v-siglabel{font-size:8pt;color:#66727E;padding-top:1mm}
+.v-missing{border:1px dashed #A82E6B;color:#A82E6B;background:#F6E5EE;border-radius:2px;padding:0 2px;font-family:'IBM Plex Mono',Consolas,monospace;font-size:0.9em;white-space:nowrap}
+@page{size:210mm 297mm}
+.v-body{padding:0 16mm;padding-left:16mm}
+</style>
+</head>
+<body>
+<main class="v-body">
+<div class="v-block"><table class="v-table" data-id="lines" style="font-size:10pt;color:#1A232C"><thead><tr><th style="text-align:left;width:46%">Description</th><th style="text-align:right;width:10%">Qty</th><th style="text-align:right;width:16%">Unit price</th><th style="text-align:right;width:10%">VAT %</th><th style="text-align:right;width:18%">Amount</th></tr></thead><tbody><tr><td style="text-align:left;width:46%">Electricity supply, October 2026 (commercial tariff)</td><td style="text-align:right;width:10%">18,450</td><td style="text-align:right;width:16%">€0.22</td><td style="text-align:right;width:10%">19</td><td style="text-align:right;width:18%">€4,031.33</td></tr><tr><td style="text-align:left;width:46%">Reactive power surcharge</td><td style="text-align:right;width:10%">1</td><td style="text-align:right;width:16%">€592.04</td><td style="text-align:right;width:10%">19</td><td style="text-align:right;width:18%">€592.04</td></tr><tr><td style="text-align:left;width:46%">Meter rental</td><td style="text-align:right;width:10%">1</td><td style="text-align:right;width:16%">€12.50</td><td style="text-align:right;width:10%">19</td><td style="text-align:right;width:18%">€12.50</td></tr></tbody></table></div>
+<div class="v-block" style="margin-top:4mm"><div class="v-field" data-id="net" style="font-size:10pt;text-align:right;color:#1A232C"><span class="v-label">Net</span><span class="v-value">€4,635.87</span></div></div>
+<div class="v-block"><div class="v-field" data-id="vat" style="font-size:10pt;text-align:right;color:#1A232C"><span class="v-label">VAT</span><span class="v-value">€880.82</span></div></div>
+<div class="v-block"><div class="v-field" data-id="gross" style="font-size:12pt;font-weight:600;text-align:right;color:#1A232C"><span class="v-label">Total due</span><span class="v-value">€5,516.69</span></div></div>
+<div class="v-block" style="margin-top:6mm"><div class="v-divider" data-id="pay-rule" style="border-top:0.5pt solid #C4CDD6"></div></div>
+<div class="v-block" style="margin-top:3mm"><div class="v-text" data-id="payment" style="font-size:9pt;color:#1A232C">Pay to IBAN CY00 0000 0000 0000 0000 0000 0000 (BIC TESTCY2N), reference INV-2026-003901.&#xA;Payment due within 30 days. Late payments may incur interest.</div></div>
+<div class="v-block" style="margin-top:12mm"><div class="v-signature" data-id="sign"><div class="v-sigline"></div><div class="v-siglabel">Authorised signatory</div></div></div>
+</main>
+</body>
+</html>

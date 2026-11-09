@@ -11,7 +11,7 @@ Bank-focused document-generation and workflow platform. MVP: maintain an invoice
 
 **M1: Application foundation** — accepted 2026-11-09.
 **M2: Template storage** — accepted 2026-11-09.
-**M3: Rendering engine** — in progress. D4 decided: fixed header/footer regions + flowing body. Acceptance criteria are in plan §9.
+**M3: Rendering engine** — accepted 2026-11-09. Layout model: docs/layout-model.md. Next in plan: M4 template designer UI. Acceptance criteria are in plan §9.
 Update this line when a milestone is accepted and the next one is agreed.
 
 ## Commands
@@ -23,6 +23,7 @@ dotnet test Verso.slnx                      # integration tests use LocalDB (VER
 dotnet tool run dotnet-ef migrations add <Name> --project src/Verso.Infrastructure --startup-project src/Verso.Api --output-dir Persistence/Migrations
 dotnet tool run dotnet-ef database update --project src/Verso.Infrastructure --startup-project src/Verso.Api
 $env:VERSO_UPDATE_OPENAPI = "1"; dotnet test --filter OpenApiDocument   # after an intended API change; review the diff of docs/openapi/v1.json
+$env:VERSO_UPDATE_GOLDEN = "1"; dotnet test --filter Golden            # after an intended rendering change; review the diff of tests/Verso.UnitTests/Rendering/Golden
 cd src/verso-web; npm ci; npm run typecheck; npm test; npm run build
 ```
 
@@ -44,10 +45,10 @@ Ask before adding a dependency or changing a version not listed here.
 ## Architecture rules
 
 - Modular monolith, not microservices. Two processes: `Verso.Api` and `Verso.Worker`. They share code and the database, and nothing else (no direct network calls between them).
-- Layered projects: `Verso.Domain` → nothing; `Verso.Application` → Domain; `Verso.Infrastructure` → Application; `Verso.Api` and `Verso.Worker` → Application + Infrastructure. Frontend in `src/verso-web`. Keep it lightweight: no abstraction or new project without a concrete need.
+- Layered projects: `Verso.Domain` → nothing; `Verso.Rendering` → nothing; `Verso.Application` → Domain + Rendering; `Verso.Infrastructure` → Application; `Verso.Api` and `Verso.Worker` → Application + Infrastructure. Frontend in `src/verso-web`. Keep it lightweight: no abstraction or new project without a concrete need.
 - Modules (Templates, Workflows, Executions, Documents, Audit) are folders inside the layered projects. Module folders don't reach into each other's internals. One `VersoDbContext`; each module's tables go in its own SQL schema (`Schemas` class); no cross-schema foreign keys.
 - Template designer and workflow designer are separate modules and screens. Workflows reference template **versions**; they never embed template content.
-- Rendering (layout JSON + data → HTML) stays pure: no EF, ASP.NET or Playwright. Only the Worker uses Playwright/Chromium. The API never runs Chromium.
+- Rendering lives in `Verso.Rendering` (layout JSON + data → HTML; no dependencies, enforced by RendererPurityTests). Only the Worker uses Playwright/Chromium. The API never runs Chromium. PDFs are printed from the renderer's `Print` parts (body + header/footer templates), not from the preview HTML.
 - Migrations are applied with `dotnet ef database update`, never automatically at app startup.
 - Published template and workflow versions are immutable. Executions run against published versions only and record the exact versions they used.
 - Execution states: `Queued → Running → Succeeded | Rejected | Failed`. Rejected = data failed validation (not retryable). Failed = technical error (retryable).

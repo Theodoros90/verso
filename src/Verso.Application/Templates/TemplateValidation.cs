@@ -1,13 +1,13 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Verso.Domain.Templates;
+using Verso.Rendering.Layout;
 
 namespace Verso.Application.Templates;
 
 /// <summary>Input rules for template requests. Error keys are camelCase JSON paths of the offending field.</summary>
 public static partial class TemplateValidation
 {
-    public const int CurrentLayoutSchemaVersion = 1;
     public const int MaxLayoutChars = 1_000_000;
     public const int MaxDataSchemaChars = 256_000;
     public const int MaxSampleDataChars = 256_000;
@@ -54,14 +54,13 @@ public static partial class TemplateValidation
         var dataSchema = RequireObject(request.DataSchema, "dataSchema", MaxDataSchemaChars, errors);
         var sampleData = RequireObject(request.SampleData, "sampleData", MaxSampleDataChars, errors);
 
-        if (request.Layout is { ValueKind: JsonValueKind.Object } layoutElement)
+        if (layout is not null && request.Layout is { } layoutElement)
         {
-            if (!layoutElement.TryGetProperty("layoutSchemaVersion", out var v)
-                || v.ValueKind != JsonValueKind.Number
-                || !v.TryGetInt32(out var version)
-                || version != CurrentLayoutSchemaVersion)
+            // Full structural check of layout model v1 (element types, geometry, colors, bindings, image sources).
+            var (_, layoutErrors) = LayoutParser.Parse(layoutElement);
+            foreach (var group in layoutErrors.GroupBy(e => e.Path.Length == 0 ? "layout" : $"layout.{e.Path}"))
             {
-                errors["layout.layoutSchemaVersion"] = [$"Must be {CurrentLayoutSchemaVersion}."];
+                errors[group.Key] = [.. group.Select(e => e.Message)];
             }
         }
 

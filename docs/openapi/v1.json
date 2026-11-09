@@ -606,6 +606,83 @@
           }
         }
       }
+    },
+    "/api/v1/templates/{id}/draft/preview/html": {
+      "post": {
+        "tags": [
+          "Templates"
+        ],
+        "operationId": "PreviewTemplateDraftHtml",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PreviewRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HtmlPreviewDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -770,6 +847,24 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/HealthCheckEntry"
+            }
+          }
+        }
+      },
+      "HtmlPreviewDto": {
+        "required": [
+          "html",
+          "issues"
+        ],
+        "type": "object",
+        "properties": {
+          "html": {
+            "type": "string"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RenderIssueDto"
             }
           }
         }
@@ -979,6 +1074,24 @@
           }
         }
       },
+      "PreviewRequest": {
+        "required": [
+          "data"
+        ],
+        "type": "object",
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            ]
+          }
+        }
+      },
       "ProblemDetails": {
         "type": "object",
         "properties": {
@@ -1010,6 +1123,36 @@
             ]
           },
           "instance": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "RenderIssueDto": {
+        "required": [
+          "severity",
+          "code",
+          "message",
+          "elementId",
+          "path"
+        ],
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "elementId": {
+            "type": "string"
+          },
+          "path": {
             "type": [
               "null",
               "string"

@@ -394,12 +394,20 @@ Decisions made while implementing M2 (2026-11-09):
 - OpenAPI document checked in at `docs/openapi/v1.json` with a drift test; generated frontend types wait until the frontend consumes these endpoints (M4).
 - Published-version immutability is enforced by the domain, a check constraint and filtered unique indexes; denying UPDATE/DELETE to the app login is part of deployment hardening (M9).
 
-### M3 — Rendering engine (M)
+### M3 — Rendering engine (M) — ✅ accepted 2026-11-09
 - Layout model v1 (§D4), element types for MVP: text, data field, repeating table, divider, box, image (embedded), signature line. QR/barcode/conditional block: deferred to post-MVP unless you want them now.
 - Binding `{{path|filter}}`, HTML encoding, number/currency/date formatting (locale: §10).
 - `POST …/preview/html`.
 
 **Acceptance:** golden HTML for each element; invoice sample renders all fields; missing binding renders a visible placeholder in preview and is reported as an issue; HTML-injection fixture is escaped; renderer has no I/O dependencies.
+
+Decisions made while implementing M3 (2026-11-09), full model in [docs/layout-model.md](../layout-model.md):
+- **D4 implemented** as fixed-height header/footer bands (absolutely positioned elements, mm) plus a flowing body.
+- **How pagination works (verified with Chromium):** CSS-only approaches failed. Repeated `thead` spacers are dropped by Chromium when taller than ¼ page, and `position:fixed` elements can't be placed into page margins. The renderer therefore outputs, besides the screen preview, a **print body plus header/footer templates** for Chromium's `Page.printToPDF` (`displayHeaderFooter`), which repeats them in each page's top/bottom margin at any height. A 60-line invoice printed through the DevTools protocol showed the full header, footer and table headings on all 3 pages. M5 uses this; it also enables "Page X of Y" later.
+- New project `Verso.Rendering` (no dependencies), referenced by Application; purity enforced by a metadata test.
+- Formatting fixed to English/EUR (`€1,234.50`, `02 Nov 2026`), independent of server culture; locale stays open in §10.
+- Saving a draft now validates the full layout structure (M2 only checked `layoutSchemaVersion`).
+- Deferred from M3: web-font embedding (M5), page numbers, QR/barcode/conditional blocks, body columns.
 
 ### M4 — Template designer UI (L)
 - Template list; designer with canvas, palette, properties panel, element tree, sample-data toggle, binding picker from the data schema, unmapped warnings, undo, save/publish, HTML preview pane.

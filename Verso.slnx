@@ -4,6 +4,7 @@
     <Project Path="src/Verso.Application/Verso.Application.csproj" />
     <Project Path="src/Verso.Domain/Verso.Domain.csproj" />
     <Project Path="src/Verso.Infrastructure/Verso.Infrastructure.csproj" />
+    <Project Path="src/Verso.Rendering/Verso.Rendering.csproj" />
     <Project Path="src/Verso.Worker/Verso.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">

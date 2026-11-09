@@ -83,6 +83,14 @@ public static class TemplateEndpoints
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
 
+        group.MapPost("/{id:guid}/draft/preview/html", async (Guid id, PreviewRequest? request, TemplatePreview preview, CancellationToken ct) =>
+                (await preview.PreviewDraftAsync(id, request, ct)).ToResult())
+            .WithName("PreviewTemplateDraftHtml")
+            .Produces<HtmlPreviewDto>()
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
         return app;
     }
 }

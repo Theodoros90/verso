@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Layout JSON + data → HTML. Pure: no file, network, database, ASP.NET or Playwright dependencies
+    (enforced by RendererPurityTests). Only the base class library.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Verso.UnitTests" />
+  </ItemGroup>
+</Project>

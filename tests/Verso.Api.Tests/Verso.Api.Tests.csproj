@@ -16,6 +16,10 @@
     <ProjectReference Include="..\..\src\Verso.Infrastructure\Verso.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Shared synthetic fixtures, copied next to the test assembly. -->
+    <None Include="..\fixtures\**\*.json" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 </Project>

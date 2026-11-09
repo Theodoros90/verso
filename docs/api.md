@@ -57,6 +57,7 @@ A template has at most one draft at a time. Version numbers start at 1 and are a
 | POST | `/api/v1/templates/{id}/draft` | 201 `TemplateVersion` + `ETag` | Start a new draft from the latest published version |
 | PUT | `/api/v1/templates/{id}/draft` | 200 `TemplateVersion` + new `ETag` | Replace the draft content (`If-Match`) |
 | POST | `/api/v1/templates/{id}/draft/publish` | 200 `TemplateVersion` (published) | Freeze the draft as the next version (`If-Match`) |
+| POST | `/api/v1/templates/{id}/draft/preview/html` | 200 `HtmlPreview` | Render the draft to HTML with sample or supplied data |
 
 ### Create: `POST /api/v1/templates`
 
@@ -94,7 +95,7 @@ Headers: `If-Match: "AAAAAAAAB9I="` (the ETag from your last read or save). The 
 | `pageSettings.size` | `A4` only |
 | `pageSettings.orientation` | `portrait` or `landscape` |
 | `pageSettings.marginsMm.*` | 0–50 |
-| `layout` | JSON object with `layoutSchemaVersion: 1`; at most 1,000,000 characters. The element model is defined in M3; until then other properties are stored as given. |
+| `layout` | A valid [layout model v1](layout-model.md) document; at most 1,000,000 characters. Structural errors come back per field, e.g. `layout.body.blocks[0].props.src`. Unresolved data bindings are not save errors; they show up as preview issues. |
 | `dataSchema` | JSON object (intended: a JSON Schema for the template's data); at most 256,000 characters |
 | `sampleData` | JSON object, **synthetic data only**; at most 256,000 characters |
 
@@ -113,6 +114,26 @@ Response `TemplateVersion` (also returned by the GET, start-draft and publish en
 Headers: `If-Match` with the draft's current ETag. No body. Returns the now-published version with `versionNumber` and `contentHash`.
 
 `contentHash` is the SHA-256 (hex) of the canonical JSON of `{ pageSettings, layout, dataSchema }`: properties sorted, no whitespace, margins without trailing zeros. Sample data isn't included, because it doesn't affect generated documents.
+
+### Preview: `POST /api/v1/templates/{id}/draft/preview/html`
+
+Renders the current draft in **preview mode**. The body is optional:
+
+```json
+{ "data": { "invoice": { "number": "INV-X" } } }
+```
+
+Without `data` (or without a body), the draft's `sampleData` is used. `data` must be a JSON object of at most 1,000,000 characters, **synthetic data only**. No `If-Match` is needed; nothing is changed or audited.
+
+```json
+{ "html": "<!doctype html>…",
+  "issues": [ { "severity": "error", "code": "binding.missing", "message": "No value for 'customer.name'.",
+                "elementId": "billto", "path": "customer.name" } ] }
+```
+
+- `html` is a self-contained document (inline CSS, embedded images, a CSP that blocks scripts and network access) showing one continuous A4 sheet. Unresolved values appear as dashed `{{path}}` placeholders. Display it in a sandboxed `<iframe srcdoc>`. Real page breaks are visible in the PDF (M5).
+- `issues`: codes and meanings are in [layout-model.md](layout-model.md#issue-codes). An empty list means every binding resolved.
+- Errors: 400 `validation` (bad `data`), 404 `template.not_found`, 409 `template.no_draft`, 409 `template.layout_invalid` (only for drafts saved before layout validation existed; re-save to fix).
 
 ### Summaries
 

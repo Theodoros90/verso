@@ -11,6 +11,7 @@ public static class DependencyInjection
     {
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<TemplateService>();
+        services.AddScoped<TemplatePreview>();
         services.AddScoped<AuditQueries>();
         return services;
     }

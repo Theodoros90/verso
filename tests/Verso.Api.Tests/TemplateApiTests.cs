@@ -32,12 +32,12 @@ public sealed class TemplateApiTests(MigratedDatabaseFixture fixture)
         Assert.Equal(HttpStatusCode.OK, save2.StatusCode);
         var etag2 = ETagOf(save2);
         Assert.NotEqual(etag1, etag2);
-        Assert.Equal("second", (await ReadAsync(save2)).GetProperty("layout").GetProperty("marker").GetString());
+        Assert.Equal("second", MarkerOf(await ReadAsync(save2)));
 
         // A stale If-Match is rejected and changes nothing.
         using var stale = await PutDraftAsync(id, etag1, DraftBody("lost update"));
         await AssertProblemAsync(stale, HttpStatusCode.PreconditionFailed, "precondition.failed");
-        Assert.Equal("second", (await GetDraftAsync(id)).Draft.GetProperty("layout").GetProperty("marker").GetString());
+        Assert.Equal("second", MarkerOf((await GetDraftAsync(id)).Draft));
 
         // Publish → v1, frozen.
         using var publish1 = await PublishAsync(id, etag2);
@@ -51,12 +51,12 @@ public sealed class TemplateApiTests(MigratedDatabaseFixture fixture)
         using var putPublished = await PutDraftAsync(id, ETagOf(publish1), DraftBody("edit published"));
         await AssertProblemAsync(putPublished, HttpStatusCode.Conflict, "template.no_draft");
         using var v1Again = await _client.GetAsync(new Uri($"/api/v1/templates/{id}/versions/{v1.GetProperty("versionId")}", UriKind.Relative));
-        Assert.Equal("second", (await ReadAsync(v1Again)).GetProperty("layout").GetProperty("marker").GetString());
+        Assert.Equal("second", MarkerOf(await ReadAsync(v1Again)));
 
         // Second draft (copied from v1) → edit → publish v2.
         using var start = await _client.PostAsync(new Uri($"/api/v1/templates/{id}/draft", UriKind.Relative), null);
         Assert.Equal(HttpStatusCode.Created, start.StatusCode);
-        Assert.Equal("second", (await ReadAsync(start)).GetProperty("layout").GetProperty("marker").GetString());
+        Assert.Equal("second", MarkerOf(await ReadAsync(start)));
         using var save3 = await PutDraftAsync(id, ETagOf(start), DraftBody("third"));
         using var publish2 = await PublishAsync(id, ETagOf(save3));
         Assert.Equal(2, (await ReadAsync(publish2)).GetProperty("versionNumber").GetInt32());
@@ -257,10 +257,20 @@ public sealed class TemplateApiTests(MigratedDatabaseFixture fixture)
             ["orientation"] = "portrait",
             ["marginsMm"] = new JsonObject { ["top"] = 18, ["right"] = 16, ["bottom"] = 18, ["left"] = 16 },
         },
-        ["layout"] = new JsonObject { ["layoutSchemaVersion"] = 1, ["marker"] = marker },
+        ["layout"] = new JsonObject
+        {
+            ["layoutSchemaVersion"] = 1,
+            ["body"] = new JsonObject
+            {
+                ["blocks"] = new JsonArray(new JsonObject { ["id"] = "marker", ["type"] = "text", ["props"] = new JsonObject { ["text"] = marker } }),
+            },
+        },
         ["dataSchema"] = new JsonObject { ["type"] = "object" },
         ["sampleData"] = new JsonObject { ["invoice"] = new JsonObject { ["number"] = "INV-2026-000001" } },
     };
+
+    private static string? MarkerOf(JsonElement version) =>
+        version.GetProperty("layout").GetProperty("body").GetProperty("blocks")[0].GetProperty("props").GetProperty("text").GetString();
 
     private static string ETagOf(HttpResponseMessage response) =>
         response.Headers.ETag?.ToString() ?? throw new InvalidOperationException($"No ETag on {(int)response.StatusCode} response.");

@@ -1,0 +1,25 @@
+{
+  "_comment": "Synthetic hostile data: every value tries to break out of HTML or re-trigger template evaluation.",
+  "issuer": {
+    "name": "Tom & Jerry <b>bold</b>",
+    "address": "</div><script>alert('issuer')</script>",
+    "vatNumber": "\" onmouseover=\"alert(1)",
+    "email": "x@example.test'><img src=x onerror=alert(2)>"
+  },
+  "invoice": {
+    "number": "{{issuer.name}}",
+    "date": "2026-11-02",
+    "dueDate": "<svg onload=alert(3)>",
+    "poNumber": "<style>body{display:none}</style>"
+  },
+  "customer": {
+    "name": "<script>alert('x')</script>",
+    "address": "\"><iframe src=\"https://evil.example\"></iframe>",
+    "vatNumber": "&lt;already-encoded&gt;"
+  },
+  "lines": [
+    { "description": "<img src=x onerror=alert(4)>", "qty": 1, "unitPrice": "<b>9</b>", "vatRate": "19\" style=\"x", "amount": 1 }
+  ],
+  "totals": { "net": 1, "vat": 0, "gross": 1 },
+  "payment": { "iban": "javascript:alert(5)", "bic": "B", "reference": "R", "terms": "T" }
+}
