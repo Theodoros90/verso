@@ -5,7 +5,7 @@ import layoutRaw from '../../../../../../tests/fixtures/invoice/layout.json?raw'
 import sampleRaw from '../../../../../../tests/fixtures/invoice/sample.json?raw'
 
 import { bindingsOf, parseText, usedPaths } from './bindings'
-import { commitFrom, createHistory, push, redo, replace, undo } from './history'
+import { commitFrom, createHistory, push, redo, replace, undo } from '@/lib/history'
 import { DEFAULT_PAGE_SETTINGS, emptyLayout, type Layout, type PositionedElement } from './layout'
 import {
   addElement,

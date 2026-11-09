@@ -4,6 +4,7 @@ using Verso.Api.Common;
 using Verso.Api.Health;
 using Verso.Api.Realtime;
 using Verso.Api.Templates;
+using Verso.Api.Workflows;
 using Verso.Application;
 using Verso.Infrastructure;
 using Verso.Infrastructure.Jobs;
@@ -58,6 +59,7 @@ app.MapOpenApi();
 app.MapHealthEndpoints();
 app.MapTemplateEndpoints();
 app.MapPdfPreviewEndpoints();
+app.MapWorkflowEndpoints();
 app.MapAuditEndpoints();
 app.MapHub<ExecutionsHub>(ExecutionsHub.Path);
 

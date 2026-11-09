@@ -10,7 +10,7 @@ public enum ErrorKind
 }
 
 /// <summary>An expected failure of a use case. <see cref="Code"/> is stable and documented; clients can rely on it.</summary>
-public sealed record AppError(ErrorKind Kind, string Code, string Message, IReadOnlyDictionary<string, string[]>? Fields = null)
+public sealed record AppError(ErrorKind Kind, string Code, string Message, IReadOnlyDictionary<string, string[]>? Fields = null, IReadOnlyDictionary<string, object?>? Extensions = null)
 {
     public static AppError Validation(IReadOnlyDictionary<string, string[]> fields) =>
         new(ErrorKind.Validation, "validation", "One or more fields are invalid.", fields);

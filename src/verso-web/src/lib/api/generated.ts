@@ -21,6 +21,12 @@ export interface CreateTemplateRequest {
   documentType: string | null
 }
 
+export interface CreateWorkflowRequest {
+  key: string | null
+  name: string | null
+  description: string | null
+}
+
 export interface HealthCheckEntry {
   name: string
   status: string
@@ -58,6 +64,17 @@ export interface MarginsDto {
   left: number
 }
 
+export interface NodeTypeDto {
+  type: string
+  label: string
+  category: string
+  description: string
+  inputs: PortDto[]
+  outputs: PortDto[]
+  configSchema: JsonElement
+  defaults: JsonElement
+}
+
 export interface PageResultOfAuditEntryDto {
   items: AuditEntryDto[]
   page: number
@@ -67,6 +84,13 @@ export interface PageResultOfAuditEntryDto {
 
 export interface PageResultOfTemplateSummaryDto {
   items: TemplateSummaryDto[]
+  page: number
+  pageSize: number
+  total: number
+}
+
+export interface PageResultOfWorkflowSummaryDto {
+  items: WorkflowSummaryDto[]
   page: number
   pageSize: number
   total: number
@@ -87,6 +111,12 @@ export interface PdfPreviewDto {
   sizeBytes: number | null
   createdAt: string
   completedAt: string | null
+}
+
+export interface PortDto {
+  id: string
+  label: string
+  required: boolean
 }
 
 export interface PreviewRequest {
@@ -114,6 +144,10 @@ export interface SaveDraftRequest {
   layout: null | JsonElement
   dataSchema: null | JsonElement
   sampleData: null | JsonElement
+}
+
+export interface SaveWorkflowDraftRequest {
+  definition: null | JsonElement
 }
 
 export interface TemplateDto {
@@ -157,6 +191,71 @@ export interface TemplateVersionDto {
 }
 
 export interface TemplateVersionSummaryDto {
+  versionId: string
+  versionNumber: number | null
+  status: string
+  contentHash: string | null
+  updatedAt: string
+  updatedBy: string
+  publishedAt: string | null
+  publishedBy: string | null
+}
+
+export interface ValidateWorkflowRequest {
+  definition: null | JsonElement
+}
+
+export interface WorkflowDto {
+  id: string
+  key: string
+  name: string
+  description: string | null
+  createdAt: string
+  createdBy: string
+  latestPublishedVersion: number | null
+  draftVersionId: string | null
+}
+
+export interface WorkflowIssueDto {
+  severity: string
+  code: string
+  message: string
+  nodeId?: string | null
+  edgeId?: string | null
+  port?: string | null
+  field?: string | null
+}
+
+export interface WorkflowSummaryDto {
+  id: string
+  key: string
+  name: string
+  latestPublishedVersion: number | null
+  hasDraft: boolean
+  updatedAt: string
+}
+
+export interface WorkflowValidationDto {
+  valid: boolean
+  issues: WorkflowIssueDto[]
+}
+
+export interface WorkflowVersionDto {
+  versionId: string
+  workflowId: string
+  versionNumber: number | null
+  status: string
+  definition: JsonElement
+  contentHash: string | null
+  createdAt: string
+  createdBy: string
+  updatedAt: string
+  updatedBy: string
+  publishedAt: string | null
+  publishedBy: string | null
+}
+
+export interface WorkflowVersionSummaryDto {
   versionId: string
   versionNumber: number | null
   status: string

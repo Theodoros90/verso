@@ -189,6 +189,71 @@ Hub: `/hubs/executions` (plan §5.5). No authentication yet, like the rest of th
 
 Notifications are hints, not the source of truth: after `PreviewReady`, read `GET /api/v1/previews/{previewId}`. Subscribe first, then read once, because the preview may have finished before you subscribed. The API relays finished previews from the database about every 500 ms (the Worker and the API share only the database), so a notification arrives within about a second. Clients should also poll slowly (the designer polls every 3 s) in case WebSockets are blocked.
 
+## Workflows
+
+A workflow is a graph of steps: a trigger, then steps connected output → input. Its lifecycle is the same as a template's: **create** (a draft containing only an API trigger) → **save draft** (`If-Match`) → **publish** (version N, frozen) → **start draft** (copy of the latest published version). Every change is audited (`entityType=Workflow`).
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/node-types` | 200 `NodeType[]` | Node catalog: type, category, ports, settings schema, defaults |
+| GET | `/api/v1/workflows` | 200 page of `WorkflowSummary` | List, ordered by key |
+| POST | `/api/v1/workflows` | 201 `Workflow`, `Location` | Create `{ key, name, description? }` |
+| GET | `/api/v1/workflows/{id}` | 200 `Workflow` | Metadata |
+| GET | `/api/v1/workflows/{id}/versions` | 200 `WorkflowVersionSummary[]` | History: draft first, then published newest first |
+| GET | `/api/v1/workflows/{id}/versions/{versionId}` | 200 `WorkflowVersion` + `ETag` | One version |
+| GET | `/api/v1/workflows/{id}/draft` | 200 `WorkflowVersion` + `ETag` | The draft |
+| POST | `/api/v1/workflows/{id}/draft` | 201 `WorkflowVersion` + `ETag` | Start a draft from the latest published version |
+| PUT | `/api/v1/workflows/{id}/draft` | 200 `WorkflowVersion` + new `ETag` | Save `{ definition }` (`If-Match`) |
+| POST | `/api/v1/workflows/{id}/draft/validate` | 200 `WorkflowValidation` | Validate `{ definition }` (unsaved edits) or, without a body, the saved draft |
+| POST | `/api/v1/workflows/{id}/draft/publish` | 200 `WorkflowVersion` (published) | Validate and freeze (`If-Match`) |
+
+- `key`: 2–48 characters, lower-case letters, digits and single hyphens, starting with a letter (`invoice-standard`). Unique; never changes; used in the submission URL `POST /api/v1/workflows/{key}/executions` (M7).
+- Errors: 404 `workflow.not_found` / `workflow.version_not_found`, 409 `workflow.key_taken` / `workflow.no_draft` / `workflow.draft_exists` / `workflow.nothing_published` / `workflow.invalid`, 412 / 428 as for templates.
+
+### Definition
+
+```json
+{ "nodes": [ { "id": "validate", "type": "validate", "title": "Validate invoice data", "position": { "x": 260, "y": 80 },
+               "config": { "required": ["invoice.number"], "types": [ { "field": "invoice.date", "type": "date" } ] } } ],
+  "edges": [ { "id": "e1", "source": "trigger", "sourcePort": "out", "target": "validate", "targetPort": "in" } ] }
+```
+
+Saving checks only the **structure** (400 `validation` with paths like `definition.nodes[0].id`): ids of 1–64 `A–Z a–z 0–9 - _`, unique; numeric positions; `config` an object; no unknown properties; at most 200 nodes and 400 edges; at most 500,000 characters. An unfinished graph can be saved; it is stored exactly as sent.
+
+### Node types
+
+| `type` | Category | Inputs → outputs | Settings |
+|---|---|---|---|
+| `api-trigger` | input | — → `out` | none |
+| `validate` | process | `in` → `valid`, `invalid` (optional) | `required`: data paths; `types`: `[{ field, type }]` with `type` one of `text`, `number`, `date`, `email`, `eu-vat`, `iban`. At least one rule. |
+| `generate-pdf` | doc | `in` → `success`, `failed` (optional) | `templateId`; `templateVersion`: `latest-published` (resolved when a run is submitted) or a published version number such as `"2"`; `fileName` pattern such as `{{invoice.number}}.pdf` |
+| `archive` | output | `in` → — | `folderPattern`; `retention`: `7y`, `10y` or `permanent`; `metadata`: `[{ key, value }]` (at most 20) |
+
+`configSchema` is a JSON Schema subset (`type`, `properties`, `required`, `items`, `minItems`/`maxItems`, `minLength`/`maxLength`, `pattern`, `enum`, `format: uuid`) plus designer hints `x-widget` and `x-enumLabels`.
+
+### Validation
+
+```json
+{ "valid": false,
+  "issues": [
+    { "severity": "error", "code": "template.not_published", "message": "'Commercial invoice' has no published version yet. …", "nodeId": "pdf", "edgeId": null, "port": null, "field": "templateVersion" },
+    { "severity": "warning", "code": "port.unconnected", "message": "Invalid records will end the run as Rejected.", "nodeId": "validate", "edgeId": null, "port": "invalid", "field": null } ] }
+```
+
+| `code` | Severity | Meaning |
+|---|---|---|
+| `graph.no_trigger` / `graph.multiple_triggers` | error | A workflow has exactly one trigger |
+| `node.unknown_type` | error | Not in the node catalog |
+| `edge.unknown_node` / `edge.unknown_port` | error | The connection points to a missing node or port |
+| `edge.duplicate_output` | error | An output already leads somewhere; each output has one next step |
+| `graph.cycle` | error | Loops (including a node connected to itself) |
+| `node.unreachable` | error | Not reachable from the trigger |
+| `port.unconnected` | error / warning | A required output isn't connected (error); an optional one (`invalid`, `failed`) is a warning |
+| `config.required` / `config.invalid` / `config.unknown` | error | Settings don't match the node's schema; `field` is the settings path (e.g. `metadata[0].key`) |
+| `template.not_found` / `template.not_published` | error | The referenced template doesn't exist, or the chosen version (or, for `latest-published`, any version) isn't published. Drafts can't be used in workflows. |
+
+`valid` is true when there are no errors. Publishing a draft with errors returns **409 `workflow.invalid`** with the same `issues` array in the problem body.
+
 ## Audit
 
 ### `GET /api/v1/audit?entityType=Template&entityId={id}&page=1&pageSize=50`
@@ -210,5 +275,9 @@ Append-only log, oldest first (`sequence` is the authoritative order). Both filt
 | `TemplateDraftSaved` | `{ versionId }` |
 | `TemplateDraftCreated` | `{ versionId, fromVersion }` |
 | `TemplatePublished` | `{ versionId, versionNumber, contentHash }` |
+| `WorkflowCreated` | `{ key }` |
+| `WorkflowDraftSaved` | `{ versionId }` |
+| `WorkflowDraftCreated` | `{ versionId, fromVersion }` |
+| `WorkflowPublished` | `{ versionId, versionNumber, contentHash }` |
 
 Rejected requests (validation, 409, 412, 428) are not audited; they change nothing. `traceId` matches the `TraceId` in the API's structured logs.

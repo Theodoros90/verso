@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Verso.Application.Audit;
 using Verso.Application.Templates;
+using Verso.Application.Workflows;
 
 namespace Verso.Application;
 
@@ -13,6 +14,7 @@ public static class DependencyInjection
         services.AddScoped<TemplateService>();
         services.AddScoped<TemplatePreview>();
         services.AddScoped<PdfPreviews>();
+        services.AddScoped<WorkflowService>();
         services.AddScoped<AuditQueries>();
         return services;
     }

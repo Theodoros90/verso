@@ -17,3 +17,24 @@ if (!window.matchMedia) {
     dispatchEvent: () => false,
   }))
 }
+
+// React Flow (workflow designer) needs these browser APIs, which jsdom lacks. Minimal no-op stand-ins:
+// nothing is measured or laid out in jsdom, so tests check behaviour, not geometry.
+if (!('ResizeObserver' in window)) {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  )
+}
+if (!('DOMMatrixReadOnly' in window)) {
+  vi.stubGlobal(
+    'DOMMatrixReadOnly',
+    class {
+      m22 = 1
+    },
+  )
+}

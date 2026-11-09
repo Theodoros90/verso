@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Verso.Domain.Audit;
 using Verso.Domain.Templates;
+using Verso.Domain.Workflows;
 
 namespace Verso.Application;
 
@@ -11,11 +12,16 @@ public interface IVersoDbContext
     DbSet<TemplateVersion> TemplateVersions { get; }
     DbSet<AuditEntry> AuditEntries { get; }
     DbSet<PdfPreview> PdfPreviews { get; }
+    DbSet<Workflow> Workflows { get; }
+    DbSet<WorkflowVersion> WorkflowVersions { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Tells EF which rowversion the caller last saw, so a concurrent change fails the save.</summary>
     void SetOriginalRowVersion(TemplateVersion version, byte[] rowVersion);
+
+    /// <inheritdoc cref="SetOriginalRowVersion(TemplateVersion, byte[])"/>
+    void SetOriginalRowVersion(WorkflowVersion version, byte[] rowVersion);
 }
 
 /// <summary>The person (or service) performing the current request; recorded on changes and audit entries.</summary>

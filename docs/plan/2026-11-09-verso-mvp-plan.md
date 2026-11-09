@@ -455,12 +455,29 @@ Decisions made while implementing M5 (2026-11-09):
   - Request → PDF on screen 2–3 s, most of it Hangfire's 1 s queue polling.
   - The printer-level p95 test (20 renders) passes under 3 s.
 
-### M6 — Workflow definitions and designer (L)
+### M6 — Workflow definitions and designer (L) — ✅ accepted 2026-11-09
 - Node catalog endpoint; MVP nodes `api-trigger`, `validate`, `generate-pdf`, `archive`.
 - Server-side graph validation (single trigger, reachable nodes, no cycles, required ports connected, config valid against node schema, referenced template version exists and is published).
 - React Flow designer: palette by category, node cards with ports and status, config side panel generated from node schema, validation issues on nodes, save/publish.
 
 **Acceptance:** build the "Invoice standard" workflow (trigger → validate → generate PDF → archive) in the UI; disconnected/invalid graphs show per-node issues and cannot be published; reload round-trips node positions and config; draft referencing a template draft (not published) is rejected on publish.
+
+Decisions made while implementing M6 (2026-11-09):
+- Workflows module (schema `workflows`): `Workflow` and `WorkflowVersion`, with the template lifecycle (one draft, published versions frozen, gap-free numbers, ETag/`If-Match`, audited). `Retired` is not implemented yet. The definition is stored exactly as saved, and its content hash is set on publish.
+- Node catalog in code, served by `GET /node-types`. Settings follow the prototype:
+  - `validate`: required fields plus type checks (text, number, date, email, EU VAT, IBAN).
+  - `generate-pdf`: template, version (`latest-published` or a specific published version), filename pattern.
+  - `archive`: folder pattern, retention (7y/10y/permanent), metadata pairs.
+  - `invalid` and `failed` are optional outputs; leaving them unconnected is a warning.
+- Settings schemas use a JSON Schema subset, checked by an in-house validator (`ConfigSchemaValidator`), so no JSON Schema library was added.
+- Saving checks structure only, so unfinished graphs can be saved. Graph and settings problems are issues from `POST …/draft/validate`. That endpoint also accepts an unsaved definition (an extension of §5.2), which the designer uses to show issues live. Publishing re-validates; it returns 409 `workflow.invalid` with the issue list.
+- One edge per output port (an output leads to one next step); any number of edges may enter an input.
+- Designer: @xyflow/react 12.12.0 (12.12.1 was under two weeks old).
+  - Palette by category; only one trigger allowed.
+  - Node cards with category colour, status and labelled ports.
+  - Settings panel generated from the node schema: template picker with published versions, field-path suggestions from the referenced template's data model.
+  - Undo/redo, save/publish, read-only published view with "Start new draft".
+- The undo history module moved from the template designer to `src/lib/history.ts` (shared).
 
 ### M7 — Execution engine (L)
 - Submit endpoint with idempotency, transactional enqueue, engine, step handlers, events, local file-system `IDocumentStore`, archive records, Rejected/Failed semantics, retry.

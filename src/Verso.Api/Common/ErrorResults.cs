@@ -23,7 +23,13 @@ public static class ErrorResults
             ErrorKind.PreconditionFailed => StatusCodes.Status412PreconditionFailed,
             _ => StatusCodes.Status400BadRequest,
         };
-        return Results.Problem(detail: error.Message, statusCode: status, extensions: new Dictionary<string, object?> { ["code"] = error.Code });
+        var extensions = new Dictionary<string, object?> { ["code"] = error.Code };
+        foreach (var (key, value) in error.Extensions ?? new Dictionary<string, object?>())
+        {
+            extensions[key] = value;
+        }
+
+        return Results.Problem(detail: error.Message, statusCode: status, extensions: extensions);
     }
 
     /// <summary>200 with the value and its ETag header, or the error as a problem response.</summary>

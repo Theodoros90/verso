@@ -1,6 +1,6 @@
 import { useMemo, useReducer } from 'react'
 
-import { commitFrom, createHistory, push, redo, replace, undo, type History } from '../model/history'
+import { commitFrom, createHistory, push, redo, replace, undo, type History } from '@/lib/history'
 import type { Layout, PageSettings, Region } from '../model/layout'
 
 /** The editable content of a draft: exactly what PUT …/draft saves. */
