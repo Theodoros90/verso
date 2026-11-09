@@ -82,6 +82,10 @@ cd src/verso-web; npm run typecheck; npm test; npm run build
 
 Backend integration tests create uniquely named `Verso_Test_*` databases and drop them afterwards; they never touch `Verso_Dev`. To run them against another SQL Server instance: `$env:VERSO_TEST_SQL_SERVER = "localhost"`.
 
+`ContractTests.OpenApiDocument_MatchesCheckedInCopy` fails when the API changes without updating `docs/openapi/v1.json`. After an intended API change: `$env:VERSO_UPDATE_OPENAPI = "1"; dotnet test --filter OpenApiDocument; Remove-Item Env:VERSO_UPDATE_OPENAPI`, then review the diff and update `docs/api.md`.
+
+The API only starts in the `Development` or `Testing` environment: there is no sign-in yet. `dotnet run` uses Development through the launch profile.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

@@ -1,40 +1,145 @@
 # Verso API
 
-Endpoints that exist today. The planned contracts are in [plan §5](plan/2026-11-09-verso-mvp-plan.md#5-api-contracts). When an endpoint is added or changed, update this file in the same change.
+Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-verso-mvp-plan.md#5-api-contracts).
 
-In Development the generated OpenAPI document is served at `/openapi/v1.json`.
+- The machine-readable contract is [openapi/v1.json](openapi/v1.json), also served live at `/openapi/v1.json`. A test fails when the API and that file drift apart. After an intended change, regenerate it with `$env:VERSO_UPDATE_OPENAPI = "1"; dotnet test --filter OpenApiDocument`, review the diff, and update this page in the same change.
+- **No authentication yet.** Every request acts as the development user (`DevUser:Id` / `DevUser:Name`, default `dev.user`). The API refuses to start outside the Development and Testing environments until Entra ID sign-in exists.
 
-## `GET /api/health`
+## Conventions
 
-Anonymous. Reports whether the API is running and whether its dependencies are usable. Used by the SPA status indicator and, later, IIS / load-balancer probes.
-
-| Status code | Meaning |
+| Topic | Rule |
 |---|---|
-| `200 OK` | `status` is `Healthy` or `Degraded` (e.g. migrations pending) |
-| `503 Service Unavailable` | `status` is `Unhealthy` (e.g. database unreachable) |
+| Base path | `/api/v1` (health: `/api/health`) |
+| Format | JSON, camelCase. Timestamps are ISO 8601 with offset (UTC). Ids are GUIDs. |
+| Errors | RFC 9457 `application/problem+json` with a stable `code` and a `traceId`. Validation errors (400) add `errors: { "<json path>": ["message"] }`. |
+| Concurrency | Reads of a template version return an `ETag` header. Changing the draft (`PUT …/draft`, `POST …/draft/publish`) requires `If-Match: <that ETag>`. Missing or `*` → 428; stale → 412. |
+| Paging | `?page=1&pageSize=25` (max 100) → `{ items, page, pageSize, total }` |
 
-Body (same shape for 200 and 503):
+### Error codes
+
+| HTTP | `code` | When |
+|---|---|---|
+| 400 | `validation` | Field errors; see `errors` |
+| 404 | `template.not_found` | Unknown template id |
+| 404 | `template.version_not_found` | Version id doesn't belong to the template |
+| 409 | `template.key_taken` | Create with a key that already exists |
+| 409 | `template.no_draft` | Reading, saving or publishing a draft when there is none (e.g. right after publishing). Published versions are immutable. Start a new draft first. |
+| 409 | `template.draft_exists` | Starting a draft when one already exists |
+| 412 | `precondition.failed` | `If-Match` doesn't match the current draft: someone else changed it, or you used an old ETag |
+| 428 | `precondition.required` | `If-Match` missing (or `*`) |
+
+## Health
+
+### `GET /api/health`
+
+Anonymous. 200 when `Healthy` or `Degraded` (migrations pending), 503 when `Unhealthy` (database unreachable). Never includes connection details or exception text.
+
+```json
+{ "status": "Healthy", "totalDurationMs": 14.2,
+  "checks": [ { "name": "database", "status": "Healthy", "description": "Connected; schema is up to date.",
+                "durationMs": 13.8, "data": { "appliedMigrations": 2, "pendingMigrations": 0 } } ] }
+```
+
+## Templates
+
+Lifecycle: **create** (starts with an empty draft) → **save draft** (any number of times) → **publish** (draft becomes version N, frozen) → **start draft** (copy of the latest published version) → save → publish (N+1) …
+
+A template has at most one draft at a time. Version numbers start at 1 and are assigned on publish.
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/templates` | 200 page of `TemplateSummary` | List, ordered by key |
+| POST | `/api/v1/templates` | 201 `Template`, `Location` | Create with an empty draft |
+| GET | `/api/v1/templates/{id}` | 200 `Template` | Metadata |
+| GET | `/api/v1/templates/{id}/versions` | 200 `TemplateVersionSummary[]` | History: draft first, then published newest first |
+| GET | `/api/v1/templates/{id}/versions/{versionId}` | 200 `TemplateVersion` + `ETag` | One version with full content |
+| GET | `/api/v1/templates/{id}/draft` | 200 `TemplateVersion` + `ETag` | The current draft |
+| POST | `/api/v1/templates/{id}/draft` | 201 `TemplateVersion` + `ETag` | Start a new draft from the latest published version |
+| PUT | `/api/v1/templates/{id}/draft` | 200 `TemplateVersion` + new `ETag` | Replace the draft content (`If-Match`) |
+| POST | `/api/v1/templates/{id}/draft/publish` | 200 `TemplateVersion` (published) | Freeze the draft as the next version (`If-Match`) |
+
+### Create: `POST /api/v1/templates`
+
+```json
+{ "key": "INV-STD", "name": "Commercial invoice", "description": "Optional", "documentType": "Invoice" }
+```
+
+- `key`: 2–32 characters, `A–Z`, `0–9`, `-`, starting with a letter. Unique; never changes.
+- `name`: 1–200 characters. `description`: up to 1000.
+- `documentType`: optional, defaults to `Invoice` (the only value in the MVP).
+
+Response `Template`:
+
+```json
+{ "id": "…", "key": "INV-STD", "name": "Commercial invoice", "description": null, "documentType": "Invoice",
+  "createdAt": "2026-11-09T08:49:25.9+00:00", "createdBy": "dev.user",
+  "latestPublishedVersion": null, "draftVersionId": "…" }
+```
+
+### Save draft: `PUT /api/v1/templates/{id}/draft`
+
+Headers: `If-Match: "AAAAAAAAB9I="` (the ETag from your last read or save). The body replaces the whole draft, and all four parts are required:
 
 ```json
 {
-  "status": "Healthy",
-  "totalDurationMs": 14.2,
-  "checks": [
-    {
-      "name": "database",
-      "status": "Healthy",
-      "description": "Connected; schema is up to date.",
-      "durationMs": 13.8,
-      "data": { "appliedMigrations": 1, "pendingMigrations": 0 }
-    }
-  ]
+  "pageSettings": { "size": "A4", "orientation": "portrait", "marginsMm": { "top": 18, "right": 16, "bottom": 18, "left": 16 } },
+  "layout": { "layoutSchemaVersion": 1 },
+  "dataSchema": { "type": "object" },
+  "sampleData": { "invoice": { "number": "INV-2026-003901" } }
 }
 ```
 
-| Check | Healthy | Degraded | Unhealthy |
-|---|---|---|---|
-| `database` | Connected, no pending migrations | Connected, `pendingMigrations` > 0 | Cannot connect, database missing, or check timed out (5 s) |
+| Field | Rule (M2) |
+|---|---|
+| `pageSettings.size` | `A4` only |
+| `pageSettings.orientation` | `portrait` or `landscape` |
+| `pageSettings.marginsMm.*` | 0–50 |
+| `layout` | JSON object with `layoutSchemaVersion: 1`; at most 1,000,000 characters. The element model is defined in M3; until then other properties are stored as given. |
+| `dataSchema` | JSON object (intended: a JSON Schema for the template's data); at most 256,000 characters |
+| `sampleData` | JSON object, **synthetic data only**; at most 256,000 characters |
 
-The response never includes connection strings, server names or exception details. Failures are logged server-side.
+Response `TemplateVersion` (also returned by the GET, start-draft and publish endpoints):
 
-Source: [src/Verso.Api/Health/](../src/Verso.Api/Health/). Frontend client: [src/verso-web/src/lib/api/health.ts](../src/verso-web/src/lib/api/health.ts).
+```json
+{ "versionId": "…", "templateId": "…", "versionNumber": null, "status": "Draft",
+  "pageSettings": { "size": "A4", "orientation": "portrait", "marginsMm": { "top": 18.00, "right": 16.00, "bottom": 18.00, "left": 16.00 } },
+  "layout": { "layoutSchemaVersion": 1 }, "dataSchema": { "type": "object" }, "sampleData": { "invoice": { "number": "INV-2026-003901" } },
+  "contentHash": null, "createdAt": "…", "createdBy": "dev.user", "updatedAt": "…", "updatedBy": "dev.user",
+  "publishedAt": null, "publishedBy": null }
+```
+
+### Publish: `POST /api/v1/templates/{id}/draft/publish`
+
+Headers: `If-Match` with the draft's current ETag. No body. Returns the now-published version with `versionNumber` and `contentHash`.
+
+`contentHash` is the SHA-256 (hex) of the canonical JSON of `{ pageSettings, layout, dataSchema }`: properties sorted, no whitespace, margins without trailing zeros. Sample data isn't included, because it doesn't affect generated documents.
+
+### Summaries
+
+`TemplateSummary`: `{ id, key, name, documentType, latestPublishedVersion, hasDraft, updatedAt }`
+
+`TemplateVersionSummary`: `{ versionId, versionNumber, status, contentHash, updatedAt, updatedBy, publishedAt, publishedBy }`
+
+## Audit
+
+### `GET /api/v1/audit?entityType=Template&entityId={id}&page=1&pageSize=50`
+
+Append-only log, oldest first (`sequence` is the authoritative order). Both filters are optional.
+
+```json
+{ "items": [
+    { "id": "…", "sequence": 1, "occurredAt": "…", "actorId": "dev.user", "actorName": "Development User",
+      "action": "TemplatePublished", "entityType": "Template", "entityId": "…",
+      "details": { "versionId": "…", "versionNumber": 1, "contentHash": "2fbc01dd…" },
+      "traceId": "074fa088f220678c1d90f769aa9d54cc" } ],
+  "page": 1, "pageSize": 50, "total": 1 }
+```
+
+| `action` | `details` |
+|---|---|
+| `TemplateCreated` | `{ key }` |
+| `TemplateDraftSaved` | `{ versionId }` |
+| `TemplateDraftCreated` | `{ versionId, fromVersion }` |
+| `TemplatePublished` | `{ versionId, versionNumber, contentHash }` |
+
+Rejected requests (validation, 409, 412, 428) are not audited; they change nothing. `traceId` matches the `TraceId` in the API's structured logs.

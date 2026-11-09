@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Use cases and ports. Depends on Domain only. Empty until M2. -->
+  <!-- Use cases. Depends on Domain, plus EF Core abstractions for querying (no SQL Server specifics). -->
   <ItemGroup>
     <ProjectReference Include="..\Verso.Domain\Verso.Domain.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
   </ItemGroup>
 </Project>

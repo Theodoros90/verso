@@ -10,7 +10,8 @@ Bank-focused document-generation and workflow platform. MVP: maintain an invoice
 ## Current milestone
 
 **M1: Application foundation** — accepted 2026-11-09.
-**Next: M2 template storage** — not started; agree its scope before implementing. Acceptance criteria are in plan §9.
+**M2: Template storage** — accepted 2026-11-09.
+**M3: Rendering engine** — in progress. D4 decided: fixed header/footer regions + flowing body. Acceptance criteria are in plan §9.
 Update this line when a milestone is accepted and the next one is agreed.
 
 ## Commands
@@ -21,6 +22,7 @@ dotnet build Verso.slnx
 dotnet test Verso.slnx                      # integration tests use LocalDB (VERSO_TEST_SQL_SERVER to override)
 dotnet tool run dotnet-ef migrations add <Name> --project src/Verso.Infrastructure --startup-project src/Verso.Api --output-dir Persistence/Migrations
 dotnet tool run dotnet-ef database update --project src/Verso.Infrastructure --startup-project src/Verso.Api
+$env:VERSO_UPDATE_OPENAPI = "1"; dotnet test --filter OpenApiDocument   # after an intended API change; review the diff of docs/openapi/v1.json
 cd src/verso-web; npm ci; npm run typecheck; npm test; npm run build
 ```
 

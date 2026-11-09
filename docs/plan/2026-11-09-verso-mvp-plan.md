@@ -190,6 +190,7 @@ Conventions:
 | POST | `/templates/{id}/draft/preview/html` | Render draft + sample (or supplied) data to HTML (API-side, no Chromium) |
 | POST | `/templates/{id}/draft/preview/pdf` | Queue a PDF preview job → `202 { previewId }`; result via SignalR or `GET /previews/{previewId}` |
 | POST | `/templates/{id}/draft/publish` | Validate + freeze draft as next version (`If-Match`) |
+| POST | `/templates/{id}/draft` | Start a new draft from the latest published version (added in M2) |
 
 Draft save body (abridged):
 
@@ -379,10 +380,19 @@ Scope as agreed 2026-11-09 (replaces the earlier "walking skeleton" scope):
 
 Moved out of M1: Hangfire (→ M5/M7, when the Worker first runs jobs), dev auth / Entra (→ before M2's write endpoints need roles; to schedule), CI pipeline (CI system still unknown, §10), architecture tests (project references enforce the layers for now).
 
-### M2 — Template storage (S)
+### M2 — Template storage (S) — ✅ accepted 2026-11-09
 - Template + TemplateVersion entities, draft save with ETag, publish, version history, audit entries.
 
 **Acceptance:** create template; save draft twice; stale `If-Match` → 412; publish → v1 immutable (PUT to published → 409); second draft → v2; history lists both; audit shows each action; all via API tests.
+
+Decisions made while implementing M2 (2026-11-09):
+- Added `POST /templates/{id}/draft` (start a draft from the latest published version); "PUT to published → 409" is `PUT …/draft` with no draft → `409 template.no_draft`.
+- Added `GET /audit?entityType=&entityId=` (read side of the audit log; the audit UI is still M9).
+- No sign-in yet: changes are attributed to a configured development user, and the API refuses to start outside Development/Testing until Entra ID exists (fail closed).
+- `layout` is stored as JSON and only checked for `layoutSchemaVersion: 1`; the element model and its validation come with M3.
+- Template name/description can't be edited after creation yet (not needed for the MVP flow).
+- OpenAPI document checked in at `docs/openapi/v1.json` with a drift test; generated frontend types wait until the frontend consumes these endpoints (M4).
+- Published-version immutability is enforced by the domain, a check constraint and filtered unique indexes; denying UPDATE/DELETE to the app login is part of deployment hardening (M9).
 
 ### M3 — Rendering engine (M)
 - Layout model v1 (§D4), element types for MVP: text, data field, repeating table, divider, box, image (embedded), signature line. QR/barcode/conditional block: deferred to post-MVP unless you want them now.

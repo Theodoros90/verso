@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Verso.Application;
 using Verso.Infrastructure.Persistence;
 
 namespace Verso.Infrastructure;
@@ -26,6 +27,7 @@ public static class DependencyInjection
         services.AddDbContext<VersoDbContext>(options => options.UseSqlServer(
             connectionString,
             sql => sql.UseCompatibilityLevel(SqlServerCompatibilityLevel)));
+        services.AddScoped<IVersoDbContext>(sp => sp.GetRequiredService<VersoDbContext>());
 
         return services;
     }
