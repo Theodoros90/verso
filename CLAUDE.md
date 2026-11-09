@@ -11,7 +11,8 @@ Bank-focused document-generation and workflow platform. MVP: maintain an invoice
 
 **M1: Application foundation** — accepted 2026-11-09.
 **M2: Template storage** — accepted 2026-11-09.
-**M3: Rendering engine** — accepted 2026-11-09. Layout model: docs/layout-model.md. Next in plan: M4 template designer UI. Acceptance criteria are in plan §9.
+**M3: Rendering engine** — accepted 2026-11-09. Layout model: docs/layout-model.md.
+**M4: Template designer UI** — accepted 2026-11-09. Next in plan: M5 PDF generation in the Worker. Acceptance criteria are in plan §9.
 Update this line when a milestone is accepted and the next one is agreed.
 
 ## Commands
@@ -25,6 +26,7 @@ dotnet tool run dotnet-ef database update --project src/Verso.Infrastructure --s
 $env:VERSO_UPDATE_OPENAPI = "1"; dotnet test --filter OpenApiDocument   # after an intended API change; review the diff of docs/openapi/v1.json
 $env:VERSO_UPDATE_GOLDEN = "1"; dotnet test --filter Golden            # after an intended rendering change; review the diff of tests/Verso.UnitTests/Rendering/Golden
 cd src/verso-web; npm ci; npm run typecheck; npm test; npm run build
+cd src/verso-web; npm run gen:api            # after the OpenAPI snapshot changes; regenerates src/lib/api/generated.ts (a test checks it)
 ```
 
 ## Stack (approved 2026-11-09, pending formal bank confirmation)

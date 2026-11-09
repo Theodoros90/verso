@@ -38,12 +38,12 @@ describe('AppShell', () => {
   })
 
   it('marks the current page in the navigation and the heading', () => {
-    renderAt('/templates')
+    renderAt('/workflows')
     const nav = screen.getByRole('navigation', { name: 'Main' })
 
-    expect(within(nav).getByRole('link', { name: 'Template designer' })).toHaveAttribute('aria-current', 'page')
+    expect(within(nav).getByRole('link', { name: 'Workflow designer' })).toHaveAttribute('aria-current', 'page')
     expect(within(nav).getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current')
-    expect(screen.getByRole('heading', { level: 1, name: 'Template designer' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Workflow designer' })).toBeInTheDocument()
     expect(screen.getByText('Not built yet.')).toBeInTheDocument()
   })
 

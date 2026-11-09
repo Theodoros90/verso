@@ -391,7 +391,7 @@ Decisions made while implementing M2 (2026-11-09):
 - No sign-in yet: changes are attributed to a configured development user, and the API refuses to start outside Development/Testing until Entra ID exists (fail closed).
 - `layout` is stored as JSON and only checked for `layoutSchemaVersion: 1`; the element model and its validation come with M3.
 - Template name/description can't be edited after creation yet (not needed for the MVP flow).
-- OpenAPI document checked in at `docs/openapi/v1.json` with a drift test; generated frontend types wait until the frontend consumes these endpoints (M4).
+- OpenAPI document checked in at `docs/openapi/v1.json` with a drift test; generated frontend types arrived with M4 (`npm run gen:api`).
 - Published-version immutability is enforced by the domain, a check constraint and filtered unique indexes; denying UPDATE/DELETE to the app login is part of deployment hardening (M9).
 
 ### M3 — Rendering engine (M) — ✅ accepted 2026-11-09
@@ -409,10 +409,22 @@ Decisions made while implementing M3 (2026-11-09), full model in [docs/layout-mo
 - Saving a draft now validates the full layout structure (M2 only checked `layoutSchemaVersion`).
 - Deferred from M3: web-font embedding (M5), page numbers, QR/barcode/conditional blocks, body columns.
 
-### M4 — Template designer UI (L)
+### M4 — Template designer UI (L) — ✅ accepted 2026-11-09
 - Template list; designer with canvas, palette, properties panel, element tree, sample-data toggle, binding picker from the data schema, unmapped warnings, undo, save/publish, HTML preview pane.
 
 **Acceptance:** an author can build the Commercial Invoice from an empty template without editing JSON; saving and reloading round-trips exactly; publish disabled while there are errors; keyboard-accessible element selection; matches prototype visual direction.
+
+Decisions made while implementing M4 (2026-11-09):
+- Canvas editing follows D4. Header/footer elements are dragged and resized freely inside their band (snap 1 mm, Alt for 0.1 mm; arrow keys move 1 mm, Shift+arrow 5 mm). Body blocks are a vertical stack, reordered by drag or Alt+↑/↓. The canvas is an editing view; the HTML preview pane shows the server renderer's output (D2).
+- The preview endpoint renders the **saved** draft, so the preview pane shows the last save and offers "Save and refresh". No new endpoint was added.
+- Data model: the author imports a synthetic sample JSON file and the data model (JSON Schema) is derived from it, so nobody types JSON. An "Edit JSON" dialog exists for advanced changes. Bindings are chosen from the data model (list or drag-and-drop).
+- "Unmapped" means a binding the data model doesn't contain, or a data field with no binding yet. Unmapped bindings are **errors** and block publishing, as do the structural rules that mirror LayoutParser. The browser checks these on every change, and the server still validates every save. Clipped or off-page elements are warnings.
+- Undo/redo covers every edit. Typing in one input is one step; a drag is one step.
+- The element tree (regions → elements) is the keyboard path for selecting elements; canvas elements are focusable too.
+- A template with no draft opens its latest published version read-only, with "Start new draft".
+- The palette shows only element types the M3 renderer supports. QR code, barcode and conditional block stay deferred.
+- Generated frontend types: `src/verso-web/src/lib/api/generated.ts` is generated from `docs/openapi/v1.json` by a dependency-free script (`npm run gen:api`), and a drift test fails when it is out of date.
+- Template name and description stay read-only in the designer (no edit endpoint, as in M2).
 
 ### M5 — PDF generation in the Worker (M)
 - `Verso.Rendering.Pdf` with pooled Chromium, network blocking, JS disabled, timeout, recycling.

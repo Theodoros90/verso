@@ -40,6 +40,15 @@
   --cat-ai: #a82e6b;
   --cat-output: #1e8556;
 
+  /* Template designer stage and paper (the paper stays white in dark mode: it is the printed page). */
+  --stage: #e3e7eb;
+  --stage-dot: #cdd4db;
+  --sheet-shadow: 0 1px 2px rgba(19, 32, 43, 0.1), 0 18px 40px -16px rgba(19, 32, 43, 0.3);
+  --paper: #ffffff;
+  --paper-ink: #1a232c;
+  --paper-mute: #66727e;
+  --paper-line: #e3e7eb;
+
   --font: 'Schibsted Grotesk Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-serif-stack: 'Source Serif 4 Variable', Georgia, 'Times New Roman', serif;
   --font-mono-stack: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
@@ -95,6 +104,9 @@
   --cat-doc: #a892da;
   --cat-ai: #e57db1;
   --cat-output: #4bc28a;
+  --stage: #0b1015;
+  --stage-dot: #1d2731;
+  --sheet-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 24px 50px -18px rgba(0, 0, 0, 0.7);
 }
 
 @theme inline {

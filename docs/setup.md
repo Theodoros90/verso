@@ -73,6 +73,15 @@ npm run dev        # http://localhost:5180
 
 The dev server forwards `/api/*` to `http://localhost:5122` (override with `$env:VERSO_API_URL`). Open http://localhost:5180: the top bar shows **API healthy**, and Overview → System status lists the database check.
 
+**Template designer (M4):**
+1. Open Template designer, choose **New template**, and enter a key and a name.
+2. In the designer, use **Data model → Import** to load a synthetic sample file (for example `tests/fixtures/invoice/sample.json`). The data model is derived from it.
+3. Add components or data fields by clicking them, or by dragging them onto the page. Edit the selected element in the properties panel.
+4. **Save draft** (Ctrl+S), then **Preview** to see the server-rendered HTML of the saved draft.
+5. **Publish**. It stays disabled while the status bar shows errors or unmapped fields.
+
+After an API change, regenerate the OpenAPI snapshot (see the commands in CLAUDE.md), then run `npm run gen:api` to regenerate `src/lib/api/generated.ts`. A test fails while that file is out of date.
+
 ## 4. Tests
 
 ```powershell

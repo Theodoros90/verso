@@ -12,7 +12,8 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "gen:api": "node scripts/generate-api-types.mjs"
   },
   "dependencies": {
     "@fontsource-variable/schibsted-grotesk": "5.3.0",
