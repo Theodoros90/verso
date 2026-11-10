@@ -295,6 +295,28 @@ public sealed class GraphValidatorTests
         Assert.Equal(valid, !result.Issues.Any(i => i.NodeId == "trigger" && i.Severity == GraphValidator.Error));
     }
 
+    [Theory]
+    [InlineData("0 1 * * *", "Europe/Nicosia", true)]
+    [InlineData("*/15 8-18 * * 1-5", "UTC", true)]
+    [InlineData("0 1 * *", "UTC", false)]            // four fields
+    [InlineData("0 1 * * * *", "UTC", false)]        // six fields
+    [InlineData("0 1 * * *; rm -rf /", "UTC", false)] // no other characters
+    [InlineData("", "UTC", false)]                   // required
+    [InlineData("0 1 * * *", "Mars/Olympus", false)] // known time zones only
+    public void ScheduledTrigger_NeedsFiveCronFieldsAndAKnownTimeZone(string cron, string tz, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]![0] = new JsonObject
+        {
+            ["id"] = "trigger", ["type"] = "scheduled-trigger", ["title"] = "Scheduled trigger", ["position"] = new JsonObject { ["x"] = 0, ["y"] = 80 },
+            ["config"] = new JsonObject { ["cron"] = cron, ["tz"] = tz },
+        };
+
+        var result = Validate(definition);
+
+        Assert.Equal(valid, !result.Issues.Any(i => i.NodeId == "trigger" && i.Severity == GraphValidator.Error));
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {

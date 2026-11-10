@@ -69,6 +69,19 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { host: '', folder: '/inbound', pattern: '*.xml', poll: 'every-5-minutes' },
   },
   {
+    type: 'scheduled-trigger', label: 'Scheduled trigger', category: 'input', description: 'Runs at fixed times.',
+    inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        cron: { type: 'string', title: 'Cron expression', 'x-widget': 'mono' },
+        tz: { type: 'string', title: 'Time zone', enum: ['Europe/Nicosia', 'UTC'], 'x-enumLabels': ['Europe/Nicosia', 'UTC'] },
+      },
+      required: ['cron', 'tz'],
+    },
+    defaults: { cron: '0 1 * * *', tz: 'Europe/Nicosia' },
+  },
+  {
     type: 'validate', label: 'Validate data', category: 'process', description: 'Checks required fields.',
     inputs: [{ id: 'in', label: 'In', required: true }],
     outputs: [{ id: 'valid', label: 'Valid', required: true }, { id: 'invalid', label: 'Invalid', required: false }],
@@ -227,6 +240,7 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     expect(screen.getByRole('button', { name: 'Add ERP connector' })).toBeDisabled() // inputs share the one-trigger rule
     expect(screen.getByRole('button', { name: 'Add File upload' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add SFTP folder' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add Scheduled trigger' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Add Validate data' }))
     expect(await screen.findByText('Validate data', { selector: '.truncate.text-\\[13px\\]' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Validate data', level: 3 })).toBeInTheDocument() // the new step is selected

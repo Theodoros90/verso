@@ -33,6 +33,7 @@ public sealed class ExecutionApiTests(MigratedDatabaseFixture fixture) : IDispos
     [InlineData("erp-connector", """{ "system": "oracle-netsuite", "entity": "Invoices", "mode": "on-post" }""")]
     [InlineData("file-upload", """{ "accept": "PDF, XML, CSV", "maxSize": "25mb", "who": "staff" }""")]
     [InlineData("sftp-folder", """{ "host": "sftp.example.com", "folder": "/inbound", "pattern": "*.xml", "poll": "every-5-minutes" }""")]
+    [InlineData("scheduled-trigger", """{ "cron": "0 1 * * *", "tz": "Europe/Nicosia" }""")]
     public async Task SimulatedInputTriggers_RunSubmittedDataLikeTheApiTrigger(string type, string config)
     {
         var trigger = new JsonObject

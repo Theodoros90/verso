@@ -20,7 +20,7 @@ public sealed record NodeTypeDto(
     JsonElement Defaults);
 
 /// <summary>
-/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload and sftp-folder (simulated), validate, generate-pdf, archive.
+/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder and scheduled-trigger (simulated), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -29,6 +29,7 @@ public static class NodeCatalog
     public const string ErpConnector = "erp-connector";
     public const string FileUpload = "file-upload";
     public const string SftpFolder = "sftp-folder";
+    public const string ScheduledTrigger = "scheduled-trigger";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string Archive = "archive";
@@ -97,6 +98,16 @@ public static class NodeCatalog
     private const string FolderPattern = @"^/[A-Za-z0-9._~/ -]*$";
 
     private const string FilePatternPattern = @"^[A-Za-z0-9._*?-]*$";
+
+    public static readonly IReadOnlyDictionary<string, string> TimeZones = new Dictionary<string, string>
+    {
+        ["Europe/Nicosia"] = "Europe/Nicosia",
+        ["UTC"] = "UTC",
+        ["Europe/Luxembourg"] = "Europe/Luxembourg",
+    };
+
+    /// <summary>Five space-separated cron fields (minute hour day-of-month month day-of-week).</summary>
+    private const string CronPattern = @"^[0-9A-Za-z*/,?#-]+( [0-9A-Za-z*/,?#-]+){4}$";
 
     public static readonly IReadOnlyDictionary<string, string> ErpModes = new Dictionary<string, string>
     {
@@ -211,6 +222,19 @@ public static class NodeCatalog
               "required": ["host", "folder", "poll"] }
             """,
             """{ "host": "", "folder": "/inbound", "pattern": "*.xml", "poll": "every-5-minutes" }"""),
+
+        Node(ScheduledTrigger, "Scheduled trigger", "input",
+            "Runs at fixed times. Simulated: nothing in Verso runs on a schedule yet, so runs are submitted to POST /api/v1/workflows/{key}/executions.",
+            [], [new PortDto("out", "Out", true)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "cron": { "type": "string", "title": "Cron expression", "minLength": 1, "maxLength": 100, "pattern": "{{Escape(CronPattern)}}", "x-widget": "mono",
+                  "description": "Five fields: minute, hour, day of month, month, day of week. For example 0 1 * * * runs every night at 01:00." },
+                "tz": { "type": "string", "title": "Time zone", "enum": {{JsonSerializer.Serialize(TimeZones.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(TimeZones.Values)}} } },
+              "required": ["cron", "tz"] }
+            """,
+            """{ "cron": "0 1 * * *", "tz": "Europe/Nicosia" }"""),
 
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",
