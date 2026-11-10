@@ -40,10 +40,18 @@ describe('Preview pane, PDF tab', () => {
           posts.push(url)
           return json(done({ status: 'Queued', sizeBytes: null }), 202)
         }
+        if (url === '/api/v1/previews/pv1/content') {
+          contentAuth = new Headers(init.headers).get('Authorization')
+          return new Response('%PDF-1.7', { status: 200, headers: { 'Content-Type': 'application/pdf' } })
+        }
         return json({ title: 'Not found' }, 404)
       }),
     )
+    contentAuth = null
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => 'blob:pdf-pv1', revokeObjectURL: () => undefined }))
   })
+
+  let contentAuth: string | null
 
   it('queues a Worker render and shows the PDF when it is ready', async () => {
     waitForPreview.mockResolvedValue(done({ issues: [{ severity: 'error', code: 'binding.missing', message: "No value for 'customer.name'.", elementId: 'billto', path: 'customer.name' }] }))
@@ -53,10 +61,12 @@ describe('Preview pane, PDF tab', () => {
     await user.click(screen.getByRole('radio', { name: 'PDF' }))
 
     const frame = await screen.findByTitle('PDF preview')
-    expect(frame).toHaveAttribute('src', '/api/v1/previews/pv1/content')
+    // The PDF is fetched with the user's token and shown from a blob: URL (an iframe can't send the token itself).
+    expect(frame).toHaveAttribute('src', 'blob:pdf-pv1')
+    expect(contentAuth).toBe('Bearer dev:dev.admin')
     expect(posts).toEqual(['/api/v1/templates/t1/draft/preview/pdf'])
     expect(waitForPreview).toHaveBeenCalledWith('pv1', expect.any(AbortSignal))
-    expect(screen.getByRole('link', { name: /Open in new tab/ })).toHaveAttribute('href', '/api/v1/previews/pv1/content')
+    expect(screen.getByRole('link', { name: /Open in new tab/ })).toHaveAttribute('href', 'blob:pdf-pv1')
     expect(screen.getByText('47 KB')).toBeInTheDocument()
     expect(screen.getByRole('list', { name: 'Preview issues' })).toHaveTextContent("No value for 'customer.name'.")
   })

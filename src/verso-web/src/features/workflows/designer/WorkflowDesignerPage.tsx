@@ -15,6 +15,7 @@ import { CircleAlert, CircleCheck, FilePlus2, Redo2, Save, Trash2, Undo2, Upload
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useBlocker, useParams } from 'react-router'
 
+import { usePermissions } from '@/app/AuthGate'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/form'
@@ -114,7 +115,8 @@ const isEditable = (t: EventTarget | null) => t instanceof HTMLElement && (t.isC
 
 function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string | null; onReload: (message?: string) => void }) {
   const { workflow, version, nodeTypes } = loaded
-  const readOnly = version.status !== 'Draft'
+  const canEdit = usePermissions().workflowAuthoring // others see the workflow read-only (the API refuses their edits anyway)
+  const readOnly = version.status !== 'Draft' || !canEdit
   const initial = useMemo(() => asDefinition(version.definition), [version])
   const [state, actions] = useWorkflowState(initial)
   const def = state.history.present
@@ -464,7 +466,9 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
             <Redo2 />
           </Button>
           <div className="flex-1" />
-          {readOnly ? (
+          {!canEdit ? (
+            <span className="text-[12.5px] text-ink-3">View only: editing needs the WorkflowAuthor role</span>
+          ) : readOnly ? (
             <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => void startDraft()}>
               <FilePlus2 /> Start new draft
             </Button>

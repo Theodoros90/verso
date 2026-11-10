@@ -9,6 +9,10 @@ using Verso.Worker;
 
 var builder = Host.CreateApplicationBuilder(args);
 
+// Runs as a Windows service on servers (docs/runbook.md); from a console (dotnet run, tests) this does nothing.
+// As a service, warnings and errors also go to the Windows Event Log (source "Verso.Worker"), and the content root is the exe folder.
+builder.Services.AddWindowsService(options => options.ServiceName = "Verso Worker");
+
 builder.Services.AddVersoPersistence(builder.Configuration);
 builder.Services.AddVersoWorkerUseCases();
 

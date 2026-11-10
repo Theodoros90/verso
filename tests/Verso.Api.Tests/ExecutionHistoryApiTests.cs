@@ -135,7 +135,7 @@ public sealed class ExecutionHistoryApiTests(MigratedDatabaseFixture fixture) : 
         using var response = await _client.GetAsync(new Uri($"/api/v1/executions/{id}/input", UriKind.Relative));
         var body = await ExecutionTestKit.ReadAsync(response);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode); // the default development user is an Auditor
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode); // the default test user is an Admin
         Assert.Equal("INV-2026-003901", body.GetProperty("data").GetProperty("invoice").GetProperty("number").GetString());
         Assert.Equal((await Kit.GetExecutionAsync(id)).GetProperty("inputHash").GetString(), body.GetProperty("inputHash").GetString());
         Assert.True(response.Headers.CacheControl!.NoStore);
@@ -147,15 +147,15 @@ public sealed class ExecutionHistoryApiTests(MigratedDatabaseFixture fixture) : 
     }
 
     [Theory]
-    [InlineData("Viewer")]
-    [InlineData("Operator,Viewer")]
-    [InlineData("")]
-    public async Task Input_IsForbiddenWithoutAuditorOrAdmin_AndNotAudited(string roles)
+    [InlineData("dev.viewer")]
+    [InlineData("dev.operator")]
+    [InlineData("dev.template-author")]
+    [InlineData("dev.workflow-author")]
+    public async Task Input_IsForbiddenWithoutAuditorOrAdmin_AndNotAudited(string user)
     {
         var key = await Kit.PublishInvoiceWorkflowAsync();
         var id = await Kit.SubmitNewAsync(key, ExecutionTestKit.Sample);
-        await using var viewerHost = fixture.Factory.WithWebHostBuilder(b => b.UseSetting("DevUser:Roles", roles));
-        using var viewer = viewerHost.CreateClient();
+        using var viewer = fixture.Factory.CreateClientAs(user);
 
         using var response = await viewer.GetAsync(new Uri($"/api/v1/executions/{id}/input", UriKind.Relative));
         using var unknown = await viewer.GetAsync(new Uri($"/api/v1/executions/{Guid.NewGuid()}/input", UriKind.Relative));
@@ -166,25 +166,27 @@ public sealed class ExecutionHistoryApiTests(MigratedDatabaseFixture fixture) : 
         Assert.DoesNotContain("INV-2026-003901", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         Assert.Equal(0, await Kit.WithDbAsync(db => db.AuditEntries.CountAsync(a => a.EntityId == id.ToString() && a.Action == ExecutionService.Actions.InputViewed)));
 
-        // The Viewer can still read the execution itself (status, steps), which holds no payload values.
+        // They can still read the execution itself (status, steps), which holds no payload values.
         using var detail = await viewer.GetAsync(new Uri($"/api/v1/executions/{id}", UriKind.Relative));
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         Assert.DoesNotContain("INV-2026-003901", await detail.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Input_AdminCanRead_AndUnknownIdIs404ForAuditors()
+    public async Task Input_AuditorCanRead_AndUnknownIdIs404ForThem()
     {
         var key = await Kit.PublishInvoiceWorkflowAsync();
         var id = await Kit.SubmitNewAsync(key, ExecutionTestKit.Sample);
-        await using var adminHost = fixture.Factory.WithWebHostBuilder(b => b.UseSetting("DevUser:Roles", "Admin"));
-        using var admin = adminHost.CreateClient();
+        using var auditor = fixture.Factory.CreateClientAs("dev.auditor");
 
-        using var ok = await admin.GetAsync(new Uri($"/api/v1/executions/{id}/input", UriKind.Relative));
-        using var missing = await _client.GetAsync(new Uri($"/api/v1/executions/{Guid.NewGuid()}/input", UriKind.Relative));
+        using var ok = await auditor.GetAsync(new Uri($"/api/v1/executions/{id}/input", UriKind.Relative));
+        using var missing = await auditor.GetAsync(new Uri($"/api/v1/executions/{Guid.NewGuid()}/input", UriKind.Relative));
 
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        var actor = await Kit.WithDbAsync(db => db.AuditEntries
+            .Where(a => a.EntityId == id.ToString() && a.Action == ExecutionService.Actions.InputViewed).Select(a => a.ActorId).SingleAsync());
+        Assert.Equal("dev.auditor", actor); // the audit names who looked
     }
 
     // ----- Archive search and download -----

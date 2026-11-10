@@ -1,3 +1,4 @@
+using Verso.Api.Auth;
 using Verso.Api.Common;
 using Verso.Application.Documents;
 using Verso.Application.Templates;
@@ -9,7 +10,7 @@ public static class DocumentEndpoints
 {
     public static IEndpointRouteBuilder MapDocumentEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/v1/documents").WithTags("Documents");
+        var group = app.MapGroup("/api/v1/documents").WithTags("Documents").RequireAuthorization(Policies.Read);
 
         group.MapGet("/", async (
                     DocumentService service, CancellationToken ct,

@@ -40,6 +40,12 @@ export interface AuditEntryDto {
   traceId: string | null
 }
 
+export interface AuthConfigDto {
+  mode: string
+  entra: null | EntraConfigDto
+  devUsers: DevUserDto[] | null
+}
+
 export interface CreateTemplateRequest {
   key: string | null
   name: string | null
@@ -51,6 +57,19 @@ export interface CreateWorkflowRequest {
   key: string | null
   name: string | null
   description: string | null
+}
+
+export interface DevUserDto {
+  id: string
+  name: string
+  roles: string[]
+  token: string
+}
+
+export interface EntraConfigDto {
+  authority: string
+  clientId: string
+  scope: string
 }
 
 export interface ExecutionDocumentDto {
@@ -172,6 +191,13 @@ export interface MarginsDto {
   left: number
 }
 
+export interface MeDto {
+  id: string
+  name: string
+  roles: string[]
+  permissions: PermissionsDto
+}
+
 export interface NodeTypeDto {
   type: string
   label: string
@@ -233,6 +259,15 @@ export interface PdfPreviewDto {
   sizeBytes: number | null
   createdAt: string
   completedAt: string | null
+}
+
+export interface PermissionsDto {
+  read: boolean
+  templateAuthoring: boolean
+  workflowAuthoring: boolean
+  operate: boolean
+  readPayload: boolean
+  readAudit: boolean
 }
 
 export interface PortDto {

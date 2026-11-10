@@ -9,6 +9,8 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
+import type { PermissionsDto } from '@/lib/api/generated'
+
 export interface NavItem {
   path: string
   label: string
@@ -16,6 +18,8 @@ export interface NavItem {
   /** Plan milestone that builds this screen; shown on its placeholder page until then. */
   milestone?: string
   summary: string
+  /** Shown only to users with this permission (the API refuses the others anyway). */
+  requires?: keyof PermissionsDto
 }
 
 export interface NavGroup {
@@ -85,6 +89,7 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: ShieldCheck,
         milestone: 'M9',
         summary: 'Who changed, published, submitted or downloaded what.',
+        requires: 'readAudit',
       },
     ],
   },

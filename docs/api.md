@@ -3,7 +3,7 @@
 Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-verso-mvp-plan.md#5-api-contracts).
 
 - The machine-readable contract is [openapi/v1.json](openapi/v1.json), also served live at `/openapi/v1.json`. A test fails when the API and that file drift apart. After an intended change, regenerate it with `$env:VERSO_UPDATE_OPENAPI = "1"; dotnet test --filter OpenApiDocument`, review the diff, and update this page in the same change.
-- **No authentication yet.** Every request acts as the development user (`DevUser:Id` / `DevUser:Name`, default `dev.user`). The API refuses to start outside the Development and Testing environments until Entra ID sign-in exists.
+- **Sign-in is required** for everything except `GET /api/health` and `GET /api/auth/config`: `Authorization: Bearer <token>`. See [Sign-in and roles](#sign-in-and-roles).
 
 ## Conventions
 
@@ -14,6 +14,8 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | Errors | RFC 9457 `application/problem+json` with a stable `code` and a `traceId`. Validation errors (400) add `errors: { "<json path>": ["message"] }`. |
 | Concurrency | Reads of a template version return an `ETag` header. Changing the draft (`PUT …/draft`, `POST …/draft/publish`) requires `If-Match: <that ETag>`. Missing or `*` → 428; stale → 412. |
 | Paging | `?page=1&pageSize=25` (max 100) → `{ items, page, pageSize, total }` |
+| Correlation | Send `X-Correlation-Id` (1–64 of `A–Z a–z 0–9 . _ : -`) to tie a request to your own logs; otherwise one is generated. It comes back in the response header, appears in every log line of the request, and a submission stores it on the execution (the Worker logs it too). |
+| Limits | Request bodies up to 2 MB (`Limits:MaxRequestBodyBytes`; submissions 1.1 MB) → 413. Submissions per user and minute: 120 (`Limits:SubmissionsPerMinute`) → 429 with `Retry-After`. |
 
 ### Error codes
 
@@ -30,7 +32,10 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | 404 | `preview.not_found` | Unknown PDF preview id (or deleted after 24 hours) |
 | 409 | `preview.not_ready` | PDF content requested while the preview is still queued or rendering |
 | 409 | `preview.failed` | PDF content requested for a preview that failed; read its `error` |
-| 403 | `forbidden` | The development user lacks the role the endpoint needs (today only `GET /executions/{id}/input`: Auditor or Admin) |
+| 401 | `unauthenticated` | No token, or a token that is invalid, expired or for another audience |
+| 403 | `forbidden` | Signed in, but your roles don't allow this ([matrix](#roles)) |
+| 413 | `request_too_large` | Request body over the limit |
+| 429 | `rate_limited` | Too many submissions in a minute; see `Retry-After` |
 | 404 | `document.not_found` | Unknown document id, or a document that isn't archived yet |
 | 409 | `document.not_archived` | Content requested for a document that is generated but not archived yet |
 | 409 | `document.content_missing` | The archived file is missing from storage |
@@ -40,6 +45,38 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | 409 | `execution.idempotency_conflict` | `Idempotency-Key` already used for this workflow with **different** data; `executionId` names the original |
 | 409 | `workflow.not_published` | Submission to a workflow with no published version |
 | 409 | `execution.not_retryable` | Retry of an execution that isn't `Failed` (Rejected runs need corrected data, not a retry) |
+
+## Sign-in and roles
+
+| Mode (`Auth:Mode`) | Where | Token |
+|---|---|---|
+| `Entra` (default) | everywhere | An Entra ID access token for the Verso API registration (audience = its client id or `api://<client id>`), obtained by the SPA with MSAL (auth code + PKCE). Startup fails if `Auth:Entra:TenantId` or `Auth:Entra:ApiClientId` is missing. |
+| `Development` | Development and Testing environments only (startup refuses it elsewhere) | `dev:<user id>` for one of the synthetic users listed by `GET /api/auth/config`: `dev.viewer`, `dev.operator`, `dev.template-author`, `dev.workflow-author`, `dev.auditor`, `dev.admin`, `dev.no-access` |
+
+Browsers can't send headers on WebSockets, so the SignalR hub also accepts the token as `?access_token=`. No other endpoint does, because URLs end up in logs.
+
+**Roles** come from the token's `roles` claim (Entra app roles `Verso.Viewer`, `Verso.Operator`, …) or from security groups mapped in `Auth:RoleMap` (`"<group object id or role value>": "Operator"`). A signed-in user without a Verso role can only call `/me`.
+
+### `GET /api/auth/config` (anonymous)
+
+`{ "mode": "Entra", "entra": { "authority": "https://login.microsoftonline.com/<tenant>", "clientId": "<spa client id>", "scope": "api://<api client id>/access_as_user" }, "devUsers": null }`. In Development, `entra` is null and `devUsers` lists `{ id, name, roles, token }`.
+
+### `GET /api/v1/me`
+
+`{ "id": "<oid>", "name": "…", "roles": ["Operator"], "permissions": { "read": true, "templateAuthoring": false, "workflowAuthoring": false, "operate": true, "readPayload": false, "readAudit": false } }`. The SPA uses it to hide what the user can't do; the API enforces it.
+
+### Roles
+
+Every endpoint names a policy; one with no policy would still require a Verso role (secure by default). `RoleMatrixTests` calls every endpoint as every role and fails when a new endpoint is missing from the matrix.
+
+| Area | Viewer | Operator | Template author | Workflow author | Auditor | Admin |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Read templates, workflows, node types, executions, events, documents; download; SignalR | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Create and edit templates, previews (HTML/PDF), publish templates |  |  | ✓ |  |  | ✓ |
+| Create and edit workflows, validate, publish workflows |  |  |  | ✓ |  | ✓ |
+| Submit executions, retry failed ones |  | ✓ |  |  |  | ✓ |
+| Read submitted payloads (`/executions/{id}/input`) |  |  |  |  | ✓ | ✓ |
+| Audit trail (`/audit`, `/audit/actions`) |  |  |  |  | ✓ | ✓ |
 
 ## Health
 
@@ -190,7 +227,7 @@ Previews are temporary: the Worker deletes them 24 hours after they were request
 
 ## Real-time notifications (SignalR)
 
-Hub: `/hubs/executions` (plan §5.5). No authentication yet, like the rest of the API.
+Hub: `/hubs/executions` (plan §5.5). Needs sign-in with any Verso role; browsers pass the token as `?access_token=` (the SignalR client's `accessTokenFactory` does this).
 
 | Direction | Message | Payload |
 |---|---|---|
@@ -306,7 +343,7 @@ Events of one execution with an id above `after` (default 0), oldest first, at m
 
 ### Submitted data: `GET /api/v1/executions/{id}/input`
 
-`{ "executionId": "…", "inputHash": "…", "data": { … } }`, `Cache-Control: no-store`. The payload can hold personal data, so it needs the **Auditor** or **Admin** role: otherwise **403 `forbidden`**, answered before the execution is looked up, so it doesn't reveal which ids exist. Every successful read is audited (`ExecutionInputViewed`, with the input hash, not the data). Until Entra ID sign-in exists, the development user's roles come from `DevUser:Roles` (comma separated, default `Operator,Auditor`); real roles arrive with M9.
+`{ "executionId": "…", "inputHash": "…", "data": { … } }`, `Cache-Control: no-store`. The payload can hold personal data, so it needs the **Auditor** or **Admin** role: otherwise **403 `forbidden`**, answered before the execution is looked up, so it doesn't reveal which ids exist. Every successful read is audited (`ExecutionInputViewed`, with the input hash, not the data).
 
 ### Submit: `POST /api/v1/workflows/{key}/executions`
 
@@ -406,13 +443,17 @@ Archived documents only: a PDF that is generated but not yet archived isn't list
 
 ## Audit
 
-### `GET /api/v1/audit?entityType=Template&entityId={id}&page=1&pageSize=50`
+Auditor and Admin only.
 
-Append-only log, oldest first (`sequence` is the authoritative order). Both filters are optional.
+### `GET /api/v1/audit?entityType=&entityId=&action=&actorId=&from=&to=&newestFirst=&page=1&pageSize=50`
+
+Append-only log, oldest first unless `newestFirst=true` (`sequence` is the authoritative order). All filters are optional and exact: `entityType` (`Template`, `Workflow`, `Execution`, `Document`), `entityId`, `action`, `actorId`; `from` (inclusive) and `to` (exclusive) as ISO 8601 instants. 400 `validation` when `to` isn't after `from`.
+
+`GET /api/v1/audit/actions` lists the action names that occur (for filters).
 
 ```json
 { "items": [
-    { "id": "…", "sequence": 1, "occurredAt": "…", "actorId": "dev.user", "actorName": "Development User",
+    { "id": "…", "sequence": 1, "occurredAt": "…", "actorId": "dev.template-author", "actorName": "Tara Templates",
       "action": "TemplatePublished", "entityType": "Template", "entityId": "…",
       "details": { "versionId": "…", "versionNumber": 1, "contentHash": "2fbc01dd…" },
       "traceId": "074fa088f220678c1d90f769aa9d54cc" } ],
@@ -435,4 +476,4 @@ Append-only log, oldest first (`sequence` is the authoritative order). Both filt
 | `ExecutionInputViewed` | `{ inputHash }` (entity `Execution`; never the data) |
 | `DocumentDownloaded` | `{ executionId, fileName, sha256 }` (entity `Document`) |
 
-Rejected requests (validation, 409, 412, 428) are not audited; they change nothing. `traceId` matches the `TraceId` in the API's structured logs.
+Rejected requests (validation, 401, 403, 409, 412, 428, 429) are not audited; they change nothing. `traceId` matches the `TraceId` in the API's structured logs.

@@ -19,6 +19,7 @@ public static class HealthEndpoints
                     : Results.Ok(body);
             })
             .WithName("GetHealth")
+            .AllowAnonymous()
             .WithTags("Health")
             .Produces<HealthResponse>(StatusCodes.Status200OK)
             .Produces<HealthResponse>(StatusCodes.Status503ServiceUnavailable);

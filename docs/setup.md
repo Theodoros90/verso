@@ -84,7 +84,7 @@ PDF printing settings are in the `Pdf` section of `src/Verso.Worker/appsettings.
 
 Archived documents are written by the Worker to `Documents:RootPath`, by default `%LOCALAPPDATA%\Verso\documents` (`staging\…` while a run is in progress, `archive\yyyy\MM\{documentId}.pdf` once archived). The API reads the same folder for downloads, so **the API and the Worker must use the same `Documents:RootPath`** (the default is the same for both when they run as the same user). On a server, give the Worker's service account write access and the API's account read access only.
 
-Until Entra ID sign-in exists, the API acts as one development user. Its roles come from `DevUser:Roles` (comma separated, default `Operator,Auditor`); only Auditor and Admin may read submitted data. To see a Viewer's experience: `$env:DevUser__Roles = "Viewer"` before starting the API.
+**Sign-in.** In Development the API uses **Development sign-in** (`Auth:Mode` = `Development` in `appsettings.Development.json`): the SPA lists synthetic users, one per role (Viewer, Operator, Template author, Workflow author, Auditor, Admin) plus one without access, and remembers the choice for the browser tab. Pick **Alex Admin** to do everything, or another user to see what a role allows. API calls from scripts send `Authorization: Bearer dev:<user id>` (for example `dev:dev.operator`). Anywhere else the API requires Entra ID (`Auth:Mode` = `Entra`) and refuses to start with Development sign-in; see [runbook.md](runbook.md) part B.
 
 Check the API directly:
 
@@ -129,8 +129,8 @@ The dev server forwards `/api/*` and the SignalR hub `/hubs/*` (WebSockets) to `
 ```powershell
 $body = @{ data = (Get-Content tests/fixtures/invoice/sample.json -Raw | ConvertFrom-Json) } | ConvertTo-Json -Depth 20
 $run = Invoke-RestMethod -Method Post http://localhost:5122/api/v1/workflows/invoice-standard/executions `
-  -Headers @{ "Idempotency-Key" = [guid]::NewGuid().ToString() } -ContentType application/json -Body $body
-Start-Sleep 5; Invoke-RestMethod "http://localhost:5122/api/v1/executions/$($run.executionId)" | ConvertTo-Json -Depth 8
+  -Headers @{ Authorization = "Bearer dev:dev.operator"; "Idempotency-Key" = [guid]::NewGuid().ToString() } -ContentType application/json -Body $body
+Start-Sleep 5; Invoke-RestMethod "http://localhost:5122/api/v1/executions/$($run.executionId)" -Headers @{ Authorization = "Bearer dev:dev.operator" } | ConvertTo-Json -Depth 8
 ```
 
 Expected: `"status": "Succeeded"` and one document with `"status": "Archived"`; the PDF is under `%LOCALAPPDATA%\Verso\documents\archive`. Submitting `tests/fixtures/invoice/broken.json` instead ends `Rejected`, and the Validate step's `result.issues` lists each failed rule (when the workflow checks those fields). If the Worker is stopped, submissions wait as `Queued` and run when it starts again.
@@ -140,9 +140,21 @@ After an API change, regenerate the OpenAPI snapshot (see the commands in CLAUDE
 ## 5. Tests
 
 ```powershell
-dotnet test Verso.slnx                 # needs LocalDB (or set VERSO_TEST_SQL_SERVER) and Chromium (step 2)
+powershell -ExecutionPolicy Bypass -File tools/ci.ps1   # everything CI runs, about 5 minutes; -NoInstall keeps node_modules
+```
+
+Or piece by piece:
+
+```powershell
+dotnet test Verso.slnx -m:1            # needs LocalDB (or set VERSO_TEST_SQL_SERVER), Chromium (step 2) and Node (the E2E suite builds the SPA)
 cd src/verso-web; npm run typecheck; npm test; npm run build
 ```
+
+`-m:1` runs the test projects one after another: the PDF speed test (p95 under 3 s) can fail when the other suites compete for the CPU.
+
+`tests/Verso.E2E.Tests` is the browser suite (Playwright for .NET, the Chromium build the Worker uses): it creates its own database, starts the real API and Worker processes and the production build of the SPA (`vite preview`), and goes through the 7 MVP steps as Alex Admin. It then checks a Viewer's restrictions, the request limits on Kestrel, and that no submitted value appears in either service's log output. Its process logs and any failure screenshots are under `%TEMP%erso-e2e`.
+
+`tools/db/least-privilege.sql` (database roles for servers) is applied to a test database by `LeastPrivilegeTests`, which runs the whole flow under those roles.
 
 `tests/Verso.Pdf.Tests` prints with real Chromium (the M5 acceptance tests: PDF text, pagination, zero network requests, speed, crash recovery). Two of its tests force-kill the processes they started (their own Chromium, found by a unique switch on its command line, and their own Playwright driver, found by its path under the test's output folder); nothing else is touched.
 
@@ -150,12 +162,15 @@ Backend integration tests create uniquely named `Verso_Test_*` databases and dro
 
 `ContractTests.OpenApiDocument_MatchesCheckedInCopy` fails when the API changes without updating `docs/openapi/v1.json`. After an intended API change: `$env:VERSO_UPDATE_OPENAPI = "1"; dotnet test --filter OpenApiDocument; Remove-Item Env:VERSO_UPDATE_OPENAPI`, then review the diff and update `docs/api.md`.
 
-The API only starts in the `Development` or `Testing` environment: there is no sign-in yet. `dotnet run` uses Development through the launch profile.
+`dotnet run` uses the Development environment through the launch profile, and with it Development sign-in.
 
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
+| Sign-in page: "The API did not return its sign-in settings" | Verso.Api isn't running (or `VERSO_API_URL` points elsewhere). |
+| API fails at startup: "Auth:Entra:TenantId or Auth:Entra:ApiClientId is not configured" | It isn't running in Development (check `ASPNETCORE_ENVIRONMENT` / the launch profile), so it expects Entra ID. |
+| A page says your role doesn't allow it, or buttons are missing | Signed in as a user without that role: sign out (bottom of the sidebar) and pick another development user. |
 | Top bar shows **API unreachable** | Verso.Api isn't running on port 5122, or `VERSO_API_URL` points elsewhere. |
 | **API degraded**, "1 pending migration(s)" | Run the `database update` command in step 1. |
 | **API unhealthy**, "Database is unreachable or does not exist" | LocalDB not started or database not created. `sqllocaldb start MSSQLLocalDB`, then step 1. |

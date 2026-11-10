@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Verso.Api.Auth;
 using Verso.Api.Common;
 using Verso.Application.Templates;
 
@@ -9,7 +10,7 @@ public static class TemplateEndpoints
 {
     public static IEndpointRouteBuilder MapTemplateEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/v1/templates").WithTags("Templates");
+        var group = app.MapGroup("/api/v1/templates").WithTags("Templates").RequireAuthorization(Policies.Read);
 
         group.MapGet("/", async (TemplateService service, CancellationToken ct, int page = 1, int pageSize = 25) =>
                 Results.Ok(await service.ListAsync(page, pageSize, ct)))
@@ -24,6 +25,7 @@ public static class TemplateEndpoints
                     : result.Error!.ToProblem();
             })
             .WithName("CreateTemplate")
+            .RequireAuthorization(Policies.TemplateAuthoring)
             .Produces<TemplateDto>(StatusCodes.Status201Created)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status409Conflict);
@@ -56,6 +58,7 @@ public static class TemplateEndpoints
         group.MapPost("/{id:guid}/draft", async (Guid id, TemplateService service, HttpContext http, CancellationToken ct) =>
                 (await service.StartDraftAsync(id, ct)).ToVersionedResult(http, v => Results.Created($"/api/v1/templates/{id}/draft", v)))
             .WithName("StartTemplateDraft")
+            .RequireAuthorization(Policies.TemplateAuthoring)
             .Produces<TemplateVersionDto>(StatusCodes.Status201Created)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
@@ -65,6 +68,7 @@ public static class TemplateEndpoints
                     TemplateService service, HttpContext http, CancellationToken ct) =>
                 (await service.SaveDraftAsync(id, ifMatch, request, ct)).ToVersionedResult(http))
             .WithName("SaveTemplateDraft")
+            .RequireAuthorization(Policies.TemplateAuthoring)
             .Produces<TemplateVersionDto>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -77,6 +81,7 @@ public static class TemplateEndpoints
                     TemplateService service, HttpContext http, CancellationToken ct) =>
                 (await service.PublishAsync(id, ifMatch, ct)).ToVersionedResult(http))
             .WithName("PublishTemplateDraft")
+            .RequireAuthorization(Policies.TemplateAuthoring)
             .Produces<TemplateVersionDto>()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
@@ -86,6 +91,7 @@ public static class TemplateEndpoints
         group.MapPost("/{id:guid}/draft/preview/html", async (Guid id, PreviewRequest? request, TemplatePreview preview, CancellationToken ct) =>
                 (await preview.PreviewDraftAsync(id, request, ct)).ToResult())
             .WithName("PreviewTemplateDraftHtml")
+            .RequireAuthorization(Policies.TemplateAuthoring)
             .Produces<HtmlPreviewDto>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)

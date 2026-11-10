@@ -15,15 +15,18 @@ Bank-focused document-generation and workflow platform. MVP: maintain an invoice
 **M4: Template designer UI** — accepted 2026-11-09.
 **M5: PDF generation in the Worker** — accepted 2026-11-09.
 **M6: Workflow definitions and designer** — accepted 2026-11-09.
-**M7: Execution engine** — accepted 2026-11-10. Next in plan: M8 execution history and live progress. Acceptance criteria are in plan §9.
+**M7: Execution engine** — accepted 2026-11-10.
+**M8: Execution history and live progress** — accepted 2026-11-10.
+**M9: MVP hardening** — implemented 2026-11-10, awaiting acceptance (full `tools/ci.ps1` run to be repeated on a machine with enough free memory). Acceptance criteria are in plan §9. MVP done = M1–M9 accepted.
 Update this line when a milestone is accepted and the next one is agreed.
 
 ## Commands
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File tools/ci.ps1   # everything CI runs (build, frontend, all test projects incl. browser E2E, vulnerable packages); -NoInstall keeps node_modules
 dotnet tool restore
 dotnet build Verso.slnx
-dotnet test Verso.slnx                      # integration tests use LocalDB (VERSO_TEST_SQL_SERVER to override)
+dotnet test Verso.slnx -m:1                 # one project at a time; LocalDB (VERSO_TEST_SQL_SERVER to override), Chromium, Node (E2E builds the SPA)
 dotnet tool run dotnet-ef migrations add <Name> --project src/Verso.Infrastructure --startup-project src/Verso.Api --output-dir Persistence/Migrations
 dotnet tool run dotnet-ef database update --project src/Verso.Infrastructure --startup-project src/Verso.Api
 $env:VERSO_UPDATE_OPENAPI = "1"; dotnet test --filter OpenApiDocument   # after an intended API change; review the diff of docs/openapi/v1.json
@@ -42,9 +45,11 @@ powershell -ExecutionPolicy Bypass -File src/Verso.Worker/bin/Debug/net10.0/play
 - Frontend: React 19 + TypeScript 5.x + Vite, @xyflow/react (React Flow), Tailwind CSS 4 + shadcn/ui (radix-ui, lucide-react, class-variance-authority, clsx, tailwind-merge, tw-animate-css), react-router, @fontsource fonts (self-hosted); Node 22 LTS ≥ 22.22, used for builds only
 - Frontend tests: Vitest, React Testing Library (+ user-event, jest-dom), jsdom
 - Backend tests: xUnit, Microsoft.AspNetCore.Mvc.Testing, LocalDB for integration tests; PdfPig (PDF text extraction, test projects only; approved 2026-11-09)
+- Browser E2E: Playwright for .NET (same package and Chromium build as the Worker), `tests/Verso.E2E.Tests` (decided 2026-11-10)
 - SignalR browser client: @microsoft/signalr (approved 2026-11-09)
-- Identity: Microsoft Entra ID (OIDC; MSAL in the SPA, JWT bearer in the API); roles mapped from Entra app roles / security groups; a fake sign-in that only works in Development
-- Hosting: Windows Server; API under IIS, Worker as a Windows service
+- Identity: Microsoft Entra ID (OIDC; MSAL in the SPA via @azure/msal-browser, JWT bearer in the API via Microsoft.AspNetCore.Authentication.JwtBearer; both approved 2026-11-10); roles mapped from Entra app roles / security groups; a Development-only sign-in with synthetic users (`Auth:Mode`)
+- Hosting: Windows Server; API under IIS, Worker as a Windows service (Microsoft.Extensions.Hosting.WindowsServices, approved 2026-11-10); runbook in docs/runbook.md
+- CI: `tools/ci.ps1` until the bank names its CI system (decided 2026-11-10)
 - Packages: nuget.org / npmjs, versions pinned (`Directory.Packages.props`, lockfiles)
 
 Ask before adding a dependency or changing a version not listed here.

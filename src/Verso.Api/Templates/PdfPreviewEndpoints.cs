@@ -1,3 +1,4 @@
+using Verso.Api.Auth;
 using Verso.Api.Common;
 using Verso.Application.Templates;
 
@@ -17,12 +18,13 @@ public static class PdfPreviewEndpoints
             })
             .WithTags("Templates")
             .WithName("PreviewTemplateDraftPdf")
+            .RequireAuthorization(Policies.TemplateAuthoring)
             .Produces<PdfPreviewDto>(StatusCodes.Status202Accepted)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
-        var group = app.MapGroup("/api/v1/previews").WithTags("Previews");
+        var group = app.MapGroup("/api/v1/previews").WithTags("Previews").RequireAuthorization(Policies.TemplateAuthoring);
 
         group.MapGet("/{previewId:guid}", async (Guid previewId, PdfPreviews previews, CancellationToken ct) =>
                 (await previews.GetAsync(previewId, ct)).ToResult())

@@ -1,14 +1,16 @@
-import { ArrowLeft, Check, CircleDashed, Download, Loader2, Minus, RotateCw, X } from 'lucide-react'
+import { ArrowLeft, Check, CircleDashed, Loader2, Minus, RotateCw, X } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 
+import { usePermissions } from '@/app/AuthGate'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/api/client'
-import { documentsApi, executionsApi } from '@/lib/api/executions'
+import { executionsApi } from '@/lib/api/executions'
 import type { ExecutionDocumentDto, ExecutionDto, ExecutionEventDto, ExecutionInputDto, ExecutionStepDto } from '@/lib/api/generated'
 import { cn } from '@/lib/utils'
 
+import { DownloadButton } from './DownloadButton'
 import { formatBytes, formatDate, formatDateTime, formatDuration, runDuration, shortId, statusTone } from './format'
 import { useExecutionLive } from './useExecutionLive'
 
@@ -34,6 +36,7 @@ export function ExecutionDetailPage() {
 }
 
 function Detail({ execution: e, events, onChanged }: { execution: ExecutionDto; events: ExecutionEventDto[]; onChanged: () => void }) {
+  const permissions = usePermissions()
   const live = e.status === 'Queued' || e.status === 'Running'
   const titles = new Map(e.steps.map((s) => [s.nodeId, s.title]))
 
@@ -48,7 +51,7 @@ function Detail({ execution: e, events, onChanged }: { execution: ExecutionDto; 
         <span className="text-ink-2">
           <span className="font-mono text-[12.5px]">{e.workflow.key}</span> v{e.workflow.version}
         </span>
-        {e.status === 'Failed' && <RetryButton id={e.id} onChanged={onChanged} />}
+        {e.status === 'Failed' && permissions.operate && <RetryButton id={e.id} onChanged={onChanged} />}
       </header>
 
       {(e.status === 'Rejected' || e.status === 'Failed') && (
@@ -82,7 +85,7 @@ function Detail({ execution: e, events, onChanged }: { execution: ExecutionDto; 
             )}
           </section>
 
-          <PayloadPanel id={e.id} />
+          <PayloadPanel id={e.id} allowed={permissions.readPayload} />
         </div>
 
         <aside className="flex min-w-0 flex-col gap-5">
@@ -196,16 +199,7 @@ function DocumentRow({ document: d }: { document: ExecutionDocumentDto }) {
         <span className="font-medium">{d.fileName}</span>
         <StatusPill tone={d.status === 'Archived' ? 'ok' : 'neutral'}>{d.status}</StatusPill>
         <span className="text-ink-3">{formatBytes(d.sizeBytes)}</span>
-        {d.status === 'Archived' && (
-          <a
-            href={documentsApi.contentUrl(d.id)}
-            download={d.fileName}
-            aria-label={`Download ${d.fileName}`}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-[7px] border border-line-strong bg-surface px-2.5 py-1 text-[12.5px] text-ink no-underline hover:border-cyan"
-          >
-            <Download className="size-3.5" aria-hidden="true" /> Download
-          </a>
-        )}
+        {d.status === 'Archived' && <DownloadButton documentId={d.id} fileName={d.fileName} className="ml-auto" />}
       </div>
       <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
         <Row label="SHA-256" mono>{d.sha256}</Row>
@@ -265,7 +259,7 @@ type PayloadState =
   | { kind: 'shown'; input: ExecutionInputDto }
 
 /** The submitted data may contain personal data: it is only fetched on request, restricted to Auditor/Admin, and each read is audited. */
-function PayloadPanel({ id }: { id: string }) {
+function PayloadPanel({ id, allowed }: { id: string; allowed: boolean }) {
   const [state, setState] = useState<PayloadState>({ kind: 'hidden' })
 
   const show = async () => {
@@ -281,7 +275,8 @@ function PayloadPanel({ id }: { id: string }) {
   return (
     <section aria-labelledby="payload-h" className="rounded-[10px] border border-line bg-surface p-4">
       <h2 id="payload-h" className="mb-2 text-[14px] font-semibold">Submitted data</h2>
-      {state.kind === 'hidden' && (
+      {!allowed && <p className="text-ink-2">Submitted data is restricted to the Auditor and Admin roles.</p>}
+      {allowed && state.kind === 'hidden' && (
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={show}>Show submitted data</Button>
           <span className="text-xs text-ink-3">Restricted to auditors and admins. Viewing is recorded in the audit trail.</span>

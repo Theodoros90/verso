@@ -56,6 +56,15 @@ public sealed partial class ExecutionEngine(
             return; // a job without a row does nothing
         }
 
+        // Every log line of this run carries the execution and the correlation id it was submitted with (plan §7, M9).
+        // Logs never contain payload values: only ids, step names, codes and sanitized messages.
+        using var scope = logger.BeginScope(new Dictionary<string, object>
+        {
+            ["ExecutionId"] = execution.Id,
+            ["CorrelationId"] = execution.CorrelationId,
+            ["WorkflowKey"] = execution.WorkflowKey,
+        });
+
         var wasQueued = execution.Status == ExecutionStatus.Queued;
         var now = clock.GetUtcNow();
         if (!execution.TryClaim(now, Lease))
@@ -67,6 +76,8 @@ public sealed partial class ExecutionEngine(
         {
             Event(execution, ExecutionEventTypes.Started, now, data: new { attempt = execution.Attempt });
         }
+
+        LogRunStarted(logger, execution.Id, execution.Attempt);
 
         if (!await SaveAsync(execution, ct))
         {
@@ -188,6 +199,7 @@ public sealed partial class ExecutionEngine(
             now = clock.GetUtcNow();
             var (code, message, retryable) = Describe(ex, timeoutToken);
             step.Fail(message, now);
+            LogStepFailed(logger, node.Id, execution.Id, step.Attempt, code);
             Event(execution, ExecutionEventTypes.StepFailed, now, node.Id, new { attempt = step.Attempt, code });
             if (retryable && step.Attempt < MaxStepAttempts)
             {
@@ -394,11 +406,14 @@ public sealed partial class ExecutionEngine(
     private void Event(Execution execution, string type, DateTimeOffset now, string? nodeId = null, object? data = null) =>
         db.ExecutionEvents.Add(ExecutionEvent.Record(execution.Id, type, now, nodeId, data is null ? null : JsonSerializer.Serialize(data, Json)));
 
-    private void Completed(Execution execution, DateTimeOffset now) =>
+    private void Completed(Execution execution, DateTimeOffset now)
+    {
+        LogRunFinished(logger, execution.Id, execution.Status, execution.FailureCode);
         db.AuditEntries.Add(AuditEntry.Record(
             ExecutionService.Actions.Completed, ExecutionService.EntityType, execution.Id.ToString(), ActorId, ActorName, now,
             JsonSerializer.Serialize(new { status = execution.Status.ToString(), failureCode = execution.FailureCode, attempt = execution.Attempt }),
             execution.CorrelationId));
+    }
 
     /// <summary>False when another run took over this execution (its lock had expired); this run then stops.</summary>
     private async Task<bool> SaveAsync(Execution execution, CancellationToken ct)
@@ -442,6 +457,15 @@ public sealed partial class ExecutionEngine(
             LogStagingCleanupFailed(logger, key, ex);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Execution {ExecutionId} running (attempt {Attempt})")]
+    private static partial void LogRunStarted(ILogger logger, Guid executionId, int attempt);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Execution {ExecutionId} finished: {Status} {FailureCode}")]
+    private static partial void LogRunFinished(ILogger logger, Guid executionId, ExecutionStatus status, string? failureCode);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Step {NodeId} of execution {ExecutionId} failed (attempt {Attempt}): {Code}")]
+    private static partial void LogStepFailed(ILogger logger, string nodeId, Guid executionId, int attempt, string code);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Execution {ExecutionId} was taken over by another run; this run stops")]
     private static partial void LogLostLock(ILogger logger, Guid executionId);

@@ -511,7 +511,7 @@ Decisions made while implementing M7 (2026-11-10):
 - DB-level write-once for `ArchiveRecords` (deny UPDATE/DELETE to the app login) stays with deployment hardening in M9, as for published versions.
 - Test infrastructure: integration tests now create and migrate their databases before starting API hosts. A host's background relay could connect between EF's `CREATE DATABASE` and its `ALTER DATABASE` and block it; this happened when several databases were created in parallel.
 
-### M8 — Execution history and live progress (M) — implemented 2026-11-10, awaiting acceptance
+### M8 — Execution history and live progress (M) — ✅ accepted 2026-11-10
 - Executions list (filters), execution detail with step timeline (prototype's run view), live updates via SignalR relay, input payload view (restricted), document download, archive search screen.
 
 **Acceptance:** submitting from a second browser tab shows step progress live within ~2 s; reconnecting mid-run catches up with no missing steps; filters by status/date/workflow work; download returns the archived bytes (hash verified); Viewer can't see payloads.
@@ -528,10 +528,31 @@ Decisions made while implementing M8 (2026-11-10):
 - Screens: Executions (list with live updates), run detail (steps timeline with problems found by Validate, documents with download, details, activity from the events, submitted data on request, retry for Failed runs), and Archive. The Overview, Document preview and Audit trail screens are unchanged (M9 builds the audit trail).
 - Measured with the real API, Worker, Chromium and SignalR (Node client using `@microsoft/signalr`): `Submitted` after about 0.3 s, `Started` after 0.8 s and `Succeeded` after 1.8 s, and every stored event was also announced.
 
-### M9 — MVP hardening (M)
+### M9 — MVP hardening (M) — implemented 2026-11-10, awaiting acceptance
 - Role matrix enforcement + tests, audit trail screen (read-only), limits, structured logging with correlation ids, E2E suite for the 7 MVP steps, runbook (setup, Chromium offline install, backup notes).
 
 **Acceptance:** all E2E scenarios pass in CI; security tests pass; no payload content in logs during the full E2E run; a new developer sets up from the runbook alone.
+
+Decisions made while implementing M9 (2026-11-10). The user chose the first four:
+- **Sign-in: both modes, chosen by configuration.**
+  - **Entra** (`Auth:Mode`, the default): JWT bearer in the API, MSAL (auth code + PKCE, redirect, sessionStorage cache) in the SPA. Roles come from Entra app roles `Verso.<Role>`, or from groups or other values mapped in `Auth:RoleMap`. Startup fails without a tenant and API client id (fail closed).
+  - **Development:** synthetic users, one per role plus one without access, tokens `dev:<user id>`. Startup refuses it outside the Development and Testing environments. The old "refuse to start outside Development" guard is gone.
+  - With no tenant available, Entra is tested with locally signed tokens: audience, expiry, wrong key, role and group mapping, and hub-only query tokens. That testing found and fixed two bugs in the mapping. A real tenant hasn't been exercised yet.
+  - Packages, approved 2026-11-10: `Microsoft.AspNetCore.Authentication.JwtBearer` 10.0.14 and `@azure/msal-browser` 5.26.0. `@azure/msal-react` was approved but isn't needed.
+- **Role matrix** (§7 roles): reads for every Verso role; template authoring for TemplateAuthor and Admin; workflow authoring for WorkflowAuthor and Admin; submit and retry for Operator and Admin; payloads and the audit trail for Auditor and Admin.
+  - Every endpoint names a policy, and the fallback policy requires a Verso role, so the API is secure by default. A signed-in user without a role reaches only `/me`.
+  - `RoleMatrixTests` calls all endpoints as all users plus anonymous, from an independently written table, and fails when an endpoint isn't in the table.
+  - The SPA hides what the user can't do, using `GET /api/v1/me` permissions: designers become view-only, New buttons are hidden, Retry and payload views appear only for the right roles, and the Audit nav item only for Auditor/Admin.
+- **E2E: Playwright for .NET** (`tests/Verso.E2E.Tests`). It runs the real API and Worker processes, the production SPA build served by `vite preview` with the dev proxy, Chromium build 1248 and its own database. The 7 MVP steps run in the browser, followed by Viewer restrictions, Kestrel body limits, 401 without a token, and a scan of both services' log output for a payload marker.
+- **CI: `tools/ci.ps1`**, until the bank names its CI system. It runs prerequisites, the Release build, frontend install, typecheck, tests and build, the backend test projects one at a time, the E2E suite, and NuGet/npm vulnerability checks. A pipeline file only needs to call it.
+- **Maker-checker (D7): after the MVP.**
+- **Authenticated content:** downloads and the PDF preview are fetched with the token and handed over as `blob:` URLs, because links and iframes can't send a bearer token. The SignalR client sends the token through `accessTokenFactory`.
+- **Limits:** request bodies are capped at 2 MB (Kestrel and IIS; submissions 1.1 MB as before), and submissions are limited per user per minute (120, fixed window) with 429, `Retry-After` and a problem body. Framework 401/403/413/429 responses get stable `code`s.
+- **Logging:** a correlation id for every request (the caller's `X-Correlation-Id` if well-formed, else generated), echoed and added to the log scope. A submission without one stores the request's id on the execution, and the Worker logs each run under `ExecutionId` + `CorrelationId` (start, step failures, finish). Tests capture all log output at Trace level and check that no payload value appears on any path (valid, rejected, technical failure, malformed, too deep, idempotency conflict, payload view).
+- **Audit screen:** `GET /audit` gains `action`, `actorId`, `from`, `to` and `newestFirst`, plus `GET /audit/actions`. The read-only screen links entries to their template, workflow or run.
+- **Database hardening:** `tools/db/least-privilege.sql` creates the roles `verso_api` and `verso_worker`. Audit and archive records are insert/select only, the apps can't delete templates, workflows, executions or documents, and neither role can change the schema. `LeastPrivilegeTests` runs the whole flow under the roles and checks 15 refused changes. Published-version immutability is still enforced by the domain and check constraints, not by permissions.
+- **Worker as a Windows service** (`Microsoft.Extensions.Hosting.WindowsServices` 10.0.14, approved 2026-11-10). Install steps are in the runbook.
+- **Runbook** (`docs/runbook.md`): A, a developer from a clean machine to `CI passed`; B, servers (database and roles, Entra registrations, IIS with the SPA and a reverse proxy, offline Chromium, the Worker service, a smoke test); C, operations (logs and correlation, failure handling, backup and restore order, retention, upgrades).
 
 **MVP done = M1–M9 accepted.**
 

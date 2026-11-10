@@ -34,17 +34,57 @@ public sealed class ContractTests
     [Theory]
     [InlineData("Production")]
     [InlineData("Staging")]
-    public void Api_RefusesToStart_OutsideDevelopmentAndTesting(string environment)
+    public void DevelopmentSignIn_RefusesToStart_OutsideDevelopmentAndTesting(string environment)
     {
-        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+        using var factory = Host(environment, ("Auth:Mode", "Development"));
+
+        var ex = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("refuses to run", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EntraSignIn_WithoutTenantOrClientId_RefusesToStart()
+    {
+        using var factory = Host("Production"); // appsettings.json: Mode Entra, nothing configured
+
+        var ex = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Contains("Auth:Entra:TenantId", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EntraSignIn_Configured_StartsInProduction_RequiresATokenEverywhere_AndHidesTheContract()
+    {
+        using var factory = Host("Production", ("Auth:Entra:TenantId", "00000000-0000-0000-0000-000000000001"), ("Auth:Entra:ApiClientId", "00000000-0000-0000-0000-000000000002"));
+        using var client = factory.CreateClient();
+
+        using var templates = await client.GetAsync(new Uri("/api/v1/templates", UriKind.Relative));
+        using var devToken = new HttpRequestMessage(HttpMethod.Get, new Uri("/api/v1/templates", UriKind.Relative));
+        devToken.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "dev:dev.admin");
+        using var withDevToken = await client.SendAsync(devToken);
+        using var openApi = await client.GetAsync(new Uri("/openapi/v1.json", UriKind.Relative));
+        using var config = await client.GetAsync(new Uri("/api/auth/config", UriKind.Relative));
+
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, templates.StatusCode);
+        Assert.Contains("\"code\":\"unauthenticated\"", await templates.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, withDevToken.StatusCode); // development tokens mean nothing here
+        // Not mapped outside Development/Testing; like any unknown route it needs sign-in first (fallback policy), so 401.
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, openApi.StatusCode);
+        Assert.DoesNotContain("openapi", await openApi.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+        var body = await config.Content.ReadAsStringAsync();
+        Assert.Contains("\"mode\":\"Entra\"", body, StringComparison.Ordinal);
+        Assert.Contains("\"devUsers\":null", body, StringComparison.Ordinal); // never lists synthetic users outside Development
+    }
+
+    private static WebApplicationFactory<Program> Host(string environment, params (string Key, string Value)[] settings) =>
+        new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
             b.UseEnvironment(environment);
             b.UseSetting("ConnectionStrings:Verso", new TestDatabase("guard").ConnectionString);
+            foreach (var (key, value) in settings)
+            {
+                b.UseSetting(key, value);
+            }
         });
-
-        var ex = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
-        Assert.Contains("no authentication yet", ex.Message, StringComparison.Ordinal);
-    }
 
     private static string Normalize(string json) =>
         JsonNode.Parse(json)!.ToJsonString(new JsonSerializerOptions { WriteIndented = true }).ReplaceLineEndings("\n") + "\n";

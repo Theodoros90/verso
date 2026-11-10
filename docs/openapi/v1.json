@@ -40,6 +40,46 @@
         }
       }
     },
+    "/api/auth/config": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "GetAuthConfig",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthConfigDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "GetMe",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/templates/{id}/draft/preview/pdf": {
       "post": {
         "tags": [
@@ -233,68 +273,6 @@
               "application/problem\u002Bjson": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/audit": {
-      "get": {
-        "tags": [
-          "Audit"
-        ],
-        "operationId": "ListAuditEntries",
-        "parameters": [
-          {
-            "name": "entityType",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "entityId",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "schema": {
-              "pattern": "^-?(?:0|[1-9]\\d*)$",
-              "type": [
-                "integer",
-                "string"
-              ],
-              "format": "int32",
-              "default": 1
-            }
-          },
-          {
-            "name": "pageSize",
-            "in": "query",
-            "schema": {
-              "pattern": "^-?(?:0|[1-9]\\d*)$",
-              "type": [
-                "integer",
-                "string"
-              ],
-              "format": "int32",
-              "default": 50
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PageResultOfAuditEntryDto"
                 }
               }
             }
@@ -2024,6 +2002,139 @@
           }
         }
       }
+    },
+    "/api/v1/audit": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "operationId": "ListAuditEntries",
+        "parameters": [
+          {
+            "name": "entityType",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "entityId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actorId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "newestFirst",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResultOfAuditEntryDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit/actions": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "operationId": "ListAuditActions",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2211,6 +2322,38 @@
           }
         }
       },
+      "AuthConfigDto": {
+        "required": [
+          "mode",
+          "entra",
+          "devUsers"
+        ],
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "entra": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EntraConfigDto"
+              }
+            ]
+          },
+          "devUsers": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/DevUserDto"
+            }
+          }
+        }
+      },
       "CreateTemplateRequest": {
         "required": [
           "key",
@@ -2271,6 +2414,51 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "DevUserDto": {
+        "required": [
+          "id",
+          "name",
+          "roles",
+          "token"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "EntraConfigDto": {
+        "required": [
+          "authority",
+          "clientId",
+          "scope"
+        ],
+        "type": "object",
+        "properties": {
+          "authority": {
+            "type": "string"
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
           }
         }
       },
@@ -2871,6 +3059,32 @@
           }
         }
       },
+      "MeDto": {
+        "required": [
+          "id",
+          "name",
+          "roles",
+          "permissions"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/PermissionsDto"
+          }
+        }
+      },
       "NodeTypeDto": {
         "required": [
           "type",
@@ -3208,6 +3422,37 @@
               "string"
             ],
             "format": "date-time"
+          }
+        }
+      },
+      "PermissionsDto": {
+        "required": [
+          "read",
+          "templateAuthoring",
+          "workflowAuthoring",
+          "operate",
+          "readPayload",
+          "readAudit"
+        ],
+        "type": "object",
+        "properties": {
+          "read": {
+            "type": "boolean"
+          },
+          "templateAuthoring": {
+            "type": "boolean"
+          },
+          "workflowAuthoring": {
+            "type": "boolean"
+          },
+          "operate": {
+            "type": "boolean"
+          },
+          "readPayload": {
+            "type": "boolean"
+          },
+          "readAudit": {
+            "type": "boolean"
           }
         }
       },
@@ -3992,6 +4237,9 @@
       "name": "Health"
     },
     {
+      "name": "Auth"
+    },
+    {
       "name": "Templates"
     },
     {
@@ -4001,13 +4249,13 @@
       "name": "Executions"
     },
     {
-      "name": "Audit"
-    },
-    {
       "name": "Previews"
     },
     {
       "name": "Documents"
+    },
+    {
+      "name": "Audit"
     }
   ]
 }

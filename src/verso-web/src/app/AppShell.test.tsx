@@ -38,12 +38,12 @@ describe('AppShell', () => {
   })
 
   it('marks the current page in the navigation and the heading', () => {
-    renderAt('/audit') // a screen a later milestone builds (M9)
+    renderAt('/preview') // a screen the MVP doesn't build (placeholder)
     const nav = screen.getByRole('navigation', { name: 'Main' })
 
-    expect(within(nav).getByRole('link', { name: 'Audit trail' })).toHaveAttribute('aria-current', 'page')
+    expect(within(nav).getByRole('link', { name: 'Document preview' })).toHaveAttribute('aria-current', 'page')
     expect(within(nav).getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current')
-    expect(screen.getByRole('heading', { level: 1, name: 'Audit trail' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Document preview' })).toBeInTheDocument()
     expect(screen.getByText('Not built yet.')).toBeInTheDocument()
   })
 
@@ -51,10 +51,10 @@ describe('AppShell', () => {
     const router = renderAt('/')
     const nav = screen.getByRole('navigation', { name: 'Main' })
 
-    await userEvent.click(within(nav).getByRole('link', { name: 'Audit trail' }))
+    await userEvent.click(within(nav).getByRole('link', { name: 'Document preview' }))
 
-    expect(router.state.location.pathname).toBe('/audit')
-    expect(screen.getByRole('heading', { level: 1, name: 'Audit trail' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/preview')
+    expect(screen.getByRole('heading', { level: 1, name: 'Document preview' })).toBeInTheDocument()
   })
 
   it('shows the API status in the top bar and the database check on Overview', async () => {

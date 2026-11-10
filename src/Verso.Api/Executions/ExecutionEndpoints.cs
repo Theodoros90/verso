@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Verso.Api.Auth;
 using Verso.Api.Common;
 using Verso.Application.Executions;
 using Verso.Application.Templates;
@@ -11,15 +12,19 @@ public static class ExecutionEndpoints
     /// <summary>Request body cap for submissions; the data itself is limited to 1,000,000 characters.</summary>
     public const long MaxSubmitBodyBytes = 1_100_000;
 
+    /// <summary>Rate-limit policy for submissions, per signed-in user (<c>Limits:SubmissionsPerMinute</c>).</summary>
+    public const string SubmissionRateLimit = "submissions";
+
     public static IEndpointRouteBuilder MapExecutionEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/v1/workflows/{key}/executions", async (
                     string key, SubmitExecutionRequest? request,
                     [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
-                    [FromHeader(Name = "X-Correlation-Id")] string? correlationId,
-                    ExecutionService service, CancellationToken ct) =>
+                    [FromHeader(Name = CorrelationId.Header)] string? correlationId,
+                    ExecutionService service, HttpContext http, CancellationToken ct) =>
             {
-                var result = await service.SubmitAsync(key, idempotencyKey, correlationId, request, ct);
+                // Without a caller-supplied id, the run carries the request's own correlation id (same one as in the logs).
+                var result = await service.SubmitAsync(key, idempotencyKey, correlationId ?? CorrelationId.Get(http), request, ct);
                 if (!result.IsSuccess)
                 {
                     return result.Error!.ToProblem();
@@ -33,6 +38,8 @@ public static class ExecutionEndpoints
             })
             .WithTags("Executions")
             .WithName("SubmitExecution")
+            .RequireAuthorization(Policies.Operate)
+            .RequireRateLimiting(SubmissionRateLimit)
             .WithMetadata(new RequestSizeLimitAttribute(MaxSubmitBodyBytes))
             .Produces<SubmissionDto>(StatusCodes.Status202Accepted)
             .Produces<SubmissionDto>()
@@ -40,7 +47,7 @@ public static class ExecutionEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
-        var group = app.MapGroup("/api/v1/executions").WithTags("Executions");
+        var group = app.MapGroup("/api/v1/executions").WithTags("Executions").RequireAuthorization(Policies.Read);
 
         group.MapGet("/", async (
                     ExecutionQueries queries, CancellationToken ct,
@@ -63,6 +70,7 @@ public static class ExecutionEndpoints
                 return (await service.InputAsync(id, ct)).ToResult();
             })
             .WithName("GetExecutionInput")
+            .RequireAuthorization(Policies.ReadPayload)
             .Produces<ExecutionInputDto>()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
@@ -81,6 +89,7 @@ public static class ExecutionEndpoints
                     : result.Error!.ToProblem();
             })
             .WithName("RetryExecution")
+            .RequireAuthorization(Policies.Operate)
             .Produces<ExecutionDto>(StatusCodes.Status202Accepted)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);

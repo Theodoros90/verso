@@ -1,5 +1,8 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.HttpLogging;
+using Microsoft.AspNetCore.Server.IIS;
 using Verso.Api.Audit;
+using Verso.Api.Auth;
 using Verso.Api.Common;
 using Verso.Api.Documents;
 using Verso.Api.Executions;
@@ -14,15 +17,33 @@ using Verso.Infrastructure.Jobs;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Fail closed: there is no authentication yet (Entra ID is planned), and the API has write endpoints.
-// Until sign-in exists, the API only runs on developer machines and in automated tests.
-var isLocal = builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing");
-if (!isLocal)
+// Sign-in (plan §7): Entra ID access tokens, or synthetic users in Development/Testing only. Refuses to start when
+// the configuration is unsafe (Development sign-in elsewhere, or Entra without tenant/client id).
+builder.AddVersoAuth();
+
+// Limits (plan §7). Request bodies are capped for every endpoint (the largest legitimate one is a template draft);
+// submissions are additionally rate-limited per user.
+var limits = builder.Configuration.GetSection("Limits");
+var maxBodyBytes = limits.GetValue("MaxRequestBodyBytes", 2L * 1024 * 1024);
+builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = maxBodyBytes);
+builder.Services.Configure<IISServerOptions>(o => o.MaxRequestBodySize = maxBodyBytes);
+builder.Services.AddRateLimiter(options =>
 {
-    throw new InvalidOperationException(
-        $"Verso.Api has no authentication yet and refuses to run in the '{builder.Environment.EnvironmentName}' environment. " +
-        "Use Development or Testing until Entra ID sign-in is implemented.");
-}
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(ExecutionEndpoints.SubmissionRateLimit, http => RateLimitPartition.GetFixedWindowLimiter(
+        http.User.FindFirst(AuthSetup.IdClaim)?.Value ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = limits.GetValue("SubmissionsPerMinute", 120),
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+    options.OnRejected = (ctx, _) =>
+    {
+        ctx.HttpContext.Response.Headers.RetryAfter = "60";
+        return ValueTask.CompletedTask;
+    };
+});
 
 // Log provider and JSON format come from the "Logging" section of appsettings.json.
 builder.Services.AddHttpLogging(options =>
@@ -35,11 +56,37 @@ builder.Services.AddHttpLogging(options =>
     options.CombineLogs = true;
 });
 
-builder.Services.AddProblemDetails();
+builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = ctx =>
+{
+    // Problems produced by the framework (sign-in, authorization, limits) get a stable code like ours.
+    if (!ctx.ProblemDetails.Extensions.ContainsKey("code"))
+    {
+        var code = ctx.ProblemDetails.Status switch
+        {
+            StatusCodes.Status401Unauthorized => "unauthenticated",
+            StatusCodes.Status403Forbidden => "forbidden",
+            StatusCodes.Status413PayloadTooLarge => "request_too_large",
+            StatusCodes.Status429TooManyRequests => "rate_limited",
+            _ => null,
+        };
+        if (code is not null)
+        {
+            ctx.ProblemDetails.Extensions["code"] = code;
+        }
+    }
+});
+
+// The SPA is served from its own origin in production (docs/runbook.md); allow only the origins configured.
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+if (corsOrigins.Length > 0)
+{
+    builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials()
+        .WithExposedHeaders("ETag", "Location", CorrelationId.Header)));
+}
+
 builder.Services.AddOpenApi();
 builder.Services.AddVersoApplication();
 builder.Services.AddVersoPersistence(builder.Configuration);
-builder.Services.AddScoped<ICurrentUser, DevelopmentCurrentUser>();
 builder.Services.AddHealthChecks().AddVersoDatabaseCheck();
 
 // Background jobs: the API only enqueues (Hangfire client); the Worker runs them. Never Chromium here.
@@ -57,21 +104,34 @@ builder.Services.AddVersoDocumentStore(builder.Configuration);
 
 var app = builder.Build();
 
+app.UseCorrelationId();
 app.UseHttpLogging();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+if (corsOrigins.Length > 0)
+{
+    app.UseCors();
+}
 
-// Development and Testing only (see the guard above); the contract test reads it.
-app.MapOpenApi();
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseRateLimiter();
+
+// The contract document: Development and Testing only (the contract test reads it).
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
+{
+    app.MapOpenApi().AllowAnonymous();
+}
 
 app.MapHealthEndpoints();
+app.MapAuthEndpoints();
 app.MapTemplateEndpoints();
 app.MapPdfPreviewEndpoints();
 app.MapWorkflowEndpoints();
 app.MapExecutionEndpoints();
 app.MapDocumentEndpoints();
 app.MapAuditEndpoints();
-app.MapHub<ExecutionsHub>(ExecutionsHub.Path);
+app.MapHub<ExecutionsHub>(ExecutionsHub.Path).RequireAuthorization(Policies.Read);
 
 app.Run();
 

@@ -6,6 +6,7 @@
 import { HubConnectionBuilder, HubConnectionState, LogLevel, type HubConnection } from '@microsoft/signalr'
 
 import type { PdfPreviewDto } from './api/generated'
+import { getAccessToken } from './auth'
 import { previewsApi } from './api/templates'
 
 let connection: HubConnection | null = null
@@ -21,7 +22,13 @@ async function hub(): Promise<HubConnection | null> {
   starting = (async () => {
     try {
       if (!connection) {
-        connection = new HubConnectionBuilder().withUrl('/hubs/executions').withAutomaticReconnect().configureLogging(LogLevel.Warning).build()
+        connection = new HubConnectionBuilder()
+          // The hub needs the same sign-in as the API; browsers can't set headers on WebSockets, so the client
+          // sends the token as ?access_token= (the API accepts that on the hub path only).
+          .withUrl('/hubs/executions', { accessTokenFactory: async () => (await getAccessToken()) ?? '' })
+          .withAutomaticReconnect()
+          .configureLogging(LogLevel.Warning)
+          .build()
         connection.onreconnected(() => reconnectHandlers.forEach((handler) => handler()))
       }
       if (connection.state === HubConnectionState.Disconnected) await connection.start()

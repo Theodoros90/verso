@@ -64,7 +64,7 @@ function mockApi(initial: TemplateVersionDto, opts: { template?: TemplateDto; pu
     'fetch',
     vi.fn(async (url: string, init: RequestInit = {}) => {
       const method = init.method ?? 'GET'
-      const headers = (init.headers ?? {}) as Record<string, string>
+      const headers = Object.fromEntries(new Headers(init.headers).entries()) // lower-case names
       const body = init.body ? JSON.parse(String(init.body)) : undefined
       calls.push({ method, url, headers, body })
       if (url === '/api/health') return json({ status: 'Healthy', totalDurationMs: 1, checks: [] })
@@ -121,7 +121,7 @@ describe('Template designer', { timeout: 20_000 }, () => {
       if (!c) throw new Error('no PUT yet')
       return c
     })
-    expect(put.headers['If-Match']).toBe('"e1"')
+    expect(put.headers['if-match']).toBe('"e1"')
     expect(put.body).toEqual({
       pageSettings: { size: 'A4', orientation: 'portrait', marginsMm: { top: 18, right: 16, bottom: 18, left: 16 } },
       layout: invoiceLayout,
@@ -177,7 +177,7 @@ describe('Template designer', { timeout: 20_000 }, () => {
     expect(layout.body.blocks[0]!.props).toEqual({ binding: 'invoice.number', label: 'Number' })
     expect((layout.body.blocks[1]!.props.columns as unknown[]).length).toBe(6)
     const publishCall = api.calls.find((c) => c.url.endsWith('/draft/publish'))!
-    expect(publishCall.headers['If-Match']).toBe('"e2"')
+    expect(publishCall.headers['if-match']).toBe('"e2"')
   })
 
   it('selects elements with the keyboard in the element tree and deletes / undoes', async () => {

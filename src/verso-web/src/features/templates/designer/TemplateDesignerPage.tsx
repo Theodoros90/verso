@@ -15,6 +15,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Link, useBlocker, useParams } from 'react-router'
 
+import { usePermissions } from '@/app/AuthGate'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/form'
@@ -132,7 +133,8 @@ const isEditableTarget = (t: EventTarget | null) =>
 
 function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string | null; onReload: (message?: string) => void }) {
   const { template, version } = loaded
-  const readOnly = version.status !== 'Draft'
+  const canEdit = usePermissions().templateAuthoring // others see the template read-only (the API refuses their edits anyway)
+  const readOnly = version.status !== 'Draft' || !canEdit
   const [state, actions] = useDesignerState(useMemo(() => toDraft(version), [version]))
   const draft = state.history.present
   const dirty = draft !== state.saved
@@ -485,7 +487,9 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
           <Button size="sm" aria-pressed={previewOpen} disabled={readOnly} title={readOnly ? 'Preview renders the draft; start a new draft to preview.' : undefined} onClick={() => setPreviewOpen((o) => !o)}>
             <Eye /> Preview
           </Button>
-          {readOnly ? (
+          {!canEdit ? (
+            <span className="text-[12.5px] text-ink-3">View only: editing needs the TemplateAuthor role</span>
+          ) : readOnly ? (
             <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => void startDraft()}>
               <FilePlus2 /> Start new draft
             </Button>

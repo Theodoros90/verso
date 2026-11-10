@@ -20,6 +20,10 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
+    <!-- Sign-in (M9, approved 2026-11-10): Entra ID access tokens validated by the API -->
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.14" />
+    <!-- Worker as a Windows service (M9, approved 2026-11-10) -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.14" />
     <!-- Background jobs: Hangfire open-source (LGPL), 1.8.25 published 2026-08-28 -->
     <PackageVersion Include="Hangfire.Core" Version="1.8.25" />
     <PackageVersion Include="Hangfire.SqlServer" Version="1.8.25" />

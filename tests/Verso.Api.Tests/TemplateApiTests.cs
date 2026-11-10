@@ -75,7 +75,7 @@ public sealed class TemplateApiTests(MigratedDatabaseFixture fixture)
             ["TemplateCreated", "TemplateDraftSaved", "TemplateDraftSaved", "TemplatePublished",
              "TemplateDraftCreated", "TemplateDraftSaved", "TemplatePublished"],
             entries.Select(e => e.GetProperty("action").GetString()));
-        Assert.All(entries, e => Assert.Equal("dev.user", e.GetProperty("actorId").GetString()));
+        Assert.All(entries, e => Assert.Equal(VersoApiFactory.DefaultUser, e.GetProperty("actorId").GetString())); // the signed-in user
         Assert.Equal(2, entries[^1].GetProperty("details").GetProperty("versionNumber").GetInt32());
     }
 

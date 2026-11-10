@@ -1,4 +1,3 @@
-import { Download } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 
@@ -7,6 +6,7 @@ import { Field, Input } from '@/components/ui/form'
 import { documentsApi } from '@/lib/api/executions'
 import type { ArchivedDocumentDto } from '@/lib/api/generated'
 
+import { DownloadButton } from './DownloadButton'
 import { dayEndIso, dayStartIso, formatBytes, formatDate, formatDateTime, shortId } from './format'
 
 const PAGE_SIZE = 25
@@ -135,14 +135,7 @@ export function ArchivePage() {
                       {d.sha256.slice(0, 12)}…
                     </td>
                     <td className="px-3.5 py-2.5">
-                      <a
-                        href={documentsApi.contentUrl(d.id)}
-                        download={d.fileName}
-                        aria-label={`Download ${d.fileName}`}
-                        className="inline-flex items-center gap-1.5 rounded-[7px] border border-line-strong bg-surface px-2.5 py-1 text-[12.5px] text-ink no-underline hover:border-cyan"
-                      >
-                        <Download className="size-3.5" aria-hidden="true" /> Download
-                      </a>
+                      <DownloadButton documentId={d.id} fileName={d.fileName} />
                     </td>
                   </tr>
                 ))}

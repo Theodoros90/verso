@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 
+import { usePermissions } from '@/app/AuthGate'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
@@ -33,6 +34,7 @@ function Thumb() {
 export function TemplateListPage() {
   const [state, setState] = useState<ListState>({ kind: 'loading' })
   const [creating, setCreating] = useState(false)
+  const canCreate = usePermissions().templateAuthoring
 
   useEffect(() => {
     const controller = new AbortController()
@@ -50,9 +52,11 @@ export function TemplateListPage() {
     <div className="max-w-[1440px] px-4 pt-6 pb-10 md:px-7">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <p className="max-w-prose text-ink-2">Invoice templates. Open one to edit its draft, or create a new one.</p>
-        <Button variant="primary" className="ml-auto" onClick={() => setCreating(true)}>
-          <Plus /> New template
-        </Button>
+        {canCreate && (
+          <Button variant="primary" className="ml-auto" onClick={() => setCreating(true)}>
+            <Plus /> New template
+          </Button>
+        )}
       </div>
 
       {state.kind === 'loading' && <p className="text-ink-3">Loading templates…</p>}

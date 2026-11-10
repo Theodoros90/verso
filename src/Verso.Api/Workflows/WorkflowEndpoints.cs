@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Verso.Api.Auth;
 using Verso.Api.Common;
 using Verso.Application.Templates;
 using Verso.Application.Workflows;
@@ -13,9 +14,10 @@ public static class WorkflowEndpoints
         app.MapGet("/api/v1/node-types", () => Results.Ok(WorkflowService.NodeTypes()))
             .WithTags("Workflows")
             .WithName("ListNodeTypes")
+            .RequireAuthorization(Policies.Read)
             .Produces<IReadOnlyList<NodeTypeDto>>();
 
-        var group = app.MapGroup("/api/v1/workflows").WithTags("Workflows");
+        var group = app.MapGroup("/api/v1/workflows").WithTags("Workflows").RequireAuthorization(Policies.Read);
 
         group.MapGet("/", async (WorkflowService service, CancellationToken ct, int page = 1, int pageSize = 25) =>
                 Results.Ok(await service.ListAsync(page, pageSize, ct)))
@@ -30,6 +32,7 @@ public static class WorkflowEndpoints
                     : result.Error!.ToProblem();
             })
             .WithName("CreateWorkflow")
+            .RequireAuthorization(Policies.WorkflowAuthoring)
             .Produces<WorkflowDto>(StatusCodes.Status201Created)
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status409Conflict);
@@ -62,6 +65,7 @@ public static class WorkflowEndpoints
         group.MapPost("/{id:guid}/draft", async (Guid id, WorkflowService service, HttpContext http, CancellationToken ct) =>
                 (await service.StartDraftAsync(id, ct)).ToVersionedResult(http, v => Results.Created($"/api/v1/workflows/{id}/draft", v)))
             .WithName("StartWorkflowDraft")
+            .RequireAuthorization(Policies.WorkflowAuthoring)
             .Produces<WorkflowVersionDto>(StatusCodes.Status201Created)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
@@ -71,6 +75,7 @@ public static class WorkflowEndpoints
                     WorkflowService service, HttpContext http, CancellationToken ct) =>
                 (await service.SaveDraftAsync(id, ifMatch, request, ct)).ToVersionedResult(http))
             .WithName("SaveWorkflowDraft")
+            .RequireAuthorization(Policies.WorkflowAuthoring)
             .Produces<WorkflowVersionDto>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -81,6 +86,7 @@ public static class WorkflowEndpoints
         group.MapPost("/{id:guid}/draft/validate", async (Guid id, ValidateWorkflowRequest? request, WorkflowService service, CancellationToken ct) =>
                 (await service.ValidateAsync(id, request, ct)).ToResult())
             .WithName("ValidateWorkflowDraft")
+            .RequireAuthorization(Policies.WorkflowAuthoring)
             .Produces<WorkflowValidationDto>()
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound)
@@ -91,6 +97,7 @@ public static class WorkflowEndpoints
                     WorkflowService service, HttpContext http, CancellationToken ct) =>
                 (await service.PublishAsync(id, ifMatch, ct)).ToVersionedResult(http))
             .WithName("PublishWorkflowDraft")
+            .RequireAuthorization(Policies.WorkflowAuthoring)
             .Produces<WorkflowVersionDto>()
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)

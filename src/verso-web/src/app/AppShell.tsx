@@ -1,4 +1,4 @@
-import { Menu, Moon, Sun, X } from 'lucide-react'
+import { LogOut, Menu, Moon, Sun, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 
@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { HealthIndicator } from '@/features/health/HealthIndicator'
 import { cn } from '@/lib/utils'
 
+import { useSession } from './AuthGate'
 import { NAV_GROUPS, NAV_ITEMS } from './navigation'
 import { useTheme } from './theme'
 
@@ -20,7 +21,17 @@ function BrandMark() {
   )
 }
 
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join('')
+
 function Sidebar({ onNavigate }: { onNavigate: () => void }) {
+  const session = useSession()
+  const permissions = session.me.permissions
   return (
     <>
       <div className="flex items-center gap-2.5 px-[18px] pt-[18px] pb-3.5">
@@ -35,7 +46,7 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
         {NAV_GROUPS.map((group, i) => (
           <div key={group.label ?? i} className="flex flex-col gap-0.5">
             {group.label && <div className="px-2.5 pt-3.5 pb-1.5 text-xs text-ink-3">{group.label}</div>}
-            {group.items.map((item) => (
+            {group.items.filter((item) => !item.requires || permissions[item.requires]).map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}
@@ -58,13 +69,19 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
       </nav>
 
       <div className="flex items-center gap-2.5 border-t border-line px-3.5 py-3">
-        <div className="grid size-[30px] flex-none place-items-center rounded-full bg-surface-3 text-xs font-semibold text-ink-2">
-          –
+        <div aria-hidden="true" className="grid size-[30px] flex-none place-items-center rounded-full bg-surface-3 text-xs font-semibold text-ink-2">
+          {initials(session.me.name)}
         </div>
-        <div>
-          <div className="text-[13px] leading-tight font-semibold">Not signed in</div>
-          <div className="text-xs text-ink-3">Sign-in arrives with Entra ID</div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] leading-tight font-semibold">{session.me.name}</div>
+          <div className="truncate text-xs text-ink-3">
+            {session.me.roles.join(', ')}
+            {session.mode === 'Development' && ' · development sign-in'}
+          </div>
         </div>
+        <Button variant="ghost" size="icon" aria-label="Sign out" title="Sign out" onClick={session.signOut}>
+          <LogOut />
+        </Button>
       </div>
     </>
   )

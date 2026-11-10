@@ -1,8 +1,21 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
-import { afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
+
+import type { MeDto } from '@/lib/api/generated'
+import { setSession } from '@/lib/auth'
 
 afterEach(() => cleanup())
+
+/** Component tests run signed in as an admin (every permission) unless they set another session (see AuthGate.test). */
+export const testAdmin: MeDto = {
+  id: 'dev.admin',
+  name: 'Alex Admin',
+  roles: ['Admin'],
+  permissions: { read: true, templateAuthoring: true, workflowAuthoring: true, operate: true, readPayload: true, readAudit: true },
+}
+
+beforeEach(() => setSession({ mode: 'Development', me: testAdmin, getToken: async () => 'dev:dev.admin', signOut: () => undefined }))
 
 // jsdom has no matchMedia; the theme hook needs it. Default: system prefers light.
 if (!window.matchMedia) {

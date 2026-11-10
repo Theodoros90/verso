@@ -178,7 +178,7 @@ describe('Archive', () => {
     expect(within(rows[0]!).getByText('INV-2026-003901.pdf')).toBeInTheDocument()
     expect(within(rows[0]!).getByText('Kestrel Logistics Ltd')).toBeInTheDocument()
     expect(within(rows[0]!).getByText('invoices/2026/11')).toBeInTheDocument()
-    expect(within(rows[0]!).getByRole('link', { name: 'Download INV-2026-003901.pdf' })).toHaveAttribute('href', '/api/v1/documents/d1/content')
+    expect(within(rows[0]!).getByRole('button', { name: 'Download INV-2026-003901.pdf' })).toBeEnabled() // fetched with the token on click (see the run view test)
     expect(within(rows[0]!).getByRole('link', { name: 'Open run 0000aaaa' })).toHaveAttribute('href', '/executions/0193a6c2-0000-7000-8000-00000000aaaa')
     expect(within(rows[1]!).getByText('Permanent')).toBeInTheDocument()
   })

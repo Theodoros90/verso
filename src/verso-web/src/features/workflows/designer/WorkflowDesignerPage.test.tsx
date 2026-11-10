@@ -75,8 +75,8 @@ function mockApi(opts: { issues?: WorkflowIssueDto[]; publish?: 'ok' | 'invalid'
     'fetch',
     vi.fn(async (url: string, init: RequestInit = {}) => {
       const method = init.method ?? 'GET'
-      const headers = (init.headers ?? {}) as Record<string, string>
-      calls.push({ method, url, body: init.body ? JSON.parse(String(init.body)) : undefined, ifMatch: headers['If-Match'] })
+      const headers = Object.fromEntries(new Headers(init.headers).entries()) // lower-case names
+      calls.push({ method, url, body: init.body ? JSON.parse(String(init.body)) : undefined, ifMatch: headers['if-match'] })
       if (url === '/api/health') return json({ status: 'Healthy', totalDurationMs: 1, checks: [] })
       if (url === '/api/v1/node-types') return json(nodeTypes)
       if (url === `/api/v1/workflows/${WF}`) return json({ id: WF, key: 'invoice-standard', name: 'Invoice standard', description: null, createdAt: '', createdBy: '', latestPublishedVersion: null, draftVersionId: 'v1' })

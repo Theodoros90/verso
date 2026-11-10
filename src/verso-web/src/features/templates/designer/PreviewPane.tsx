@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/ui/form'
 import { cn } from '@/lib/utils'
 import type { PdfPreviewDto, RenderIssueDto } from '@/lib/api/generated'
+import { requestBlob } from '@/lib/api/client'
 import { previewsApi, templatesApi } from '@/lib/api/templates'
 import { waitForPreview } from '@/lib/realtime'
 
@@ -138,7 +139,7 @@ function HtmlPreview({ templateId, revision, refreshKey, onSelectElement }: Pane
 
 type PdfState =
   | { kind: 'rendering'; since: number }
-  | { kind: 'ready'; preview: PdfPreviewDto }
+  | { kind: 'ready'; preview: PdfPreviewDto; url: string }
   | { kind: 'failed'; preview: PdfPreviewDto }
   | { kind: 'error'; message: string }
 
@@ -146,18 +147,30 @@ function PdfPreview({ templateId, revision, refreshKey, onSelectElement }: PaneP
   const [state, setState] = useState<PdfState>({ kind: 'rendering', since: Date.now() })
 
   // Renders when the tab opens, after every save, and on refresh. A newer request cancels the wait for an older one.
+  // The PDF is fetched with the user's token and shown from a blob: URL (an iframe src can't carry a bearer token).
   useEffect(() => {
     const controller = new AbortController()
+    let objectUrl: string | null = null
     setState({ kind: 'rendering', since: Date.now() })
     templatesApi
       .queuePdfPreview(templateId)
       .then((queued) => waitForPreview(queued.previewId, controller.signal))
-      .then((preview) => setState(preview.status === 'Succeeded' ? { kind: 'ready', preview } : { kind: 'failed', preview }))
+      .then(async (preview): Promise<PdfState> => {
+        if (preview.status !== 'Succeeded') return { kind: 'failed', preview }
+        objectUrl = URL.createObjectURL(await requestBlob(previewsApi.contentUrl(preview.previewId), controller.signal))
+        return { kind: 'ready', preview, url: objectUrl }
+      })
+      .then((next) => {
+        if (!controller.signal.aborted) setState(next)
+      })
       .catch((e: unknown) => {
         if (e instanceof DOMException && e.name === 'AbortError') return
         setState({ kind: 'error', message: e instanceof Error ? e.message : 'The PDF preview failed.' })
       })
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
   }, [templateId, revision, refreshKey])
 
   if (state.kind === 'rendering')
@@ -179,7 +192,7 @@ function PdfPreview({ templateId, revision, refreshKey, onSelectElement }: PaneP
       </p>
     )
 
-  const url = previewsApi.contentUrl(state.preview.previewId)
+  const url = state.url
   return (
     <>
       <IssueList issues={state.preview.issues} onSelectElement={onSelectElement} />
@@ -189,7 +202,7 @@ function PdfPreview({ templateId, revision, refreshKey, onSelectElement }: PaneP
           Open in new tab <ExternalLink className="size-3.5" aria-hidden="true" />
         </a>
       </div>
-      {/* Our own PDF, same origin; not sandboxed because Chrome's PDF viewer doesn't run in a sandboxed frame. */}
+      {/* Our own PDF (a blob: URL of this page); not sandboxed because Chrome's PDF viewer doesn't run in a sandboxed frame. */}
       <iframe title="PDF preview" src={url} className="min-h-0 w-full flex-1 border-0 bg-[var(--stage)]" />
     </>
   )

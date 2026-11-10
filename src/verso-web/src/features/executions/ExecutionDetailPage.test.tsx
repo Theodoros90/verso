@@ -261,10 +261,30 @@ describe('Execution detail', () => {
       }),
       [],
     )
+    // The download is fetched with the user's token (a plain link couldn't send it) and handed to the browser.
+    const fetchMock = vi.mocked(fetch)
+    const base = fetchMock.getMockImplementation()!
+    let auth: string | null = null
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input) === '/api/v1/documents/d1/content') {
+        auth = new Headers(init?.headers).get('Authorization')
+        return new Response('%PDF-1.7', { status: 200, headers: { 'Content-Type': 'application/pdf' } })
+      }
+      return base(input, init)
+    })
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => 'blob:doc-d1', revokeObjectURL: () => undefined }))
+    const saved: string[] = []
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      saved.push(`${this.download} <- ${this.getAttribute('href')}`)
+    })
     open()
+    const user = userEvent.setup()
 
-    const link = await screen.findByRole('link', { name: /Download INV-2026-003901.pdf/ })
-    expect(link).toHaveAttribute('href', '/api/v1/documents/d1/content')
+    await user.click(await screen.findByRole('button', { name: 'Download INV-2026-003901.pdf' }))
+
+    await waitFor(() => expect(saved).toEqual(['INV-2026-003901.pdf <- blob:doc-d1']))
+    expect(auth).toBe('Bearer dev:dev.admin')
+    click.mockRestore()
     expect(screen.getByText('b'.repeat(64))).toBeInTheDocument()
     expect(screen.getByText('invoices/2026/11')).toBeInTheDocument()
     expect(screen.getByText('Kestrel Logistics Ltd')).toBeInTheDocument()
