@@ -1,5 +1,8 @@
 import type { RouteObject } from 'react-router'
 
+import { ArchivePage } from '@/features/executions/ArchivePage'
+import { ExecutionDetailPage } from '@/features/executions/ExecutionDetailPage'
+import { ExecutionListPage } from '@/features/executions/ExecutionListPage'
 import { OverviewPage } from '@/features/overview/OverviewPage'
 import { NotBuiltYetPage } from '@/features/placeholder/NotBuiltYetPage'
 import { NotFoundPage } from '@/features/placeholder/NotFoundPage'
@@ -11,6 +14,9 @@ import { WorkflowListPage } from '@/features/workflows/WorkflowListPage'
 
 import { AppShell } from './AppShell'
 import { NAV_ITEMS } from './navigation'
+
+/** Screens that exist; the other navigation entries get the "not built yet" placeholder. */
+const BUILT_PATHS = ['/', '/templates', '/workflows', '/executions', '/archive']
 
 export const routes: RouteObject[] = [
   {
@@ -26,7 +32,10 @@ export const routes: RouteObject[] = [
       { path: 'templates/:id', element: <TemplateDesignerPage /> },
       { path: 'workflows', element: <WorkflowListPage /> },
       { path: 'workflows/:id', element: <WorkflowDesignerPage /> },
-      ...NAV_ITEMS.filter((item) => !['/', '/templates', '/workflows'].includes(item.path)).map((item) => ({
+      { path: 'executions', element: <ExecutionListPage /> },
+      { path: 'executions/:id', element: <ExecutionDetailPage /> },
+      { path: 'archive', element: <ArchivePage /> },
+      ...NAV_ITEMS.filter((item) => !BUILT_PATHS.includes(item.path)).map((item) => ({
         path: item.path.slice(1),
         element: <NotBuiltYetPage item={item} />,
       })),

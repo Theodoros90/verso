@@ -82,7 +82,9 @@ dotnet run --project src/Verso.Worker     # separate terminal: runs background j
 
 PDF printing settings are in the `Pdf` section of `src/Verso.Worker/appsettings.json`: `RenderTimeout` (default 30 s), `RecycleAfterRenders` (100) and `MaxConcurrentRenders` (2). `Worker:JobWorkers` sets the number of job threads (4).
 
-Archived documents are written by the Worker to `Documents:RootPath`, by default `%LOCALAPPDATA%\Verso\documents` (`staging\…` while a run is in progress, `archive\yyyy\MM\{documentId}.pdf` once archived). On a server, point it at a folder that only the Worker's service account can write.
+Archived documents are written by the Worker to `Documents:RootPath`, by default `%LOCALAPPDATA%\Verso\documents` (`staging\…` while a run is in progress, `archive\yyyy\MM\{documentId}.pdf` once archived). The API reads the same folder for downloads, so **the API and the Worker must use the same `Documents:RootPath`** (the default is the same for both when they run as the same user). On a server, give the Worker's service account write access and the API's account read access only.
+
+Until Entra ID sign-in exists, the API acts as one development user. Its roles come from `DevUser:Roles` (comma separated, default `Operator,Auditor`); only Auditor and Admin may read submitted data. To see a Viewer's experience: `$env:DevUser__Roles = "Viewer"` before starting the API.
 
 Check the API directly:
 
@@ -120,7 +122,9 @@ The dev server forwards `/api/*` and the SignalR hub `/hubs/*` (WebSockets) to `
 4. Select a step to edit its settings. Generate PDF needs a template that has a **published** version.
 5. The Issues list and the step cards update as you edit. **Publish** is enabled when there are no errors; warnings (such as an unconnected "Invalid" output) don't block it.
 
-**Running a workflow (M7, API only; the history screen comes with M8):** with the API and Worker running, a published template, and a published workflow `invoice-standard` (trigger → validate → generate PDF → archive):
+**Execution history and archive (M8):** open **Executions** for every run (newest first, filter by workflow, status, date or correlation id; it updates as runs progress). Open a run for its steps (a rejected run lists each failed rule), documents, activity and, on request, the submitted data (Auditor/Admin only). **Archive** searches archived documents by file name or metadata and downloads them; each download is checked against its SHA-256. The live updates use SignalR through the dev server's `/hubs` proxy and need the API and the Worker running. If your Vite dev server already runs, restart the API and Worker after `database update` and reload the page.
+
+**Running a workflow (M7):** with the API and Worker running, a published template, and a published workflow `invoice-standard` (trigger → validate → generate PDF → archive):
 
 ```powershell
 $body = @{ data = (Get-Content tests/fixtures/invoice/sample.json -Raw | ConvertFrom-Json) } | ConvertTo-Json -Depth 20

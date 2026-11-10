@@ -33,6 +33,7 @@ public sealed partial class ExecutionService(IVersoDbContext db, IExecutionJobs 
         public const string Submitted = "ExecutionSubmitted";
         public const string RetryRequested = "ExecutionRetryRequested";
         public const string Completed = "ExecutionCompleted";
+        public const string InputViewed = "ExecutionInputViewed";
     }
 
     [GeneratedRegex(@"^[\x21-\x7E]{1,100}$")]
@@ -148,6 +149,34 @@ public sealed partial class ExecutionService(IVersoDbContext db, IExecutionJobs 
             ? []
             : await db.ArchiveRecords.AsNoTracking().Where(a => documentIds.Contains(a.DocumentId)).ToDictionaryAsync(a => a.DocumentId, ct);
         return ToDto(execution, documents, archives);
+    }
+
+    /// <summary>
+    /// The submitted payload. It may hold personal data, so only Auditor/Admin read it (plan §7); each read is audited.
+    /// The role is checked before anything else, so the response doesn't reveal whether the execution exists.
+    /// </summary>
+    public async Task<Result<ExecutionInputDto>> InputAsync(Guid id, CancellationToken ct)
+    {
+        if (!user.CanReadPayloads())
+        {
+            return new AppError(ErrorKind.Forbidden, "forbidden", "Reading submitted data requires the Auditor or Admin role.");
+        }
+
+        var row = await db.Executions.AsNoTracking().Where(e => e.Id == id)
+            .Select(e => new { e.InputPayload, e.InputHash, e.WorkflowKey }).SingleOrDefaultAsync(ct);
+        if (row is null)
+        {
+            return NotFound(id);
+        }
+
+        var now = clock.GetUtcNow();
+        db.AuditEntries.Add(AuditEntry.Record(
+            Actions.InputViewed, EntityType, id.ToString(), user.Id, user.Name, now,
+            JsonSerializer.Serialize(new { inputHash = row.InputHash }), Activity.Current?.TraceId.ToHexString()));
+        await db.SaveChangesAsync(ct);
+
+        using var document = JsonDocument.Parse(row.InputPayload);
+        return new ExecutionInputDto(id, row.InputHash, document.RootElement.Clone());
     }
 
     /// <summary>Operator retry of a Failed execution: back to Queued, resuming at the failed step.</summary>

@@ -90,7 +90,11 @@ public sealed class ArchiveRecord
     /// <summary>JSON object of key → value from the node's metadata settings.</summary>
     public string Metadata { get; private set; } = "{}";
 
-    public static ArchiveRecord Create(Guid documentId, string retention, DateTimeOffset? retentionUntil, string folderPath, string metadataJson, DateTimeOffset now) => new()
+    /// <summary>File name and metadata values, one per line: what archive search matches against (keys are not searched).</summary>
+    public string SearchText { get; private set; } = "";
+
+    public static ArchiveRecord Create(
+        Guid documentId, string retention, DateTimeOffset? retentionUntil, string folderPath, string metadataJson, string searchText, DateTimeOffset now) => new()
     {
         Id = Guid.CreateVersion7(now),
         DocumentId = documentId,
@@ -99,5 +103,6 @@ public sealed class ArchiveRecord
         RetentionUntil = retentionUntil,
         FolderPath = folderPath,
         Metadata = metadataJson,
+        SearchText = searchText,
     };
 }

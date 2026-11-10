@@ -44,6 +44,9 @@ public sealed record ExecutionDto(
     IReadOnlyList<ExecutionStepDto> Steps,
     IReadOnlyList<ExecutionDocumentDto> Documents);
 
+/// <summary>The submitted payload of an execution (restricted: Auditor/Admin).</summary>
+public sealed record ExecutionInputDto(Guid ExecutionId, string InputHash, JsonElement Data);
+
 /// <summary>Queues execution jobs. Implemented with Hangfire in Infrastructure; the Worker runs them.</summary>
 public interface IExecutionJobs
 {

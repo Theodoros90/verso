@@ -511,10 +511,22 @@ Decisions made while implementing M7 (2026-11-10):
 - DB-level write-once for `ArchiveRecords` (deny UPDATE/DELETE to the app login) stays with deployment hardening in M9, as for published versions.
 - Test infrastructure: integration tests now create and migrate their databases before starting API hosts. A host's background relay could connect between EF's `CREATE DATABASE` and its `ALTER DATABASE` and block it; this happened when several databases were created in parallel.
 
-### M8 — Execution history and live progress (M)
+### M8 — Execution history and live progress (M) — implemented 2026-11-10, awaiting acceptance
 - Executions list (filters), execution detail with step timeline (prototype's run view), live updates via SignalR relay, input payload view (restricted), document download, archive search screen.
 
 **Acceptance:** submitting from a second browser tab shows step progress live within ~2 s; reconnecting mid-run catches up with no missing steps; filters by status/date/workflow work; download returns the archived bytes (hash verified); Viewer can't see payloads.
+
+Decisions made while implementing M8 (2026-11-10):
+- **Payload restriction before roles exist (chosen by the user).** `ICurrentUser` gains `Roles`, and `GET /executions/{id}/input` requires Auditor or Admin (403 `forbidden`, checked before the lookup). Until Entra ID, the development user's roles come from `DevUser:Roles` (default `Operator,Auditor`). M9 replaces the source of roles with Entra app roles and adds the full endpoint × role matrix. Each successful payload read is audited (`ExecutionInputViewed`, input hash only).
+- **Live progress relay** (`ExecutionEventRelay`, API hosted service): polls `ExecutionEvent` every 500 ms from the latest event at startup, and sends `ExecutionUpdated` (to the execution, workflow and an all-executions group) and `StepUpdated` (execution group). The all-executions group (`SubscribeExecutions`) is an addition to the plan's two group kinds, for the history list.
+  - Identity values can commit out of order across concurrent runs, so each poll re-reads the last 100 ids and skips those already sent. A test makes an event visible late and checks it is delivered once.
+  - Group memberships are lost on reconnect: clients subscribe again and catch up with `GET /executions/{id}/events?after=`. Clients merge events by id and keep a 3 s fallback poll while a run is unfinished.
+  - A connection in two groups can receive a notification twice; clients treat them as idempotent hints.
+- **Document download:** the API reads the file through `IDocumentStore`, checks its SHA-256 against the recorded one before sending, and audits the download (`DocumentDownloaded`). A mismatch or missing file is 409 and nothing is served. Both processes use the same `Documents:RootPath`; the API never writes. Only archived documents are listed or served.
+- **Archive search** (`GET /documents`): free text `q` matches the file name and the metadata values, as plain text (`%`/`_` are literal), plus an archive-date range. A new `ArchiveRecords.SearchText` column holds them, set when archiving. This avoids SQL Server JSON functions in the Application layer and works with the author-defined metadata keys. The migration `AddArchiveSearch` backfills existing rows. The plan's separate "document type" and "customer / invoice number" filters are covered by `q`, because the MVP has one document type and those are metadata values.
+- Executions list filters: workflow key, status, submission date range (`from` inclusive, `to` exclusive; the UI sends the start of the first day and the start of the day after the last), correlation id; paged, newest first.
+- Screens: Executions (list with live updates), run detail (steps timeline with problems found by Validate, documents with download, details, activity from the events, submitted data on request, retry for Failed runs), and Archive. The Overview, Document preview and Audit trail screens are unchanged (M9 builds the audit trail).
+- Measured with the real API, Worker, Chromium and SignalR (Node client using `@microsoft/signalr`): `Submitted` after about 0.3 s, `Started` after 0.8 s and `Succeeded` after 1.8 s, and every stored event was also announced.
 
 ### M9 — MVP hardening (M)
 - Role matrix enforcement + tests, audit trail screen (read-only), limits, structured logging with correlation ids, E2E suite for the 7 MVP steps, runbook (setup, Chromium offline install, backup notes).

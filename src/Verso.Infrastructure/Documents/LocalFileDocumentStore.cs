@@ -105,7 +105,10 @@ internal sealed partial class LocalFileDocumentStore : IDocumentStore
 
 public static class DocumentStoreRegistration
 {
-    /// <summary>Worker only for now: it writes documents. (The API gains read access with downloads in M8.)</summary>
+    /// <summary>
+    /// The Worker writes documents; the API only reads them (downloads, M8), and both use the same
+    /// <c>Documents:RootPath</c>. The API never calls <see cref="IDocumentStore.WriteAsync"/>.
+    /// </summary>
     public static IServiceCollection AddVersoDocumentStore(this IServiceCollection services, IConfiguration configuration)
     {
         var options = new DocumentStoreOptions { RootPath = configuration[$"{DocumentStoreOptions.Section}:{nameof(DocumentStoreOptions.RootPath)}"] };

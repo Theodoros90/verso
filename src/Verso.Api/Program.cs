@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.HttpLogging;
 using Verso.Api.Audit;
 using Verso.Api.Common;
+using Verso.Api.Documents;
 using Verso.Api.Executions;
 using Verso.Api.Health;
 using Verso.Api.Realtime;
@@ -8,6 +9,7 @@ using Verso.Api.Templates;
 using Verso.Api.Workflows;
 using Verso.Application;
 using Verso.Infrastructure;
+using Verso.Infrastructure.Documents;
 using Verso.Infrastructure.Jobs;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -47,6 +49,11 @@ builder.Services.AddVersoJobClient(builder.Configuration);
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<IPreviewNotifier, SignalRPreviewNotifier>();
 builder.Services.AddHostedService<PreviewReadyRelay>();
+builder.Services.AddSingleton<IExecutionNotifier, SignalRExecutionNotifier>();
+builder.Services.AddHostedService<ExecutionEventRelay>();
+
+// Archived documents are read for downloads (the Worker writes them); both use Documents:RootPath.
+builder.Services.AddVersoDocumentStore(builder.Configuration);
 
 var app = builder.Build();
 
@@ -62,6 +69,7 @@ app.MapTemplateEndpoints();
 app.MapPdfPreviewEndpoints();
 app.MapWorkflowEndpoints();
 app.MapExecutionEndpoints();
+app.MapDocumentEndpoints();
 app.MapAuditEndpoints();
 app.MapHub<ExecutionsHub>(ExecutionsHub.Path);
 

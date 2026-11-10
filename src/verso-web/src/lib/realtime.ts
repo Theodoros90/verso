@@ -11,13 +11,19 @@ import { previewsApi } from './api/templates'
 let connection: HubConnection | null = null
 let starting: Promise<HubConnection | null> | null = null
 
+/** Called after the connection was re-established: group memberships are gone, so watchers join again and catch up. */
+const reconnectHandlers = new Set<() => void>()
+
 /** The shared hub connection, started on first use; null when it can't connect (the caller falls back to polling). */
 async function hub(): Promise<HubConnection | null> {
   if (connection?.state === HubConnectionState.Connected) return connection
   if (starting) return starting
   starting = (async () => {
     try {
-      connection ??= new HubConnectionBuilder().withUrl('/hubs/executions').withAutomaticReconnect().configureLogging(LogLevel.Warning).build()
+      if (!connection) {
+        connection = new HubConnectionBuilder().withUrl('/hubs/executions').withAutomaticReconnect().configureLogging(LogLevel.Warning).build()
+        connection.onreconnected(() => reconnectHandlers.forEach((handler) => handler()))
+      }
       if (connection.state === HubConnectionState.Disconnected) await connection.start()
       return connection
     } catch {
@@ -27,6 +33,54 @@ async function hub(): Promise<HubConnection | null> {
     }
   })()
   return starting
+}
+
+export type ExecutionTarget = { kind: 'execution'; id: string } | { kind: 'workflow'; id: string } | { kind: 'all' }
+
+const SUBSCRIBE: Record<ExecutionTarget['kind'], [string, string]> = {
+  execution: ['SubscribeExecution', 'UnsubscribeExecution'],
+  workflow: ['SubscribeWorkflow', 'UnsubscribeWorkflow'],
+  all: ['SubscribeExecutions', 'UnsubscribeExecutions'],
+}
+
+/**
+ * Calls `onChange` whenever the API says something changed for the target (ExecutionUpdated / StepUpdated), and again
+ * after a reconnect, once the subscription is renewed. The message carries no state: the caller re-reads the REST API
+ * (and catches up with `GET /executions/{id}/events?after=`). Returns the unsubscribe function. When the hub can't
+ * connect it returns a no-op and the caller's own polling keeps the view current.
+ */
+export async function watchExecutions(target: ExecutionTarget, onChange: () => void): Promise<() => void> {
+  const conn = await hub()
+  if (!conn) return () => undefined
+
+  let active = true
+  const [subscribeMethod, unsubscribeMethod] = SUBSCRIBE[target.kind]
+  const args = target.kind === 'all' ? [] : [target.id]
+  const onMessage = (message: { executionId?: string }) => {
+    if (!active) return
+    if (target.kind === 'execution' && message?.executionId !== target.id) return
+    onChange()
+  }
+  const rejoin = () => {
+    if (!active) return
+    void conn
+      .invoke(subscribeMethod, ...args)
+      .catch(() => undefined)
+      .then(onChange)
+  }
+
+  conn.on('ExecutionUpdated', onMessage)
+  conn.on('StepUpdated', onMessage)
+  reconnectHandlers.add(rejoin)
+  await conn.invoke(subscribeMethod, ...args).catch(() => undefined)
+
+  return () => {
+    active = false
+    reconnectHandlers.delete(rejoin)
+    conn.off('ExecutionUpdated', onMessage)
+    conn.off('StepUpdated', onMessage)
+    conn.invoke(unsubscribeMethod, ...args).catch(() => undefined)
+  }
 }
 
 const FINISHED = new Set(['Succeeded', 'Failed'])

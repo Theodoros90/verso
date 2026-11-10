@@ -40,6 +40,8 @@ internal sealed class ArchiveRecordConfiguration : IEntityTypeConfiguration<Arch
         builder.Property(a => a.Retention).HasMaxLength(16).IsUnicode(false).IsRequired();
         builder.Property(a => a.FolderPath).HasMaxLength(300).IsRequired();
         builder.Property(a => a.Metadata).IsRequired();
+        builder.Property(a => a.SearchText).IsRequired();
+        builder.HasIndex(a => a.ArchivedAt).HasDatabaseName("IX_ArchiveRecords_ArchivedAt"); // archive search by date
         builder.HasOne<Document>().WithOne().HasForeignKey<ArchiveRecord>(a => a.DocumentId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(a => a.DocumentId).IsUnique().HasDatabaseName("UX_ArchiveRecords_Document");
     }

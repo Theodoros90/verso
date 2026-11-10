@@ -171,9 +171,9 @@ internal sealed class TestDocumentStore : IDocumentStore, IDisposable
 {
     private readonly LocalFileDocumentStore _inner;
 
-    public TestDocumentStore()
+    public TestDocumentStore(string? root = null)
     {
-        Root = Path.Combine(Path.GetTempPath(), "verso-test-store", Guid.NewGuid().ToString("N"));
+        Root = root ?? Path.Combine(Path.GetTempPath(), "verso-test-store", Guid.NewGuid().ToString("N"));
         _inner = new LocalFileDocumentStore(Options.Create(new DocumentStoreOptions { RootPath = Root }));
     }
 

@@ -9,6 +9,24 @@ export interface ArchiveDto {
   metadata: Record<string, string>
 }
 
+export interface ArchivedDocumentDto {
+  id: string
+  executionId: string
+  nodeId: string
+  templateVersionId: string
+  fileName: string
+  contentType: string
+  sizeBytes: number
+  sha256: string
+  status: string
+  createdAt: string
+  archivedAt: string
+  folderPath: string
+  retention: string
+  retentionUntil: string | null
+  metadata: Record<string, string>
+}
+
 export interface AuditEntryDto {
   id: string
   sequence: number
@@ -67,6 +85,21 @@ export interface ExecutionDto {
   documents: ExecutionDocumentDto[]
 }
 
+export interface ExecutionEventDto {
+  id: number
+  executionId: string
+  nodeId: string | null
+  type: string
+  occurredAt: string
+  data: null | JsonElement
+}
+
+export interface ExecutionInputDto {
+  executionId: string
+  inputHash: string
+  data: JsonElement
+}
+
 export interface ExecutionStepDto {
   nodeId: string
   type: string
@@ -80,6 +113,19 @@ export interface ExecutionStepDto {
   durationMs: number | null
   error: string | null
   result: null | JsonElement
+}
+
+export interface ExecutionSummaryDto {
+  id: string
+  status: string
+  workflowKey: string
+  workflowVersion: number
+  correlationId: string
+  submittedAt: string
+  completedAt: string | null
+  attempt: number
+  failureCode: string | null
+  failureMessage: string | null
 }
 
 export interface ExecutionWorkflowDto {
@@ -137,8 +183,22 @@ export interface NodeTypeDto {
   defaults: JsonElement
 }
 
+export interface PageResultOfArchivedDocumentDto {
+  items: ArchivedDocumentDto[]
+  page: number
+  pageSize: number
+  total: number
+}
+
 export interface PageResultOfAuditEntryDto {
   items: AuditEntryDto[]
+  page: number
+  pageSize: number
+  total: number
+}
+
+export interface PageResultOfExecutionSummaryDto {
+  items: ExecutionSummaryDto[]
   page: number
   pageSize: number
   total: number

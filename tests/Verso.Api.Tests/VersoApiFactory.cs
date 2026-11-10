@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Verso.Api.Realtime;
+using Verso.Application.Executions;
 using Verso.Application.Templates;
 
 namespace Verso.Api.Tests;
@@ -14,14 +15,33 @@ internal sealed class VersoApiFactory(string connectionString) : WebApplicationF
     /// <summary>Records the "preview ready" notifications the relay sends (instead of pushing them over SignalR).</summary>
     public RecordingPreviewNotifier Notifications { get; } = new();
 
+    /// <summary>Records the execution notifications the (hosted) relay sends.</summary>
+    public RecordingExecutionNotifier ExecutionNotifications { get; } = new();
+
+    /// <summary>Where the API reads archived documents from; tests that download point this at their own store.</summary>
+    public string DocumentRoot { get; } = Path.Combine(Path.GetTempPath(), "verso-test-store", Guid.NewGuid().ToString("N"));
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
         builder.UseSetting("ConnectionStrings:Verso", connectionString);
+        builder.UseSetting("Documents:RootPath", DocumentRoot);
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<IPreviewNotifier>(Notifications);
+            services.AddSingleton<IExecutionNotifier>(ExecutionNotifications);
         });
+    }
+}
+
+internal sealed class RecordingExecutionNotifier : IExecutionNotifier
+{
+    public ConcurrentQueue<RelayEvent> Sent { get; } = new();
+
+    public Task NotifyAsync(RelayEvent ev, CancellationToken ct)
+    {
+        Sent.Enqueue(ev);
+        return Task.CompletedTask;
     }
 }
 

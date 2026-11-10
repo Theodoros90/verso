@@ -109,7 +109,14 @@ namespace Verso.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("RetentionUntil")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("SearchText")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("ArchivedAt")
+                        .HasDatabaseName("IX_ArchiveRecords_ArchivedAt");
 
                     b.HasIndex("DocumentId")
                         .IsUnique()

@@ -7,6 +7,7 @@ public enum ErrorKind
     Conflict,
     PreconditionRequired,
     PreconditionFailed,
+    Forbidden,
 }
 
 /// <summary>An expected failure of a use case. <see cref="Code"/> is stable and documented; clients can rely on it.</summary>

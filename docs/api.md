@@ -30,6 +30,11 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | 404 | `preview.not_found` | Unknown PDF preview id (or deleted after 24 hours) |
 | 409 | `preview.not_ready` | PDF content requested while the preview is still queued or rendering |
 | 409 | `preview.failed` | PDF content requested for a preview that failed; read its `error` |
+| 403 | `forbidden` | The development user lacks the role the endpoint needs (today only `GET /executions/{id}/input`: Auditor or Admin) |
+| 404 | `document.not_found` | Unknown document id, or a document that isn't archived yet |
+| 409 | `document.not_archived` | Content requested for a document that is generated but not archived yet |
+| 409 | `document.content_missing` | The archived file is missing from storage |
+| 409 | `document.integrity_failed` | The archived file doesn't match its recorded SHA-256; it is not served |
 | 400 | `execution.idempotency_key_required` | Submission without an `Idempotency-Key` header |
 | 404 | `execution.not_found` | Unknown execution id |
 | 409 | `execution.idempotency_conflict` | `Idempotency-Key` already used for this workflow with **different** data; `executionId` names the original |
@@ -190,9 +195,16 @@ Hub: `/hubs/executions` (plan §5.5). No authentication yet, like the rest of th
 | Direction | Message | Payload |
 |---|---|---|
 | Client → server | `SubscribePreview(previewId)` / `UnsubscribePreview(previewId)` | — |
+| Client → server | `SubscribeExecution(executionId)` / `UnsubscribeExecution(executionId)` | — |
+| Client → server | `SubscribeWorkflow(workflowId)` / `UnsubscribeWorkflow(workflowId)` | — |
+| Client → server | `SubscribeExecutions()` / `UnsubscribeExecutions()` | every execution update (the history list); an addition to the plan |
 | Server → client | `PreviewReady` | `{ "previewId": "…", "status": "Succeeded" \| "Failed" }` |
+| Server → client | `ExecutionUpdated` | `{ "executionId": "…", "status": "Running", "eventId": 36, "type": "StepStarted" }`, to the execution, workflow and all-executions groups |
+| Server → client | `StepUpdated` | `{ "executionId": "…", "nodeId": "pdf", "status": "Running" \| "Succeeded" \| "Failed", "outputPort": "success" \| null, "eventId": 36 }`, to the execution group only |
 
-Notifications are hints, not the source of truth: after `PreviewReady`, read `GET /api/v1/previews/{previewId}`. Subscribe first, then read once, because the preview may have finished before you subscribed. The API relays finished previews from the database about every 500 ms (the Worker and the API share only the database), so a notification arrives within about a second. Clients should also poll slowly (the designer polls every 3 s) in case WebSockets are blocked.
+Notifications are hints, not the source of truth: after one arrives, read the REST API. Subscribe first, then read once, because the work may have finished before you subscribed. `status` in `ExecutionUpdated` is the execution's status when the notification was sent, which can be newer than `eventId` when several events were relayed together. A client in more than one group (for example an execution and all executions) may receive the same notification twice, so handle them idempotently.
+
+**Previews:** the API relays finished previews from the database about every 500 ms (the Worker and the API share only the database), so a notification arrives within about a second. **Executions:** the relay polls `ExecutionEvent` rows about every 500 ms, starting from the latest event when the API starts. Event ids are database identity values and concurrent runs can commit out of order, so each poll also re-reads the last 100 ids and skips those already sent; an event that becomes visible late is still delivered. Group memberships don't survive a reconnect: after SignalR reconnects, subscribe again and catch up with `GET /api/v1/executions/{id}/events?after={lastEventId}`. Clients should also poll slowly (the designer polls every 3 s, the run view every 3 s while a run is unfinished) in case WebSockets are blocked.
 
 ## Workflows
 
@@ -266,10 +278,35 @@ An execution is one run of a workflow's **latest published version** with one su
 | Method | Path | Success | Purpose |
 |---|---|---|---|
 | POST | `/api/v1/workflows/{key}/executions` | 202 `Submission`, `Location` (new) · 200 `Submission` (replay) | Submit data |
+| GET | `/api/v1/executions` | 200 page of `ExecutionSummary` | History, newest first, with filters |
 | GET | `/api/v1/executions/{id}` | 200 `Execution` | Status, steps, pinned versions, documents |
+| GET | `/api/v1/executions/{id}/events?after=` | 200 `ExecutionEvent[]` | Event timeline and catch-up for live views |
+| GET | `/api/v1/executions/{id}/input` | 200 `ExecutionInput` | The submitted payload. **Auditor or Admin only**, audited |
 | POST | `/api/v1/executions/{id}/retry` | 202 `Execution`, `Location` | Retry a `Failed` execution from its failed step |
 
-The history list, the event timeline, the payload view and document download come with M8.
+### History: `GET /api/v1/executions`
+
+Query (all optional): `workflow` (workflow key), `status` (`Queued`, `Running`, `Succeeded`, `Rejected`, `Failed`; case-insensitive), `from` (inclusive) and `to` (exclusive) as ISO 8601 instants on the submission time, `correlationId` (exact), `page`, `pageSize` (max 100, default 25). Newest first. 400 `validation` for an unknown status or `to` not after `from`.
+
+```json
+{ "items": [ { "id": "…", "status": "Rejected", "workflowKey": "invoice-standard", "workflowVersion": 1, "correlationId": "…",
+               "submittedAt": "…", "completedAt": "…", "attempt": 1, "failureCode": "data.invalid", "failureMessage": "The data failed 6 validation rule(s) …" } ],
+  "page": 1, "pageSize": 25, "total": 1 }
+```
+
+### Events: `GET /api/v1/executions/{id}/events?after={eventId}`
+
+Events of one execution with an id above `after` (default 0), oldest first, at most 500 (`limit`). Event ids increase strictly, so a client remembers the last id it saw and asks for the rest: after a reconnect, or whenever a notification arrives. Reading overlapping ranges is harmless; clients merge by id. 404 `execution.not_found`.
+
+```json
+[ { "id": 36, "executionId": "…", "nodeId": "pdf", "type": "StepStarted", "occurredAt": "…", "data": { "attempt": 1 } } ]
+```
+
+`type`: `Submitted`, `Started`, `StepStarted`, `StepSucceeded` (`data.port`), `StepFailed`, `RetryScheduled`, `Succeeded`, `Rejected`, `Failed`, `RetryRequested`, `Redispatched`. `data` is a small object (attempt, port, code); never payload values.
+
+### Submitted data: `GET /api/v1/executions/{id}/input`
+
+`{ "executionId": "…", "inputHash": "…", "data": { … } }`, `Cache-Control: no-store`. The payload can hold personal data, so it needs the **Auditor** or **Admin** role: otherwise **403 `forbidden`**, answered before the execution is looked up, so it doesn't reveal which ids exist. Every successful read is audited (`ExecutionInputViewed`, with the input hash, not the data). Until Entra ID sign-in exists, the development user's roles come from `DevUser:Roles` (comma separated, default `Operator,Auditor`); real roles arrive with M9.
 
 ### Submit: `POST /api/v1/workflows/{key}/executions`
 
@@ -346,6 +383,27 @@ Each step is tried up to **3 times** for technical errors, 5 s and then 10 s apa
 
 No body. Only for `Failed` executions: the status becomes `Queued`, `attempt` increases, the failed step gets a fresh budget of 3 attempts, and the run continues from there. Returns 202 with the execution. Errors: 404 `execution.not_found`, 409 `execution.not_retryable`.
 
+## Documents (archive)
+
+Archived documents only: a PDF that is generated but not yet archived isn't listed and can't be downloaded.
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/documents` | 200 page of `ArchivedDocument` | Archive search, newest first |
+| GET | `/api/v1/documents/{id}` | 200 `ArchivedDocument` | Metadata: hash, retention, source execution |
+| GET | `/api/v1/documents/{id}/content` | 200 `application/pdf` | The PDF (verified, audited) |
+
+**Search:** `q` (optional) matches the file name and the archive metadata **values** (invoice number, customer…; keys aren't searched), case-insensitively, as plain text: `%` and `_` are literal. `from` (inclusive) and `to` (exclusive) filter on the archive time; `page`, `pageSize` as usual.
+
+```json
+{ "id": "…", "executionId": "…", "nodeId": "pdf", "templateVersionId": "…", "fileName": "INV-2026-003901.pdf", "contentType": "application/pdf",
+  "sizeBytes": 21284, "sha256": "d0b3…", "status": "Archived", "createdAt": "…", "archivedAt": "…",
+  "folderPath": "invoices/2026/11", "retention": "7y", "retentionUntil": "2033-11-10T10:03:12+00:00",
+  "metadata": { "InvoiceNumber": "INV-2026-003901", "Customer": "Kestrel Logistics Ltd" } }
+```
+
+**Content:** the API reads the archived file and checks its SHA-256 against the recorded one **before** sending anything. Headers: `Content-Disposition: attachment; filename=…`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`. A missing file is 409 `document.content_missing`, a mismatch 409 `document.integrity_failed` (nothing is served and nothing is audited). A served download is audited as `DocumentDownloaded` (document, execution, file name, SHA-256). The API only reads the store; the Worker writes. Both must use the same `Documents:RootPath`.
+
 ## Audit
 
 ### `GET /api/v1/audit?entityType=Template&entityId={id}&page=1&pageSize=50`
@@ -374,5 +432,7 @@ Append-only log, oldest first (`sequence` is the authoritative order). Both filt
 | `ExecutionSubmitted` | `{ workflowKey, workflowVersion, inputHash, correlationId }` (never the payload) |
 | `ExecutionRetryRequested` | `{ attempt }` |
 | `ExecutionCompleted` | `{ status, failureCode, attempt }`; actor `verso.worker`, `traceId` = the execution's correlation id |
+| `ExecutionInputViewed` | `{ inputHash }` (entity `Execution`; never the data) |
+| `DocumentDownloaded` | `{ executionId, fileName, sha256 }` (entity `Document`) |
 
 Rejected requests (validation, 409, 412, 428) are not audited; they change nothing. `traceId` matches the `TraceId` in the API's structured logs.

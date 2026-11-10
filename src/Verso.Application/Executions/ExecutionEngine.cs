@@ -319,7 +319,8 @@ public sealed partial class ExecutionEngine(
             _ => null,
         };
         var folderPath = DocumentNames.FolderPath(folder.Text);
-        var record = ArchiveRecord.Create(document.Id, retention, retentionUntil, folderPath, JsonSerializer.Serialize(metadata), now);
+        var searchText = string.Join('\n', metadata.Values.Prepend(document.FileName));
+        var record = ArchiveRecord.Create(document.Id, retention, retentionUntil, folderPath, JsonSerializer.Serialize(metadata), searchText, now);
         var stagingKey = document.StorageKey;
         document.MarkArchived(archiveKey, now);
         db.ArchiveRecords.Add(record);

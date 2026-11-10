@@ -35,4 +35,24 @@ public interface ICurrentUser
 {
     string Id { get; }
     string Name { get; }
+
+    /// <summary>Verso roles of the person (see <see cref="Roles"/>). Until Entra ID exists these come from configuration.</summary>
+    IReadOnlyCollection<string> Roles { get; }
+}
+
+/// <summary>
+/// Proposed roles (plan §7). M8 only enforces the payload restriction; the full endpoint × role matrix is M9.
+/// </summary>
+public static class Roles
+{
+    public const string Viewer = "Viewer";
+    public const string Operator = "Operator";
+    public const string TemplateAuthor = "TemplateAuthor";
+    public const string WorkflowAuthor = "WorkflowAuthor";
+    public const string Auditor = "Auditor";
+    public const string Admin = "Admin";
+
+    /// <summary>Submitted payloads may hold personal data: only auditors and admins read them (plan §7).</summary>
+    public static bool CanReadPayloads(this ICurrentUser user) =>
+        user.Roles.Contains(Auditor, StringComparer.OrdinalIgnoreCase) || user.Roles.Contains(Admin, StringComparer.OrdinalIgnoreCase);
 }

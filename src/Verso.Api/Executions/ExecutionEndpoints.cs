@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Verso.Api.Common;
 using Verso.Application.Executions;
+using Verso.Application.Templates;
 
 namespace Verso.Api.Executions;
 
@@ -40,6 +41,31 @@ public static class ExecutionEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict);
 
         var group = app.MapGroup("/api/v1/executions").WithTags("Executions");
+
+        group.MapGet("/", async (
+                    ExecutionQueries queries, CancellationToken ct,
+                    string? workflow = null, string? status = null, DateTimeOffset? from = null, DateTimeOffset? to = null,
+                    string? correlationId = null, int page = 1, int pageSize = 25) =>
+                (await queries.ListAsync(new ExecutionFilter(workflow, status, from, to, correlationId), page, pageSize, ct)).ToResult())
+            .WithName("ListExecutions")
+            .Produces<PageResult<ExecutionSummaryDto>>()
+            .ProducesValidationProblem();
+
+        group.MapGet("/{id:guid}/events", async (Guid id, ExecutionQueries queries, CancellationToken ct, long after = 0, int limit = ExecutionQueries.MaxEventsPerRead) =>
+                (await queries.EventsAsync(id, after, limit, ct)).ToResult())
+            .WithName("ListExecutionEvents")
+            .Produces<IReadOnlyList<ExecutionEventDto>>()
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{id:guid}/input", async (Guid id, ExecutionService service, HttpContext http, CancellationToken ct) =>
+            {
+                http.Response.Headers.CacheControl = "no-store";
+                return (await service.InputAsync(id, ct)).ToResult();
+            })
+            .WithName("GetExecutionInput")
+            .Produces<ExecutionInputDto>()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapGet("/{id:guid}", async (Guid id, ExecutionService service, CancellationToken ct) =>
                 (await service.GetAsync(id, ct)).ToResult())

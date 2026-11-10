@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // A fake hub: tests can make it fail to connect, and can push 'PreviewReady' to the registered handler.
 const handlers = new Map<string, (msg: unknown) => void>()
-const hubState = { failStart: false, invoked: [] as unknown[][] }
+const hubState = { failStart: false, invoked: [] as unknown[][], reconnected: null as null | (() => void) }
 
 vi.mock('@microsoft/signalr', () => {
   class FakeConnection {
@@ -16,6 +16,9 @@ vi.mock('@microsoft/signalr', () => {
     }
     off(name: string) {
       handlers.delete(name)
+    }
+    onreconnected(fn: () => void) {
+      hubState.reconnected = fn
     }
     async invoke(...args: unknown[]) {
       hubState.invoked.push(args)
