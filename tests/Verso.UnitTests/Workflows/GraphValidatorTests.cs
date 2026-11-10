@@ -271,14 +271,43 @@ public sealed class GraphValidatorTests
         Assert.False(result.Valid);
     }
 
+    private static JsonObject SftpTrigger(string host, string folder = "/inbound", string pattern = "*.xml") => new JsonObject
+    {
+        ["id"] = "trigger", ["type"] = "sftp-folder", ["title"] = "SFTP folder", ["position"] = new JsonObject { ["x"] = 0, ["y"] = 80 },
+        ["config"] = new JsonObject { ["host"] = host, ["folder"] = folder, ["pattern"] = pattern, ["poll"] = "every-5-minutes" },
+    };
+
+    [Theory]
+    [InlineData("sftp.example.com", "/inbound", "*.xml", true)]
+    [InlineData("sftp.example.com", "/in bound/2026", "", true)]
+    [InlineData("", "/inbound", "*.xml", false)]                       // host is required
+    [InlineData("user:secret@sftp.example.com", "/inbound", "", false)] // no credentials in the host
+    [InlineData("sftp://sftp.example.com", "/inbound", "", false)]     // no URL
+    [InlineData("sftp.example.com", "inbound", "", false)]             // folder starts with /
+    [InlineData("sftp.example.com", "/inbound", "../*.xml", false)]    // file pattern has no path parts
+    public void SftpFolder_NeedsAPlainHostAndAFolder(string host, string folder, string pattern, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]![0] = SftpTrigger(host, folder, pattern);
+
+        var result = Validate(definition);
+
+        Assert.Equal(valid, !result.Issues.Any(i => i.NodeId == "trigger" && i.Severity == GraphValidator.Error));
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {
         foreach (var type in NodeCatalog.All)
         {
             var errors = ConfigSchemaValidator.Validate(type.ConfigSchema, type.Defaults);
-            // generate-pdf has no template chosen yet; everything else is valid out of the box.
-            var expected = type.Type == NodeCatalog.GeneratePdf ? ["templateId"] : Array.Empty<string>();
+            // These need user input: generate-pdf a template, sftp-folder a host. Everything else is valid out of the box.
+            var expected = type.Type switch
+            {
+                NodeCatalog.GeneratePdf => ["templateId"],
+                NodeCatalog.SftpFolder => ["host"],
+                _ => Array.Empty<string>(),
+            };
             Assert.Equal(expected, errors.Select(e => e.Field).ToArray());
         }
     }

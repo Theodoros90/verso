@@ -1,5 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { Archive, Circle, Database, FileText, ShieldCheck, Upload, Webhook, type LucideIcon } from 'lucide-react'
+import { Archive, Circle, Database, FileText, FolderInput, ShieldCheck, Upload, Webhook, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NodeTypeDto, WorkflowIssueDto } from '@/lib/api/generated'
@@ -28,6 +28,7 @@ export const NODE_ICONS: Record<string, LucideIcon> = {
   'api-trigger': Webhook,
   'erp-connector': Database,
   'file-upload': Upload,
+  'sftp-folder': FolderInput,
   validate: ShieldCheck,
   'generate-pdf': FileText,
   archive: Archive,

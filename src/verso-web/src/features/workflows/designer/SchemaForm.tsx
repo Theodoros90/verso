@@ -17,7 +17,7 @@ export interface FieldSchema {
   items?: FieldSchema
   enum?: string[]
   'x-enumLabels'?: string[]
-  'x-widget'?: 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path'
+  'x-widget'?: 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono'
   maxItems?: number
 }
 
@@ -205,7 +205,7 @@ function StringInput({
     )
   }
 
-  const mono = field['x-widget'] === 'data-path' || field['x-widget'] === 'pattern' || field['x-widget'] === 'endpoint-path'
+  const mono = field['x-widget'] === 'data-path' || field['x-widget'] === 'pattern' || field['x-widget'] === 'endpoint-path' || field['x-widget'] === 'mono'
   return (
     <Input
       {...common}

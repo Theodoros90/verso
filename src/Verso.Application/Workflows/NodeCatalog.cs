@@ -20,7 +20,7 @@ public sealed record NodeTypeDto(
     JsonElement Defaults);
 
 /// <summary>
-/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector and file-upload (simulated), validate, generate-pdf, archive.
+/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload and sftp-folder (simulated), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -28,6 +28,7 @@ public static class NodeCatalog
     public const string ApiTrigger = "api-trigger";
     public const string ErpConnector = "erp-connector";
     public const string FileUpload = "file-upload";
+    public const string SftpFolder = "sftp-folder";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string Archive = "archive";
@@ -83,6 +84,19 @@ public static class NodeCatalog
         ["portal-customers"] = "Portal customers",
         ["anyone-with-link"] = "Anyone with the link",
     };
+
+    public static readonly IReadOnlyDictionary<string, string> SftpPolls = new Dictionary<string, string>
+    {
+        ["every-minute"] = "Every minute",
+        ["every-5-minutes"] = "Every 5 minutes",
+        ["hourly"] = "Hourly",
+    };
+
+    private const string HostPattern = @"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$";
+
+    private const string FolderPattern = @"^/[A-Za-z0-9._~/ -]*$";
+
+    private const string FilePatternPattern = @"^[A-Za-z0-9._*?-]*$";
 
     public static readonly IReadOnlyDictionary<string, string> ErpModes = new Dictionary<string, string>
     {
@@ -181,6 +195,22 @@ public static class NodeCatalog
               "required": ["accept", "maxSize", "who"] }
             """,
             """{ "accept": "PDF, XML, CSV", "maxSize": "25mb", "who": "staff" }"""),
+
+        Node(SftpFolder, "SFTP folder", "input",
+            "Picks up files from a watched folder. Simulated: nothing connects to an SFTP server, so runs are submitted to POST /api/v1/workflows/{key}/executions.",
+            [], [new PortDto("out", "Out", true)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "host": { "type": "string", "title": "Host", "minLength": 1, "maxLength": 253, "pattern": "{{Escape(HostPattern)}}", "x-widget": "mono",
+                  "description": "A host name such as sftp.example.com. No user name, password or URL." },
+                "folder": { "type": "string", "title": "Folder", "minLength": 1, "maxLength": 300, "pattern": "{{Escape(FolderPattern)}}", "x-widget": "mono" },
+                "pattern": { "type": "string", "title": "File pattern", "maxLength": 100, "pattern": "{{Escape(FilePatternPattern)}}", "x-widget": "mono",
+                  "description": "For example *.xml. Leave empty for every file." },
+                "poll": { "type": "string", "title": "Check for files", "enum": {{JsonSerializer.Serialize(SftpPolls.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(SftpPolls.Values)}} } },
+              "required": ["host", "folder", "poll"] }
+            """,
+            """{ "host": "", "folder": "/inbound", "pattern": "*.xml", "poll": "every-5-minutes" }"""),
 
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",

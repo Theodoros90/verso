@@ -54,6 +54,21 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { accept: 'PDF, XML, CSV', maxSize: '25mb', who: 'staff' },
   },
   {
+    type: 'sftp-folder', label: 'SFTP folder', category: 'input', description: 'Picks up files from a watched folder.',
+    inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        host: { type: 'string', title: 'Host', 'x-widget': 'mono' },
+        folder: { type: 'string', title: 'Folder', 'x-widget': 'mono' },
+        pattern: { type: 'string', title: 'File pattern', 'x-widget': 'mono' },
+        poll: { type: 'string', title: 'Check for files', enum: ['every-minute', 'every-5-minutes'], 'x-enumLabels': ['Every minute', 'Every 5 minutes'] },
+      },
+      required: ['host', 'folder', 'poll'],
+    },
+    defaults: { host: '', folder: '/inbound', pattern: '*.xml', poll: 'every-5-minutes' },
+  },
+  {
     type: 'validate', label: 'Validate data', category: 'process', description: 'Checks required fields.',
     inputs: [{ id: 'in', label: 'In', required: true }],
     outputs: [{ id: 'valid', label: 'Valid', required: true }, { id: 'invalid', label: 'Invalid', required: false }],
@@ -211,6 +226,7 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     expect(screen.getByRole('button', { name: 'Add API / webhook' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add ERP connector' })).toBeDisabled() // inputs share the one-trigger rule
     expect(screen.getByRole('button', { name: 'Add File upload' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add SFTP folder' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Add Validate data' }))
     expect(await screen.findByText('Validate data', { selector: '.truncate.text-\\[13px\\]' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Validate data', level: 3 })).toBeInTheDocument() // the new step is selected
