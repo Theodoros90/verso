@@ -1,5 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { Archive, Circle, Database, FileText, ShieldCheck, Webhook, type LucideIcon } from 'lucide-react'
+import { Archive, Circle, Database, FileText, ShieldCheck, Upload, Webhook, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NodeTypeDto, WorkflowIssueDto } from '@/lib/api/generated'
@@ -27,6 +27,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
 export const NODE_ICONS: Record<string, LucideIcon> = {
   'api-trigger': Webhook,
   'erp-connector': Database,
+  'file-upload': Upload,
   validate: ShieldCheck,
   'generate-pdf': FileText,
   archive: Archive,

@@ -29,13 +29,16 @@ public sealed class ExecutionApiTests(MigratedDatabaseFixture fixture) : IDispos
         _client.Dispose();
     }
 
-    [Fact]
-    public async Task ErpConnectorTrigger_IsSimulated_SubmittedDataRunsLikeTheApiTrigger()
+    [Theory]
+    [InlineData("erp-connector", """{ "system": "oracle-netsuite", "entity": "Invoices", "mode": "on-post" }""")]
+    [InlineData("file-upload", """{ "accept": "PDF, XML, CSV", "maxSize": "25mb", "who": "staff" }""")]
+    public async Task SimulatedInputTriggers_RunSubmittedDataLikeTheApiTrigger(string type, string config)
     {
-        var trigger = JsonNode.Parse("""
-            { "id": "trigger", "type": "erp-connector", "title": "ERP connector", "position": { "x": 0, "y": 80 },
-              "config": { "system": "oracle-netsuite", "entity": "Invoices", "mode": "on-post" } }
-            """)!;
+        var trigger = new JsonObject
+        {
+            ["id"] = "trigger", ["type"] = type, ["title"] = type, ["position"] = new JsonObject { ["x"] = 0, ["y"] = 80 },
+            ["config"] = JsonNode.Parse(config),
+        };
         var key = await Kit.PublishInvoiceWorkflowAsync(trigger: trigger);
 
         var id = await Kit.SubmitNewAsync(key, ExecutionTestKit.Sample);
@@ -44,7 +47,7 @@ public sealed class ExecutionApiTests(MigratedDatabaseFixture fixture) : IDispos
         var done = await Kit.GetExecutionAsync(id);
         Assert.Equal("Succeeded", done.GetProperty("status").GetString());
         var first = done.GetProperty("steps")[0];
-        Assert.Equal("erp-connector", first.GetProperty("type").GetString());
+        Assert.Equal(type, first.GetProperty("type").GetString());
         Assert.Equal("out", first.GetProperty("outputPort").GetString());
     }
 

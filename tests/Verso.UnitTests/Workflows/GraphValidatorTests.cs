@@ -254,6 +254,24 @@ public sealed class GraphValidatorTests
     }
 
     [Fact]
+    public void FileUpload_CanBeTheTrigger_AndNeedsAcceptedTypesAndKnownOptions()
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]![0] = JsonNode.Parse("""
+            { "id": "trigger", "type": "file-upload", "title": "File upload", "position": { "x": 0, "y": 80 },
+              "config": { "accept": "PDF, XML, CSV", "maxSize": "25mb", "who": "staff" } }
+            """);
+        Assert.True(Validate(definition).Valid);
+
+        definition["nodes"]![0]!["config"] = JsonNode.Parse("""{ "accept": "", "maxSize": "1gb", "who": "staff" }""");
+        var result = Validate(definition);
+
+        Assert.Contains(result.Issues, i => i.NodeId == "trigger" && i.Code == "config.required" && i.Field == "accept");
+        Assert.Contains(result.Issues, i => i.NodeId == "trigger" && i.Field == "maxSize");
+        Assert.False(result.Valid);
+    }
+
+    [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {
         foreach (var type in NodeCatalog.All)

@@ -40,6 +40,20 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { system: 'dynamics-365', entity: 'Invoices', mode: 'on-post' },
   },
   {
+    type: 'file-upload', label: 'File upload', category: 'input', description: 'Someone uploads a file in Verso or the portal.',
+    inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        accept: { type: 'string', title: 'Accepted file types' },
+        maxSize: { type: 'string', title: 'Largest file', enum: ['10mb', '25mb'], 'x-enumLabels': ['10 MB', '25 MB'] },
+        who: { type: 'string', title: 'Who can upload', enum: ['staff'], 'x-enumLabels': ['Signed-in staff'] },
+      },
+      required: ['accept', 'maxSize', 'who'],
+    },
+    defaults: { accept: 'PDF, XML, CSV', maxSize: '25mb', who: 'staff' },
+  },
+  {
     type: 'validate', label: 'Validate data', category: 'process', description: 'Checks required fields.',
     inputs: [{ id: 'in', label: 'In', required: true }],
     outputs: [{ id: 'valid', label: 'Valid', required: true }, { id: 'invalid', label: 'Invalid', required: false }],
@@ -196,6 +210,7 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
 
     expect(screen.getByRole('button', { name: 'Add API / webhook' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add ERP connector' })).toBeDisabled() // inputs share the one-trigger rule
+    expect(screen.getByRole('button', { name: 'Add File upload' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Add Validate data' }))
     expect(await screen.findByText('Validate data', { selector: '.truncate.text-\\[13px\\]' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Validate data', level: 3 })).toBeInTheDocument() // the new step is selected

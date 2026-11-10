@@ -20,13 +20,14 @@ public sealed record NodeTypeDto(
     JsonElement Defaults);
 
 /// <summary>
-/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector (simulated), validate, generate-pdf, archive.
+/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector and file-upload (simulated), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
 {
     public const string ApiTrigger = "api-trigger";
     public const string ErpConnector = "erp-connector";
+    public const string FileUpload = "file-upload";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string Archive = "archive";
@@ -67,6 +68,20 @@ public static class NodeCatalog
         ["dynamics-365"] = "Microsoft Dynamics 365",
         ["sap-s4hana"] = "SAP S/4HANA",
         ["oracle-netsuite"] = "Oracle NetSuite",
+    };
+
+    public static readonly IReadOnlyDictionary<string, string> UploadSizes = new Dictionary<string, string>
+    {
+        ["10mb"] = "10 MB",
+        ["25mb"] = "25 MB",
+        ["100mb"] = "100 MB",
+    };
+
+    public static readonly IReadOnlyDictionary<string, string> Uploaders = new Dictionary<string, string>
+    {
+        ["staff"] = "Signed-in staff",
+        ["portal-customers"] = "Portal customers",
+        ["anyone-with-link"] = "Anyone with the link",
     };
 
     public static readonly IReadOnlyDictionary<string, string> ErpModes = new Dictionary<string, string>
@@ -153,6 +168,19 @@ public static class NodeCatalog
               "required": ["system", "entity", "mode"] }
             """,
             """{ "system": "dynamics-365", "entity": "Invoices", "mode": "on-post" }"""),
+
+        Node(FileUpload, "File upload", "input",
+            "Someone uploads a file in Verso or the portal. Simulated: there is no upload screen yet, so runs are submitted to POST /api/v1/workflows/{key}/executions.",
+            [], [new PortDto("out", "Out", true)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "accept": { "type": "string", "title": "Accepted file types", "minLength": 1, "maxLength": 200 },
+                "maxSize": { "type": "string", "title": "Largest file", "enum": {{JsonSerializer.Serialize(UploadSizes.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(UploadSizes.Values)}} },
+                "who": { "type": "string", "title": "Who can upload", "enum": {{JsonSerializer.Serialize(Uploaders.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Uploaders.Values)}} } },
+              "required": ["accept", "maxSize", "who"] }
+            """,
+            """{ "accept": "PDF, XML, CSV", "maxSize": "25mb", "who": "staff" }"""),
 
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",
