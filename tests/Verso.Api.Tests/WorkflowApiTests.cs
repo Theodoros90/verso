@@ -13,18 +13,18 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
     private readonly HttpClient _client = fixture.Factory.CreateClient();
 
     [Fact]
-    public async Task NodeTypes_ListsTheFourMvpNodes_WithPortsSchemaAndDefaults()
+    public async Task NodeTypes_ListsTheCatalog_WithPortsSchemaAndDefaults()
     {
         using var response = await _client.GetAsync(new Uri("/api/v1/node-types", UriKind.Relative));
         var types = (await ReadAsync(response)).EnumerateArray().ToList();
 
-        Assert.Equal(["api-trigger", "validate", "generate-pdf", "archive"], types.Select(t => t.GetProperty("type").GetString()));
-        var validate = types[1];
+        Assert.Equal(["api-trigger", "erp-connector", "validate", "generate-pdf", "archive"], types.Select(t => t.GetProperty("type").GetString()));
+        var validate = types.Single(t => t.GetProperty("type").GetString() == "validate");
         Assert.Equal("process", validate.GetProperty("category").GetString());
         Assert.Equal(["valid", "invalid"], validate.GetProperty("outputs").EnumerateArray().Select(p => p.GetProperty("id").GetString()));
         Assert.False(validate.GetProperty("outputs")[1].GetProperty("required").GetBoolean());
         Assert.Equal("object", validate.GetProperty("configSchema").GetProperty("type").GetString());
-        Assert.Equal("latest-published", types[2].GetProperty("defaults").GetProperty("templateVersion").GetString());
+        Assert.Equal("latest-published", types.Single(t => t.GetProperty("type").GetString() == "generate-pdf").GetProperty("defaults").GetProperty("templateVersion").GetString());
     }
 
     [Fact]

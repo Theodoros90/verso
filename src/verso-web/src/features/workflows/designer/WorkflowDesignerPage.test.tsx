@@ -26,6 +26,20 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { path: '/hooks/invoices', auth: 'hmac-sha256', expectedSchema: '', samplePayload: '' },
   },
   {
+    type: 'erp-connector', label: 'ERP connector', category: 'input', description: 'Reads records from SAP, Dynamics or Oracle.',
+    inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        system: { type: 'string', title: 'System', enum: ['dynamics-365', 'oracle-netsuite'], 'x-enumLabels': ['Microsoft Dynamics 365', 'Oracle NetSuite'] },
+        entity: { type: 'string', title: 'Record type' },
+        mode: { type: 'string', title: 'Start a run', enum: ['on-post', 'nightly'], 'x-enumLabels': ['When a record is posted', 'Nightly batch'] },
+      },
+      required: ['system', 'entity', 'mode'],
+    },
+    defaults: { system: 'dynamics-365', entity: 'Invoices', mode: 'on-post' },
+  },
+  {
     type: 'validate', label: 'Validate data', category: 'process', description: 'Checks required fields.',
     inputs: [{ id: 'in', label: 'In', required: true }],
     outputs: [{ id: 'valid', label: 'Valid', required: true }, { id: 'invalid', label: 'Invalid', required: false }],
@@ -181,6 +195,7 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     const user = userEvent.setup()
 
     expect(screen.getByRole('button', { name: 'Add API / webhook' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add ERP connector' })).toBeDisabled() // inputs share the one-trigger rule
     await user.click(screen.getByRole('button', { name: 'Add Validate data' }))
     expect(await screen.findByText('Validate data', { selector: '.truncate.text-\\[13px\\]' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Validate data', level: 3 })).toBeInTheDocument() // the new step is selected

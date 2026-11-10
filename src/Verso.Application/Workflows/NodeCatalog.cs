@@ -20,12 +20,13 @@ public sealed record NodeTypeDto(
     JsonElement Defaults);
 
 /// <summary>
-/// The node catalog is code, not data (plan §4). MVP types: api-trigger, validate, generate-pdf, archive.
+/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector (simulated), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
 {
     public const string ApiTrigger = "api-trigger";
+    public const string ErpConnector = "erp-connector";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string Archive = "archive";
@@ -60,7 +61,22 @@ public static class NodeCatalog
         ["mtls"] = "Mutual TLS",
     };
 
-    private const string DataPathPattern = @"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$";
+    /// <summary>ERP systems the (simulated) connector names. No ERP integration exists; see the node description.</summary>
+    public static readonly IReadOnlyDictionary<string, string> ErpSystems = new Dictionary<string, string>
+    {
+        ["dynamics-365"] = "Microsoft Dynamics 365",
+        ["sap-s4hana"] = "SAP S/4HANA",
+        ["oracle-netsuite"] = "Oracle NetSuite",
+    };
+
+    public static readonly IReadOnlyDictionary<string, string> ErpModes = new Dictionary<string, string>
+    {
+        ["on-post"] = "When a record is posted",
+        ["every-15-minutes"] = "Every 15 minutes",
+        ["nightly"] = "Nightly batch",
+    };
+
+    private const string DataPathPattern =@"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$";
 
     private const string EndpointPathPattern = @"^/[A-Za-z0-9._~/-]*$";
 
@@ -124,6 +140,19 @@ public static class NodeCatalog
                 ["expectedSchema"] = DefaultExpectedSchema,
                 ["samplePayload"] = DefaultSamplePayload,
             }.ToJsonString()),
+
+        Node(ErpConnector, "ERP connector", "input",
+            "Reads records from SAP, Dynamics or Oracle. Simulated: no ERP is connected, so runs are submitted to POST /api/v1/workflows/{key}/executions.",
+            [], [new PortDto("out", "Out", true)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "system": { "type": "string", "title": "System", "enum": {{JsonSerializer.Serialize(ErpSystems.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(ErpSystems.Values)}} },
+                "entity": { "type": "string", "title": "Record type", "minLength": 1, "maxLength": 100 },
+                "mode": { "type": "string", "title": "Start a run", "enum": {{JsonSerializer.Serialize(ErpModes.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(ErpModes.Values)}} } },
+              "required": ["system", "entity", "mode"] }
+            """,
+            """{ "system": "dynamics-365", "entity": "Invoices", "mode": "on-post" }"""),
 
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",

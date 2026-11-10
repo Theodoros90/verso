@@ -213,6 +213,46 @@ public sealed class GraphValidatorTests
     }
 
 
+    private static JsonNode ErpTrigger(string id = "trigger", string entity = "Invoices") => JsonNode.Parse($$"""
+        { "id": "{{id}}", "type": "erp-connector", "title": "ERP connector", "position": { "x": 0, "y": 80 },
+          "config": { "system": "sap-s4hana", "entity": "{{entity}}", "mode": "nightly" } }
+        """)!;
+
+    [Fact]
+    public void ErpConnector_CanBeTheTrigger()
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]![0] = ErpTrigger();
+
+        var result = Validate(definition);
+
+        Assert.True(result.Valid);
+        Assert.DoesNotContain(result.Issues, i => i.NodeId == "trigger");
+    }
+
+    [Fact]
+    public void ErpConnector_NextToAnApiTrigger_IsASecondTrigger()
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]!.AsArray().Add(ErpTrigger("erp"));
+
+        Assert.Contains("erp:graph.multiple_triggers", Codes(Validate(definition)));
+    }
+
+    [Fact]
+    public void ErpConnector_NeedsARecordType_AndAKnownSystem()
+    {
+        var definition = InvoiceStandard(TemplateId);
+        var erp = ErpTrigger(entity: " ");
+        erp["config"]!["system"] = "salesforce";
+        definition["nodes"]![0] = erp;
+
+        var result = Validate(definition);
+
+        Assert.Contains(result.Issues, i => i.NodeId == "trigger" && i.Code == "config.required" && i.Field == "entity");
+        Assert.Contains(result.Issues, i => i.NodeId == "trigger" && i.Field == "system");
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {

@@ -224,7 +224,7 @@ public sealed partial class ExecutionEngine(
 
     private Task<Outcome> ExecuteNodeAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct) => node.Type switch
     {
-        NodeCatalog.ApiTrigger => Task.FromResult(new Outcome("out", null)),
+        NodeCatalog.ApiTrigger or NodeCatalog.ErpConnector => Task.FromResult(new Outcome("out", null)), // the payload arrived with the submission
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
         NodeCatalog.GeneratePdf => GeneratePdfAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),

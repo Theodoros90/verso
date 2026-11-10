@@ -30,6 +30,25 @@ public sealed class ExecutionApiTests(MigratedDatabaseFixture fixture) : IDispos
     }
 
     [Fact]
+    public async Task ErpConnectorTrigger_IsSimulated_SubmittedDataRunsLikeTheApiTrigger()
+    {
+        var trigger = JsonNode.Parse("""
+            { "id": "trigger", "type": "erp-connector", "title": "ERP connector", "position": { "x": 0, "y": 80 },
+              "config": { "system": "oracle-netsuite", "entity": "Invoices", "mode": "on-post" } }
+            """)!;
+        var key = await Kit.PublishInvoiceWorkflowAsync(trigger: trigger);
+
+        var id = await Kit.SubmitNewAsync(key, ExecutionTestKit.Sample);
+        await Kit.RunEngineAsync(id, _printer, _store, _jobs);
+
+        var done = await Kit.GetExecutionAsync(id);
+        Assert.Equal("Succeeded", done.GetProperty("status").GetString());
+        var first = done.GetProperty("steps")[0];
+        Assert.Equal("erp-connector", first.GetProperty("type").GetString());
+        Assert.Equal("out", first.GetProperty("outputPort").GetString());
+    }
+
+    [Fact]
     public async Task ValidFixture_Succeeds_WithOneArchivedDocumentWhoseHashMatches()
     {
         var key = await Kit.PublishInvoiceWorkflowAsync();

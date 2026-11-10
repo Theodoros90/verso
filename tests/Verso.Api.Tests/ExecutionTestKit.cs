@@ -40,7 +40,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null)
     {
         var templateId = await PublishInvoiceTemplateAsync();
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -63,6 +63,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
                 { "id": "e3", "source": "pdf", "sourcePort": "success", "target": "archive", "targetPort": "in" } ] }
             """)!;
         definition["nodes"]![1]!["config"] = (rules ?? StandardRules).DeepClone();
+        if (trigger is not null) definition["nodes"]![0] = trigger.DeepClone();
 
         using var draft = await client.GetAsync(new Uri($"/api/v1/workflows/{workflowId}/draft", UriKind.Relative));
         using var save = await SendAsync(HttpMethod.Put, $"/api/v1/workflows/{workflowId}/draft", draft.Headers.ETag!.ToString(), new JsonObject { ["definition"] = definition });
