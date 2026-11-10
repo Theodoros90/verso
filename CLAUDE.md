@@ -17,7 +17,7 @@ Bank-focused document-generation and workflow platform. MVP: maintain an invoice
 **M6: Workflow definitions and designer** — accepted 2026-11-09.
 **M7: Execution engine** — accepted 2026-11-10.
 **M8: Execution history and live progress** — accepted 2026-11-10.
-**M9: MVP hardening** — implemented 2026-11-10, awaiting acceptance (full `tools/ci.ps1` run to be repeated on a machine with enough free memory). Acceptance criteria are in plan §9. MVP done = M1–M9 accepted.
+**M9: MVP hardening** — accepted 2026-11-10 (full `tools/ci.ps1` run passed). **MVP complete (M1–M9).** No next milestone agreed yet; post-MVP items are listed under "Not in MVP" in plan §9 and the open decisions in plan §10.
 Update this line when a milestone is accepted and the next one is agreed.
 
 ## Commands

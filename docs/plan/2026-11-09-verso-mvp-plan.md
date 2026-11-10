@@ -528,7 +528,7 @@ Decisions made while implementing M8 (2026-11-10):
 - Screens: Executions (list with live updates), run detail (steps timeline with problems found by Validate, documents with download, details, activity from the events, submitted data on request, retry for Failed runs), and Archive. The Overview, Document preview and Audit trail screens are unchanged (M9 builds the audit trail).
 - Measured with the real API, Worker, Chromium and SignalR (Node client using `@microsoft/signalr`): `Submitted` after about 0.3 s, `Started` after 0.8 s and `Succeeded` after 1.8 s, and every stored event was also announced.
 
-### M9 — MVP hardening (M) — implemented 2026-11-10, awaiting acceptance
+### M9 — MVP hardening (M) — ✅ accepted 2026-11-10
 - Role matrix enforcement + tests, audit trail screen (read-only), limits, structured logging with correlation ids, E2E suite for the 7 MVP steps, runbook (setup, Chromium offline install, backup notes).
 
 **Acceptance:** all E2E scenarios pass in CI; security tests pass; no payload content in logs during the full E2E run; a new developer sets up from the runbook alone.
@@ -554,7 +554,7 @@ Decisions made while implementing M9 (2026-11-10). The user chose the first four
 - **Worker as a Windows service** (`Microsoft.Extensions.Hosting.WindowsServices` 10.0.14, approved 2026-11-10). Install steps are in the runbook.
 - **Runbook** (`docs/runbook.md`): A, a developer from a clean machine to `CI passed`; B, servers (database and roles, Entra registrations, IIS with the SPA and a reverse proxy, offline Chromium, the Worker service, a smoke test); C, operations (logs and correlation, failure handling, backup and restore order, retention, upgrades).
 
-**MVP done = M1–M9 accepted.**
+**MVP done = M1–M9 accepted.** ✅ Reached 2026-11-10.
 
 Not in MVP: email/print/SFTP/ERP/API delivery, AI nodes and Assistant, map-fields/branching nodes, DOCX/HTML email output, QR/barcode, maker-checker publishing, multi-tenant issuers, production storage adapters, dashboard/overview metrics.
 
