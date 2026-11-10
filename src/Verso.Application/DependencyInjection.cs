@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Verso.Application.Audit;
+using Verso.Application.Executions;
 using Verso.Application.Templates;
 using Verso.Application.Workflows;
 
@@ -15,6 +16,7 @@ public static class DependencyInjection
         services.AddScoped<TemplatePreview>();
         services.AddScoped<PdfPreviews>();
         services.AddScoped<WorkflowService>();
+        services.AddScoped<ExecutionService>();
         services.AddScoped<AuditQueries>();
         return services;
     }
@@ -25,6 +27,8 @@ public static class DependencyInjection
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<PdfPreviewRunner>();
         services.AddScoped<PdfPreviewCleanup>();
+        services.AddScoped<ExecutionEngine>();
+        services.AddScoped<ExecutionDispatcher>();
         return services;
     }
 }

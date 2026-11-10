@@ -14,7 +14,8 @@ Bank-focused document-generation and workflow platform. MVP: maintain an invoice
 **M3: Rendering engine** — accepted 2026-11-09. Layout model: docs/layout-model.md.
 **M4: Template designer UI** — accepted 2026-11-09.
 **M5: PDF generation in the Worker** — accepted 2026-11-09.
-**M6: Workflow definitions and designer** — accepted 2026-11-09. Next in plan: M7 execution engine. Acceptance criteria are in plan §9.
+**M6: Workflow definitions and designer** — accepted 2026-11-09.
+**M7: Execution engine** — accepted 2026-11-10. Next in plan: M8 execution history and live progress. Acceptance criteria are in plan §9.
 Update this line when a milestone is accepted and the next one is agreed.
 
 ## Commands

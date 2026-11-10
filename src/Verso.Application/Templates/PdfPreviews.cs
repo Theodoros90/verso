@@ -66,7 +66,7 @@ public sealed class PdfPreviews(IVersoDbContext db, IPreviewJobs jobs, ICurrentU
         await db.SaveChangesAsync(ct);
 
         // Saved first, then queued. If queueing fails the row is marked failed, so nothing waits forever.
-        // (Executions in M7 enqueue in the same transaction as their row; for a throwaway preview this is enough.)
+        // (Executions also have a dispatcher that re-queues lost jobs; for a throwaway preview this is enough.)
         try
         {
             jobs.EnqueuePdfPreview(preview.Id);

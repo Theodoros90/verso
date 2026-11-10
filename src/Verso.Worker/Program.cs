@@ -1,6 +1,7 @@
 using Hangfire;
 using Verso.Application;
 using Verso.Infrastructure;
+using Verso.Infrastructure.Documents;
 using Verso.Infrastructure.Jobs;
 using Verso.Rendering;
 using Verso.Rendering.Pdf;
@@ -17,7 +18,10 @@ builder.Services.AddSingleton<ChromiumPdfPrinter>();
 builder.Services.AddSingleton<IPdfPrinter>(sp => sp.GetRequiredService<ChromiumPdfPrinter>());
 builder.Services.AddHostedService<PdfPrinterWarmUp>();
 
-// Hangfire server: runs PDF preview jobs (and, from M7, executions).
+// Archived documents (local file system in the MVP; Documents:RootPath). Only the Worker writes.
+builder.Services.AddVersoDocumentStore(builder.Configuration);
+
+// Hangfire server: runs PDF previews, executions, and the recurring cleanup and execution-dispatch jobs.
 builder.Services.AddVersoJobServer(builder.Configuration);
 builder.Services.AddHostedService<WorkerHeartbeat>();
 builder.Services.AddHostedService<RecurringJobsRegistration>();

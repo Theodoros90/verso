@@ -77,10 +77,12 @@ Fonts need nothing installed: the document fonts (Schibsted Grotesk, Source Seri
 ```powershell
 dotnet build Verso.slnx
 dotnet run --project src/Verso.Api        # http://localhost:5122
-dotnet run --project src/Verso.Worker     # separate terminal: runs background jobs (PDF previews), starts Chromium, logs a heartbeat
+dotnet run --project src/Verso.Worker     # separate terminal: runs background jobs (PDF previews, executions), starts Chromium, logs a heartbeat
 ```
 
 PDF printing settings are in the `Pdf` section of `src/Verso.Worker/appsettings.json`: `RenderTimeout` (default 30 s), `RecycleAfterRenders` (100) and `MaxConcurrentRenders` (2). `Worker:JobWorkers` sets the number of job threads (4).
+
+Archived documents are written by the Worker to `Documents:RootPath`, by default `%LOCALAPPDATA%\Verso\documents` (`staging\…` while a run is in progress, `archive\yyyy\MM\{documentId}.pdf` once archived). On a server, point it at a folder that only the Worker's service account can write.
 
 Check the API directly:
 
@@ -118,6 +120,17 @@ The dev server forwards `/api/*` and the SignalR hub `/hubs/*` (WebSockets) to `
 4. Select a step to edit its settings. Generate PDF needs a template that has a **published** version.
 5. The Issues list and the step cards update as you edit. **Publish** is enabled when there are no errors; warnings (such as an unconnected "Invalid" output) don't block it.
 
+**Running a workflow (M7, API only; the history screen comes with M8):** with the API and Worker running, a published template, and a published workflow `invoice-standard` (trigger → validate → generate PDF → archive):
+
+```powershell
+$body = @{ data = (Get-Content tests/fixtures/invoice/sample.json -Raw | ConvertFrom-Json) } | ConvertTo-Json -Depth 20
+$run = Invoke-RestMethod -Method Post http://localhost:5122/api/v1/workflows/invoice-standard/executions `
+  -Headers @{ "Idempotency-Key" = [guid]::NewGuid().ToString() } -ContentType application/json -Body $body
+Start-Sleep 5; Invoke-RestMethod "http://localhost:5122/api/v1/executions/$($run.executionId)" | ConvertTo-Json -Depth 8
+```
+
+Expected: `"status": "Succeeded"` and one document with `"status": "Archived"`; the PDF is under `%LOCALAPPDATA%\Verso\documents\archive`. Submitting `tests/fixtures/invoice/broken.json` instead ends `Rejected`, and the Validate step's `result.issues` lists each failed rule (when the workflow checks those fields). If the Worker is stopped, submissions wait as `Queued` and run when it starts again.
+
 After an API change, regenerate the OpenAPI snapshot (see the commands in CLAUDE.md), then run `npm run gen:api` to regenerate `src/lib/api/generated.ts`. A test fails while that file is out of date.
 
 ## 5. Tests
@@ -146,5 +159,7 @@ The API only starts in the `Development` or `Testing` environment: there is no s
 | API fails at startup: "Connection string 'Verso' is not configured" | Running outside Development without `ConnectionStrings__Verso` set. |
 | PDF preview stays on "Rendering PDF in the Worker…" | The Worker isn't running, or it can't reach the database. Previews wait in the queue until a Worker picks them up. |
 | PDF preview fails / Worker logs "Chromium for Playwright is not installed" | Install Chromium (step 2). On servers, check `PLAYWRIGHT_BROWSERS_PATH` and that the service account can read it. |
+| Execution stays `Queued` | The Worker isn't running or can't reach the database. It runs as soon as a Worker picks it up; if its job was lost, the Worker's dispatcher re-queues it within about 3 minutes. |
+| Execution `Failed` with `step.technical_error` | Read the failed step's `error` (e.g. storage folder not writable, Chromium missing). Fix the cause, then `POST /api/v1/executions/{id}/retry`. |
 | Worker logs "Could not register recurring jobs" | The `hangfire` schema is missing: run the `database update` command in step 1. |
 | `dotnet build` fails: file in `bin\Debug` "being used by another process" | A running API or Worker locks its build output. Stop it, or build and test with `-c Release`. |

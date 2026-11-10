@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.HttpLogging;
 using Verso.Api.Audit;
 using Verso.Api.Common;
+using Verso.Api.Executions;
 using Verso.Api.Health;
 using Verso.Api.Realtime;
 using Verso.Api.Templates;
@@ -60,6 +61,7 @@ app.MapHealthEndpoints();
 app.MapTemplateEndpoints();
 app.MapPdfPreviewEndpoints();
 app.MapWorkflowEndpoints();
+app.MapExecutionEndpoints();
 app.MapAuditEndpoints();
 app.MapHub<ExecutionsHub>(ExecutionsHub.Path);
 

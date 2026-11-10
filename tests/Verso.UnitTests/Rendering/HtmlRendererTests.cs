@@ -82,7 +82,7 @@ public sealed class HtmlRendererTests
             "Electricity supply, October 2026 (commercial tariff)", "18,450", "€0.22", "€4,031.33",
             "Reactive power surcharge", "€592.04", "Meter rental", "€12.50",
             "€4,635.87", "€880.82", "€5,516.69",
-            "CY00 0000 0000 0000 0000 0000 0000", "TESTCY2N", "Payment due within 30 days.",
+            "CY82 0000 0000 0000 0000 0000 0000", "TESTCY2N", "Payment due within 30 days.",
         ];
         Assert.All(expected, value => Assert.Contains(value, result.Html, StringComparison.Ordinal));
         Assert.DoesNotContain("class=\"v-missing\"", result.Html, StringComparison.Ordinal);

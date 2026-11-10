@@ -314,7 +314,7 @@ The **Rejected vs Failed** split matters for a bank: a data problem goes back to
 
 ### 6.2 Flow
 
-1. **Submit (API).** Authorize → enforce size/depth limits → check idempotency → resolve latest published workflow version and `latest-published` template refs → in **one transaction**: insert `Execution(Queued)`, `ExecutionEvent(Submitted)`, `AuditEntry`, and enqueue the Hangfire job (Hangfire SQL storage enlisted in the same transaction, so there is no "row without job" or "job without row"). Return `202`.
+1. **Submit (API).** Authorize → enforce size/depth limits → check idempotency → resolve latest published workflow version and `latest-published` template refs → in **one transaction**: insert `Execution(Queued)` with its steps, `ExecutionEvent(Submitted)`, `AuditEntry` → after commit, enqueue the Hangfire job. Return `202`. *Revised at M7 (transactional outbox):* Hangfire.SqlServer can't join EF's transaction without promoting it to MSDTC, so the row is the durable record and a Worker dispatcher re-queues any execution still waiting after a grace period. Still no "row without job" (eventually), and a job without a row does nothing.
 2. **Pick up (Worker).** Hangfire job `RunExecution(executionId)`. Load execution + pinned versions. Mark `Running`. Hangfire's own automatic retry is off for this job; the engine owns retries.
 3. **Walk the graph.** From the trigger node, run each node's handler; persist `ExecutionStep` + `ExecutionEvent` before and after; follow the edge from the returned port. Unconnected optional port → end of path.
 4. **Validate.** JSON Schema of the workflow trigger + Validate node rules (required, typed checks). Exit `valid` or `invalid`. `invalid` with no outgoing edge → execution `Rejected` with issue list.
@@ -479,10 +479,37 @@ Decisions made while implementing M6 (2026-11-09):
   - Undo/redo, save/publish, read-only published view with "Start new draft".
 - The undo history module moved from the template designer to `src/lib/history.ts` (shared).
 
-### M7 — Execution engine (L)
+### M7 — Execution engine (L) — ✅ accepted 2026-11-10
 - Submit endpoint with idempotency, transactional enqueue, engine, step handlers, events, local file-system `IDocumentStore`, archive records, Rejected/Failed semantics, retry.
 
 **Acceptance:** valid fixture → `Succeeded`, one archived document with matching SHA-256 at the resolved folder path; broken fixture → `Rejected` with each failed rule listed, no document; duplicate submit with same key → same execution; same key with different body → 409; stop the Worker mid-run and restart → execution completes without duplicate documents; storage failure → `Failed`, retry → `Succeeded`.
+
+Decisions made while implementing M7 (2026-11-10):
+- **Transactional outbox instead of same-transaction enqueue** (§6.2 step 1, chosen by the user). Tested on LocalDB: Hangfire.SqlServer 1.8 (netstandard2.0 build) opens its own connections and transactions, so enlisting it in EF's `TransactionScope` promotes to MSDTC and fails. Now:
+  - Submit commits the execution, steps, `Submitted` event and audit entry in one transaction, then queues the job. A queueing failure is logged and the submission still returns 202.
+  - A recurring Worker job (`execution-dispatch`, every minute) re-queues executions that are `Queued`/`Running`, not locked, and last dispatched more than 2 minutes ago.
+  - Each run takes a lock on the execution (`LockedUntil`, 6 min, renewed at every step, protected by `rowversion`), so duplicate jobs never run an execution twice. On a clean Worker stop the lock is released and the interrupted step isn't counted as an attempt. After a crash, the lock expires and the dispatcher re-queues the run.
+- Engine (Worker, `ExecutionEngine`): one Hangfire job per execution, Hangfire's retry off. It walks the pinned version from the trigger and saves each step before and after it runs. Succeeded steps are never re-run, so a retry or restart resumes at the first unfinished step.
+  - Technical errors: 3 attempts per step, 5 s then 10 s apart, by rescheduling the job. While a retry is pending the execution stays `Running`. After the third attempt it is `Failed`, and the steps that didn't run stay `Pending`.
+  - Run timeout 5 min. Steps that didn't run are `Skipped` on `Succeeded`/`Rejected`.
+- Rejected vs Failed: Validate leaving by an unconnected `invalid` → `Rejected` (`data.invalid`, issues in the step result). Generate PDF leaving by an unconnected `failed` → `Rejected` (`document.data_incomplete`). Generate PDF takes `failed` when rendering in final mode reports errors (a bound value is missing), because that is a data problem; technical print/storage errors are retried and end as `Failed`. The designer's warning text for the unconnected `failed` port changed to match.
+- Validate rules: required = present, not null, not blank, not an empty list. Type checks run only on present fields:
+  - date: `YYYY-MM-DD`, a real calendar date.
+  - number: a JSON number.
+  - email: a simple shape check.
+  - EU VAT: per-country formats, including EL and XI. No VIES lookup.
+  - IBAN: ISO 13616 mod-97, plus country lengths for SEPA countries.
+  - Issue messages never echo values. The sample fixture's IBAN now has valid check digits (`CY82 0000…`); the two rendering goldens changed by that line only.
+- Documents module (schema `documents`): `Document` (unique per execution and node, so the database refuses duplicates) and write-once `ArchiveRecord`.
+  - `IDocumentStore` with a local file-system adapter (`Documents:RootPath`, default `%LOCALAPPDATA%\Verso\documents`). Writes are atomic: temp file, then move.
+  - Keys are generated: `staging/{execution}/{node}.pdf` (overwritten on re-run, deleted once archived) and `archive/yyyy/MM/{documentId}.pdf` (dated by document creation, so a re-run writes the same key).
+  - Archive re-reads the staged bytes, checks the SHA-256, writes the archive copy, reads it back and checks again.
+  - `folderPath` is the resolved, sanitized folder pattern stored as archive metadata, not a file-system path (§7). "At the resolved folder path" in the acceptance means the archive record's `folderPath`.
+- Retention (open since §10): the node's 7y/10y/permanent is recorded as `retentionUntil` (null = permanent). Nothing is deleted at expiry in the MVP.
+- Endpoints in M7: submit, `GET /executions/{id}` and `POST /executions/{id}/retry`. The list, the events catch-up, the payload view, document endpoints and the SignalR relay of execution events stay in M8 (events are already written). The submit body is capped at about 1.1 MB, data at 1,000,000 characters and 32 levels of nesting. An optional `X-Correlation-Id` is stored.
+- Audit: `ExecutionSubmitted`, `ExecutionRetryRequested`, `ExecutionCompleted` (actor `verso.worker`). Payloads are never audited or logged.
+- DB-level write-once for `ArchiveRecords` (deny UPDATE/DELETE to the app login) stays with deployment hardening in M9, as for published versions.
+- Test infrastructure: integration tests now create and migrate their databases before starting API hosts. A host's background relay could connect between EF's `CREATE DATABASE` and its `ALTER DATABASE` and block it; this happened when several databases were created in parallel.
 
 ### M8 — Execution history and live progress (M)
 - Executions list (filters), execution detail with step timeline (prototype's run view), live updates via SignalR relay, input payload view (restricted), document download, archive search screen.
@@ -542,7 +569,7 @@ Consequences for the plan:
 - **D7 — Maker-checker (before M9 or post-MVP).** Should publishing a template or workflow require a second person's approval (four-eyes)? Common in banks; it changes the publish flow. Proposed: post-MVP.
 - **D8 — Test infrastructure (before M2).** Is Docker available on developer machines and CI (for Testcontainers SQL Server)? If not, integration tests use LocalDB or a shared dev SQL instance.
 - **Languages and locale (before M3).** Greek-language documents? If yes, fonts must cover Greek — **verified at M1: Schibsted Grotesk has no Greek glyphs** (Latin and Latin Extended only); Source Serif 4 does include Greek. Greek documents would need a different sans font. Also: number/date formats (`1.234,56 €` vs `€1,234.56`), currency (EUR only?).
-- **Retention (before M7).** Retention period per document type (prototype shows 7 years for invoices, 10 for statements) and what happens at expiry (MVP: record only, no deletion).
+- **Retention (before M7).** Retention period per document type (prototype shows 7 years for invoices, 10 for statements) and what happens at expiry (MVP: record only, no deletion). **Applied at M7:** chosen per archive node (7y/10y/permanent), recorded as `retentionUntil`; no deletion at expiry. The bank's actual periods are still to be confirmed.
 - **Issuer model.** The prototype shows a bank (Atlas Mutual) producing invoices for a corporate issuer (Halcyon Energy). Is Verso used by the bank for its own documents, or on behalf of corporate clients (multi-tenant)? MVP assumes **single tenant, single issuer**.
 - **E2E tooling.** Playwright Test (Node) for browser E2E is the most productive option but adds a second Playwright distribution to approve; Playwright for .NET can do it with one toolchain at some convenience cost.
 - **CI system.** Azure DevOps, GitHub, GitLab, Jenkins? Determines pipeline files.

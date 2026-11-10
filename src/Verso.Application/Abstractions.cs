@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Verso.Domain.Audit;
+using Verso.Domain.Documents;
+using Verso.Domain.Executions;
 using Verso.Domain.Templates;
 using Verso.Domain.Workflows;
 
@@ -14,6 +16,10 @@ public interface IVersoDbContext
     DbSet<PdfPreview> PdfPreviews { get; }
     DbSet<Workflow> Workflows { get; }
     DbSet<WorkflowVersion> WorkflowVersions { get; }
+    DbSet<Execution> Executions { get; }
+    DbSet<ExecutionEvent> ExecutionEvents { get; }
+    DbSet<Document> Documents { get; }
+    DbSet<ArchiveRecord> ArchiveRecords { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

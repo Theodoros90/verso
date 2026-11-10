@@ -1,0 +1,29 @@
+{
+  "_comment": "Synthetic, deliberately broken invoice for validation tests: no customer name, a non-ISO date, a malformed VAT number, an IBAN with wrong check digits, an invalid email and a total given as text.",
+  "issuer": {
+    "name": "Halcyon Energy Ltd",
+    "address": "14 Archbishop Makarios III Ave, 1065 Nicosia, Cyprus",
+    "vatNumber": "CY10293847X",
+    "email": "billing@halcyon-energy.example"
+  },
+  "invoice": {
+    "number": "INV-2026-003902",
+    "date": "02/11/2026",
+    "dueDate": "2026-12-02",
+    "currency": "EUR"
+  },
+  "customer": {
+    "address": "88 Franklin Roosevelt Ave, 3011 Limassol, Cyprus",
+    "vatNumber": "CY123",
+    "email": "ap(at)kestrel-logistics.example"
+  },
+  "lines": [
+    { "description": "Electricity supply, October 2026 (commercial tariff)", "qty": 18450, "unit": "kWh", "unitPrice": 0.2185, "vatRate": 19, "amount": 4031.33 }
+  ],
+  "totals": { "net": 4031.33, "vat": 765.95, "gross": "4797.28" },
+  "payment": {
+    "iban": "CY00 0000 0000 0000 0000 0000 0000",
+    "bic": "TESTCY2N",
+    "reference": "INV-2026-003902"
+  }
+}

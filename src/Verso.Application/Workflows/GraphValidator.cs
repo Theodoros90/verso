@@ -184,7 +184,7 @@ public static class GraphValidator
     private static string UnconnectedOptional(NodeTypeDto type, PortDto port) => (type.Type, port.Id) switch
     {
         (NodeCatalog.Validate, "invalid") => "Invalid records will end the run as Rejected.",
-        (NodeCatalog.GeneratePdf, "failed") => "A rendering failure will end the run as Failed.",
+        (NodeCatalog.GeneratePdf, "failed") => "Data that can't make a complete document will end the run as Rejected.",
         _ => $"'{port.Label}' isn't connected; the run ends there.",
     };
 

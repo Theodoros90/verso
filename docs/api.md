@@ -30,6 +30,11 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | 404 | `preview.not_found` | Unknown PDF preview id (or deleted after 24 hours) |
 | 409 | `preview.not_ready` | PDF content requested while the preview is still queued or rendering |
 | 409 | `preview.failed` | PDF content requested for a preview that failed; read its `error` |
+| 400 | `execution.idempotency_key_required` | Submission without an `Idempotency-Key` header |
+| 404 | `execution.not_found` | Unknown execution id |
+| 409 | `execution.idempotency_conflict` | `Idempotency-Key` already used for this workflow with **different** data; `executionId` names the original |
+| 409 | `workflow.not_published` | Submission to a workflow with no published version |
+| 409 | `execution.not_retryable` | Retry of an execution that isn't `Failed` (Rejected runs need corrected data, not a retry) |
 
 ## Health
 
@@ -207,7 +212,7 @@ A workflow is a graph of steps: a trigger, then steps connected output → input
 | POST | `/api/v1/workflows/{id}/draft/validate` | 200 `WorkflowValidation` | Validate `{ definition }` (unsaved edits) or, without a body, the saved draft |
 | POST | `/api/v1/workflows/{id}/draft/publish` | 200 `WorkflowVersion` (published) | Validate and freeze (`If-Match`) |
 
-- `key`: 2–48 characters, lower-case letters, digits and single hyphens, starting with a letter (`invoice-standard`). Unique; never changes; used in the submission URL `POST /api/v1/workflows/{key}/executions` (M7).
+- `key`: 2–48 characters, lower-case letters, digits and single hyphens, starting with a letter (`invoice-standard`). Unique; never changes; used in the submission URL `POST /api/v1/workflows/{key}/executions` ([Executions](#executions)).
 - Errors: 404 `workflow.not_found` / `workflow.version_not_found`, 409 `workflow.key_taken` / `workflow.no_draft` / `workflow.draft_exists` / `workflow.nothing_published` / `workflow.invalid`, 412 / 428 as for templates.
 
 ### Definition
@@ -226,7 +231,7 @@ Saving checks only the **structure** (400 `validation` with paths like `definiti
 |---|---|---|---|
 | `api-trigger` | input | — → `out` | none |
 | `validate` | process | `in` → `valid`, `invalid` (optional) | `required`: data paths; `types`: `[{ field, type }]` with `type` one of `text`, `number`, `date`, `email`, `eu-vat`, `iban`. At least one rule. |
-| `generate-pdf` | doc | `in` → `success`, `failed` (optional) | `templateId`; `templateVersion`: `latest-published` (resolved when a run is submitted) or a published version number such as `"2"`; `fileName` pattern such as `{{invoice.number}}.pdf` |
+| `generate-pdf` | doc | `in` → `success`, `failed` (optional; taken when the data can't make a complete document) | `templateId`; `templateVersion`: `latest-published` (resolved when a run is submitted) or a published version number such as `"2"`; `fileName` pattern such as `{{invoice.number}}.pdf` |
 | `archive` | output | `in` → — | `folderPattern`; `retention`: `7y`, `10y` or `permanent`; `metadata`: `[{ key, value }]` (at most 20) |
 
 `configSchema` is a JSON Schema subset (`type`, `properties`, `required`, `items`, `minItems`/`maxItems`, `minLength`/`maxLength`, `pattern`, `enum`, `format: uuid`) plus designer hints `x-widget` and `x-enumLabels`.
@@ -254,6 +259,93 @@ Saving checks only the **structure** (400 `validation` with paths like `definiti
 
 `valid` is true when there are no errors. Publishing a draft with errors returns **409 `workflow.invalid`** with the same `issues` array in the problem body.
 
+## Executions
+
+An execution is one run of a workflow's **latest published version** with one submitted payload. It records the exact workflow version and template versions it used. The Worker runs it; the API only stores and reads it.
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| POST | `/api/v1/workflows/{key}/executions` | 202 `Submission`, `Location` (new) · 200 `Submission` (replay) | Submit data |
+| GET | `/api/v1/executions/{id}` | 200 `Execution` | Status, steps, pinned versions, documents |
+| POST | `/api/v1/executions/{id}/retry` | 202 `Execution`, `Location` | Retry a `Failed` execution from its failed step |
+
+The history list, the event timeline, the payload view and document download come with M8.
+
+### Submit: `POST /api/v1/workflows/{key}/executions`
+
+```http
+POST /api/v1/workflows/invoice-standard/executions
+Idempotency-Key: 6f1c2f0e-0c55-4b1e-9f61-6a2b1d0d4c11
+X-Correlation-Id: erp-batch-17          (optional)
+Content-Type: application/json
+
+{ "data": { "invoice": { "number": "INV-2026-003901", "date": "2026-11-02" }, "customer": { … } } }
+```
+
+```json
+{ "executionId": "…", "status": "Queued", "workflowKey": "invoice-standard", "workflowVersion": 1, "correlationId": "erp-batch-17" }
+```
+
+- `Idempotency-Key` is required: 1–100 visible ASCII characters, unique per workflow. The same key with the same data returns **200** with the original execution (whatever its status now) and queues nothing. The same key with different data is **409 `execution.idempotency_conflict`**. "Same data" compares canonical JSON, so property order and whitespace don't matter.
+- `data`: a JSON object, **synthetic data only**, at most 1,000,000 characters and 32 levels deep (request body cap about 1.1 MB). The payload is stored with the execution and never logged.
+- `X-Correlation-Id` (optional, 1–64 of `A–Z a–z 0–9 . _ : -`) is stored and returned; without it one is generated.
+- `generate-pdf` steps set to `latest-published` are pinned to the template's latest published version **now**; later publishes don't change a submitted run.
+- Errors: 400 `execution.idempotency_key_required` / `validation`, 404 `workflow.not_found`, 409 `workflow.not_published` / `execution.idempotency_conflict`.
+
+The execution row, its steps, the `Submitted` event and the audit entry are saved in one transaction, then the job is queued for the Worker. If queueing fails, the submission still succeeds: the Worker's dispatcher queues every execution that is still waiting after 2 minutes (checked every minute).
+
+### Lifecycle
+
+`Queued` → `Running` → `Succeeded` | `Rejected` | `Failed`; an operator retry moves `Failed` → `Queued`.
+
+| Status | Meaning | Retry? |
+|---|---|---|
+| `Succeeded` | The path through the workflow completed | — |
+| `Rejected` | The **data** is the problem: Validate left by `invalid`, or Generate PDF left by `failed` (a value the template needs is missing), with nothing connected after it. `failureCode` `data.invalid` / `document.data_incomplete`; the step's `result.issues` lists every problem. | No: submit corrected data with a new key |
+| `Failed` | A **technical** problem (storage, Chromium, timeout) persisted through 3 attempts of a step | Yes: `POST …/retry` |
+
+Each step is tried up to **3 times** for technical errors, 5 s and then 10 s apart; while a retry is pending the execution stays `Running` and the step shows `Failed` with its `error`. A run may take at most 5 minutes. Steps that already succeeded are never repeated (a retry or a Worker restart continues at the first unfinished step), and a document is generated at most once per step.
+
+### Execution: `GET /api/v1/executions/{id}`
+
+```json
+{ "id": "…", "status": "Rejected",
+  "workflow": { "id": "…", "key": "invoice-standard", "version": 1, "versionId": "…" },
+  "templateVersions": { "pdf": "…template version id…" },
+  "idempotencyKey": "6f1c…", "correlationId": "…", "inputHash": "…sha-256…",
+  "submittedAt": "…", "submittedBy": "dev.user", "startedAt": "…", "completedAt": "…", "attempt": 1,
+  "failureCode": "data.invalid", "failureMessage": "The data failed 2 validation rule(s) in step 'Validate invoice data'.",
+  "steps": [
+    { "nodeId": "trigger", "type": "api-trigger", "title": "API trigger", "sequence": 1, "status": "Succeeded", "outputPort": "out", "attempt": 1, "startedAt": "…", "completedAt": "…", "durationMs": 18, "error": null, "result": null },
+    { "nodeId": "validate", "type": "validate", "title": "Validate invoice data", "sequence": 2, "status": "Succeeded", "outputPort": "invalid", "attempt": 1, "durationMs": 18, "error": null,
+      "result": { "issues": [ { "path": "customer.name", "rule": "required", "message": "missing or empty" },
+                              { "path": "invoice.date", "rule": "type:date", "message": "expected YYYY-MM-DD" } ] } },
+    { "nodeId": "pdf", "type": "generate-pdf", "sequence": 3, "status": "Skipped", "…": "…" },
+    { "nodeId": "archive", "type": "archive", "sequence": 4, "status": "Skipped", "…": "…" } ],
+  "documents": [] }
+```
+
+- `steps`: one per workflow node, in run order. `status`: `Pending`, `Running`, `Succeeded`, `Failed`, `Skipped` (not on the path taken). `outputPort` is the output the step left by (`null` for Archive, which ends a path). `attempt` counts tries in the current execution attempt; `error` is the last technical error.
+- `result` (per type): Validate `{ issues: [{ path, rule, message }] }`; Generate PDF `{ documentId, fileName, sizeBytes, sha256, warnings }` or, on `failed`, `{ issues: [{ code, path, elementId, message }] }`; Archive `{ documentId, folderPath, retentionUntil, warnings }`. Messages describe the expectation; they never repeat submitted values.
+- `attempt` (execution): 1, plus one per operator retry.
+- `documents`:
+
+```json
+{ "id": "…", "nodeId": "pdf", "templateVersionId": "…", "fileName": "INV-2026-003901.pdf", "contentType": "application/pdf",
+  "sizeBytes": 21284, "sha256": "…", "status": "Archived", "createdAt": "…",
+  "archive": { "archivedAt": "…", "folderPath": "invoices/2026/11", "retention": "7y", "retentionUntil": "2033-11-10T07:03:43+00:00",
+               "metadata": { "InvoiceNumber": "INV-2026-003901", "Customer": "Kestrel Logistics Ltd" } } }
+```
+
+- `fileName` comes from the step's pattern: only letters, digits, space and `. _ ( ) -` are kept, and it always ends in `.pdf`.
+- `folderPath` is the archive node's folder pattern, resolved and sanitized (no `..`, no drive letters). It is **archive metadata**, not a file-system path: storage keys are generated by Verso (`archive/yyyy/MM/{documentId}.pdf`).
+- `retentionUntil` is `archivedAt` + 7 or 10 years, or `null` for `permanent`. Nothing is deleted at expiry in the MVP.
+- The archived bytes are re-read and their SHA-256 compared with `sha256` before the archive record is written.
+
+### Retry: `POST /api/v1/executions/{id}/retry`
+
+No body. Only for `Failed` executions: the status becomes `Queued`, `attempt` increases, the failed step gets a fresh budget of 3 attempts, and the run continues from there. Returns 202 with the execution. Errors: 404 `execution.not_found`, 409 `execution.not_retryable`.
+
 ## Audit
 
 ### `GET /api/v1/audit?entityType=Template&entityId={id}&page=1&pageSize=50`
@@ -279,5 +371,8 @@ Append-only log, oldest first (`sequence` is the authoritative order). Both filt
 | `WorkflowDraftSaved` | `{ versionId }` |
 | `WorkflowDraftCreated` | `{ versionId, fromVersion }` |
 | `WorkflowPublished` | `{ versionId, versionNumber, contentHash }` |
+| `ExecutionSubmitted` | `{ workflowKey, workflowVersion, inputHash, correlationId }` (never the payload) |
+| `ExecutionRetryRequested` | `{ attempt }` |
+| `ExecutionCompleted` | `{ status, failureCode, attempt }`; actor `verso.worker`, `traceId` = the execution's correlation id |
 
 Rejected requests (validation, 409, 412, 428) are not audited; they change nothing. `traceId` matches the `TraceId` in the API's structured logs.

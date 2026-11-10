@@ -7,7 +7,8 @@ namespace Verso.Api.Realtime;
 
 /// <summary>
 /// Real-time notifications, plan §5.5 (<c>/hubs/executions</c>). M5 carries <c>PreviewReady</c>; execution and step
-/// updates join in M7/M8. Messages are notifications only: clients read the state from the REST API.
+/// updates join in M8 (the Worker already writes the execution events they'll relay). Messages are notifications
+/// only: clients read the state from the REST API.
 /// No authentication yet, like the rest of the API (Development/Testing only).
 /// </summary>
 public sealed class ExecutionsHub : Hub

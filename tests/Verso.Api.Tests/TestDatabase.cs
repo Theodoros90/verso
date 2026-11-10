@@ -1,4 +1,6 @@
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Verso.Infrastructure.Persistence;
 
 namespace Verso.Api.Tests;
 
@@ -25,6 +27,19 @@ internal sealed class TestDatabase
         await using var command = connection.CreateCommand();
         command.CommandText = $"CREATE DATABASE [{Name}]";
         await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Creates the database and applies all migrations <b>before</b> any API or Worker host points at it. Hosts poll
+    /// the database from background services (e.g. the preview relay waits for it to exist); a pooled connection of
+    /// theirs that lands between EF's CREATE DATABASE and its follow-up ALTER DATABASE blocks that ALTER until it
+    /// times out. Migrating without a host avoids the race.
+    /// </summary>
+    public async Task MigrateAsync()
+    {
+        var options = new DbContextOptionsBuilder<VersoDbContext>().UseSqlServer(ConnectionString).Options;
+        await using var context = new VersoDbContext(options);
+        await context.Database.MigrateAsync();
     }
 
     /// <summary>Drops the database if it exists. Only ever called for Verso_Test_* databases.</summary>

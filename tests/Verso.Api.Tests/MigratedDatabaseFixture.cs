@@ -1,7 +1,3 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Verso.Infrastructure.Persistence;
-
 namespace Verso.Api.Tests;
 
 /// <summary>
@@ -16,9 +12,8 @@ public sealed class MigratedDatabaseFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        await _database.MigrateAsync(); // before the host starts polling it (see TestDatabase.MigrateAsync)
         Factory = new VersoApiFactory(_database.ConnectionString);
-        using var scope = Factory.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<VersoDbContext>().Database.MigrateAsync();
     }
 
     public async Task DisposeAsync()

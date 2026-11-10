@@ -2,6 +2,7 @@ using Hangfire;
 using Hangfire.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Verso.Application.Executions;
 using Verso.Application.Templates;
 using Verso.Infrastructure.Persistence;
 
@@ -32,6 +33,7 @@ public static class HangfireJobs
                 QueuePollInterval = TimeSpan.FromSeconds(1), // previews are interactive
             }));
         services.AddScoped<IPreviewJobs, HangfirePreviewJobs>();
+        services.AddScoped<IExecutionJobs, HangfireExecutionJobs>();
         return services;
     }
 
@@ -46,6 +48,8 @@ public static class HangfireJobs
         });
         services.AddScoped<PdfPreviewJob>();
         services.AddScoped<PdfPreviewCleanupJob>();
+        services.AddScoped<ExecutionJob>();
+        services.AddScoped<ExecutionDispatchJob>();
         return services;
     }
 
@@ -54,7 +58,10 @@ public static class HangfireJobs
     {
         ArgumentNullException.ThrowIfNull(recurring);
         recurring.AddOrUpdate<PdfPreviewCleanupJob>(PreviewCleanupJobId, j => j.RunAsync(CancellationToken.None), Cron.Hourly());
+        recurring.AddOrUpdate<ExecutionDispatchJob>(ExecutionDispatchJobId, j => j.RunAsync(CancellationToken.None), Cron.Minutely());
     }
+
+    public const string ExecutionDispatchJobId = "execution-dispatch";
 
     /// <summary>The SQL that creates the Hangfire schema; used by the migration so the schema is versioned with ours.</summary>
     internal static string InstallScript() => SqlServerObjectsInstaller.GetInstallScript(Schemas.Jobs, enableHeavyMigrations: false);
@@ -76,4 +83,30 @@ public sealed class PdfPreviewCleanupJob(PdfPreviewCleanup cleanup)
 {
     [AutomaticRetry(Attempts = 0)]
     public Task RunAsync(CancellationToken cancellationToken) => cleanup.RunAsync(cancellationToken);
+}
+
+internal sealed class HangfireExecutionJobs(IBackgroundJobClient client) : IExecutionJobs
+{
+    public void Enqueue(Guid executionId) => client.Enqueue<ExecutionJob>(j => j.RunAsync(executionId, CancellationToken.None));
+
+    public void Schedule(Guid executionId, TimeSpan delay) => client.Schedule<ExecutionJob>(j => j.RunAsync(executionId, CancellationToken.None), delay);
+}
+
+/// <summary>
+/// Hangfire entry point for an execution. Hangfire's automatic retry is off: the engine records step failures and
+/// schedules its own retries (plan §6.3). If the job itself dies (e.g. the database is unreachable), the run's
+/// lock expires and <see cref="ExecutionDispatcher"/> queues it again.
+/// </summary>
+public sealed class ExecutionJob(ExecutionEngine engine)
+{
+    [AutomaticRetry(Attempts = 0)]
+    public Task RunAsync(Guid executionId, CancellationToken cancellationToken) => engine.RunAsync(executionId, cancellationToken);
+}
+
+/// <summary>Every minute: re-queues executions whose job went missing (transactional outbox sweeper).</summary>
+public sealed class ExecutionDispatchJob(ExecutionDispatcher dispatcher)
+{
+    [AutomaticRetry(Attempts = 0)]
+    [DisableConcurrentExecution(timeoutInSeconds: 50)]
+    public Task RunAsync(CancellationToken cancellationToken) => dispatcher.RunOnceAsync(cancellationToken);
 }

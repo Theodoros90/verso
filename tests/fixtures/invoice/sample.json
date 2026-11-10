@@ -1,5 +1,5 @@
 {
-  "_comment": "Synthetic test data. Fictional companies; .example domains; IBAN/VAT numbers are made up.",
+  "_comment": "Synthetic test data. Fictional companies; .example domains; IBAN/VAT numbers are made up (the IBAN has valid check digits for an all-zero account).",
   "issuer": {
     "name": "Halcyon Energy Ltd",
     "address": "14 Archbishop Makarios III Ave, 1065 Nicosia, Cyprus",
@@ -26,7 +26,7 @@
   ],
   "totals": { "net": 4635.87, "vat": 880.82, "gross": 5516.69 },
   "payment": {
-    "iban": "CY00 0000 0000 0000 0000 0000 0000",
+    "iban": "CY82 0000 0000 0000 0000 0000 0000",
     "bic": "TESTCY2N",
     "reference": "INV-2026-003901",
     "terms": "Payment due within 30 days. Late payments may incur interest."

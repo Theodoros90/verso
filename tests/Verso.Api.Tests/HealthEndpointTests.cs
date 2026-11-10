@@ -18,8 +18,8 @@ public sealed class HealthEndpointTests
         var db = new TestDatabase("healthy");
         try
         {
+            await db.MigrateAsync();
             await using var factory = new VersoApiFactory(db.ConnectionString);
-            await MigrateAsync(factory);
 
             using var response = await factory.CreateClient().GetAsync(new Uri("/api/health", UriKind.Relative));
             var body = await ReadAsync(response);
@@ -86,8 +86,7 @@ public sealed class HealthEndpointTests
         var db = new TestDatabase("schemas");
         try
         {
-            await using var factory = new VersoApiFactory(db.ConnectionString);
-            await MigrateAsync(factory);
+            await db.MigrateAsync();
 
             var schemas = new List<string>();
             await using var connection = new SqlConnection(db.ConnectionString);
@@ -117,12 +116,6 @@ public sealed class HealthEndpointTests
         var context = scope.ServiceProvider.GetRequiredService<VersoDbContext>();
 
         Assert.False(context.Database.HasPendingModelChanges());
-    }
-
-    private static async Task MigrateAsync(VersoApiFactory factory)
-    {
-        using var scope = factory.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<VersoDbContext>().Database.MigrateAsync();
     }
 
     private static async Task<HealthBody> ReadAsync(HttpResponseMessage response) =>

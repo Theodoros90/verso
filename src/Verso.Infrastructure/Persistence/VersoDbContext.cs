@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Verso.Application;
 using Verso.Domain.Audit;
+using Verso.Domain.Documents;
+using Verso.Domain.Executions;
 using Verso.Domain.Templates;
 using Verso.Domain.Workflows;
 
@@ -18,6 +20,10 @@ public sealed class VersoDbContext(DbContextOptions<VersoDbContext> options) : D
     public DbSet<PdfPreview> PdfPreviews => Set<PdfPreview>();
     public DbSet<Workflow> Workflows => Set<Workflow>();
     public DbSet<WorkflowVersion> WorkflowVersions => Set<WorkflowVersion>();
+    public DbSet<Execution> Executions => Set<Execution>();
+    public DbSet<ExecutionEvent> ExecutionEvents => Set<ExecutionEvent>();
+    public DbSet<Document> Documents => Set<Document>();
+    public DbSet<ArchiveRecord> ArchiveRecords => Set<ArchiveRecord>();
 
     public void SetOriginalRowVersion(TemplateVersion version, byte[] rowVersion) =>
         Entry(version).Property(v => v.RowVersion).OriginalValue = rowVersion;

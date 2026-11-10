@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- EF Core persistence, migrations, health checks, Hangfire job storage. Later: document storage. -->
+  <!-- EF Core persistence, migrations, health checks, Hangfire job storage, local document storage. -->
   <ItemGroup>
     <ProjectReference Include="..\Verso.Application\Verso.Application.csproj" />
   </ItemGroup>

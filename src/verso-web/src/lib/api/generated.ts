@@ -1,6 +1,14 @@
 // GENERATED from docs/openapi/v1.json by scripts/generate-api-types.mjs. Do not edit; run `npm run gen:api`.
 /* eslint-disable */
 
+export interface ArchiveDto {
+  archivedAt: string
+  folderPath: string
+  retention: string
+  retentionUntil: string | null
+  metadata: Record<string, string>
+}
+
 export interface AuditEntryDto {
   id: string
   sequence: number
@@ -25,6 +33,60 @@ export interface CreateWorkflowRequest {
   key: string | null
   name: string | null
   description: string | null
+}
+
+export interface ExecutionDocumentDto {
+  id: string
+  nodeId: string
+  templateVersionId: string
+  fileName: string
+  contentType: string
+  sizeBytes: number
+  sha256: string
+  status: string
+  createdAt: string
+  archive: null | ArchiveDto
+}
+
+export interface ExecutionDto {
+  id: string
+  status: string
+  workflow: ExecutionWorkflowDto
+  templateVersions: Record<string, string>
+  idempotencyKey: string
+  correlationId: string
+  inputHash: string
+  submittedAt: string
+  submittedBy: string
+  startedAt: string | null
+  completedAt: string | null
+  attempt: number
+  failureCode: string | null
+  failureMessage: string | null
+  steps: ExecutionStepDto[]
+  documents: ExecutionDocumentDto[]
+}
+
+export interface ExecutionStepDto {
+  nodeId: string
+  type: string
+  title: string
+  sequence: number
+  status: string
+  outputPort: string | null
+  attempt: number
+  startedAt: string | null
+  completedAt: string | null
+  durationMs: number | null
+  error: string | null
+  result: null | JsonElement
+}
+
+export interface ExecutionWorkflowDto {
+  id: string
+  key: string
+  version: number
+  versionId: string
 }
 
 export interface HealthCheckEntry {
@@ -148,6 +210,18 @@ export interface SaveDraftRequest {
 
 export interface SaveWorkflowDraftRequest {
   definition: null | JsonElement
+}
+
+export interface SubmissionDto {
+  executionId: string
+  status: string
+  workflowKey: string
+  workflowVersion: number
+  correlationId: string
+}
+
+export interface SubmitExecutionRequest {
+  data: null | JsonElement
 }
 
 export interface TemplateDto {

@@ -1,0 +1,503 @@
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Verso.Application.Documents;
+using Verso.Application.Templates;
+using Verso.Application.Workflows;
+using Verso.Domain.Audit;
+using Verso.Domain.Documents;
+using Verso.Domain.Executions;
+using Verso.Rendering;
+using Verso.Rendering.Binding;
+using Verso.Rendering.Html;
+using Verso.Rendering.Layout;
+
+namespace Verso.Application.Executions;
+
+/// <summary>A step failure with a stable code. <see cref="Retryable"/> false: retrying can't help (e.g. a broken graph).</summary>
+public sealed class StepException(string code, string message, bool retryable) : Exception(message)
+{
+    public string Code { get; } = code;
+    public bool Retryable { get; } = retryable;
+}
+
+/// <summary>
+/// Runs an execution in the Worker (plan §6.2 steps 2–7). Walks the pinned workflow version from the trigger,
+/// persisting each step before and after it runs, and follows the edge of the port the step chose. Steps that
+/// already succeeded are not run again (their results are reused), so a re-delivered or retried job resumes at
+/// the first unfinished step. Technical failures are retried by rescheduling the job (engine-owned retries;
+/// Hangfire's own retry is off for this job); data problems end the run as Rejected.
+/// </summary>
+public sealed partial class ExecutionEngine(
+    IVersoDbContext db, IPdfPrinter printer, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
+{
+    /// <summary>Attempts per step (plan §6.3), within one execution attempt.</summary>
+    public const int MaxStepAttempts = 3;
+
+    public const string ActorId = "verso.worker";
+    public const string ActorName = "Verso Worker";
+
+    /// <summary>How long a run may take (plan §6.3, assumption: 5 min). Exceeding it is a technical failure.</summary>
+    public static readonly TimeSpan RunTimeout = TimeSpan.FromMinutes(5);
+
+    /// <summary>The run's lock; renewed at every step, so it only runs out when a Worker died mid-run.</summary>
+    public static readonly TimeSpan Lease = TimeSpan.FromMinutes(6);
+
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    /// <summary>Exponential backoff before attempt <paramref name="nextAttempt"/>: 5 s, then 10 s.</summary>
+    public static TimeSpan RetryDelay(int nextAttempt) => TimeSpan.FromSeconds(5 * Math.Pow(2, Math.Max(0, nextAttempt - 2)));
+
+    public async Task RunAsync(Guid executionId, CancellationToken ct)
+    {
+        var execution = await db.Executions.Include(e => e.Steps).SingleOrDefaultAsync(e => e.Id == executionId, ct);
+        if (execution is null)
+        {
+            return; // a job without a row does nothing
+        }
+
+        var wasQueued = execution.Status == ExecutionStatus.Queued;
+        var now = clock.GetUtcNow();
+        if (!execution.TryClaim(now, Lease))
+        {
+            return; // finished, or another run holds the lock (a duplicate delivery)
+        }
+
+        if (wasQueued)
+        {
+            Event(execution, ExecutionEventTypes.Started, now, data: new { attempt = execution.Attempt });
+        }
+
+        if (!await SaveAsync(execution, ct))
+        {
+            return;
+        }
+
+        var version = await db.WorkflowVersions.AsNoTracking().SingleAsync(v => v.Id == execution.WorkflowVersionId, ct);
+        var plan = ExecutionPlan.Create(WorkflowDefinitionParser.Parse(version.Definition).Definition
+            ?? throw new InvalidOperationException($"Published workflow version {version.Id} has an invalid definition."));
+        using var input = JsonDocument.Parse(execution.InputPayload);
+        var run = new Run(execution, plan, input.RootElement,
+            JsonSerializer.Deserialize<Dictionary<string, Guid>>(execution.ResolvedTemplateVersions) ?? []);
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(RunTimeout);
+
+        var node = plan.Trigger;
+        while (true)
+        {
+            var step = execution.Step(node.Id);
+            string? port;
+            if (step.Status == StepStatus.Succeeded)
+            {
+                port = step.OutputPort;
+                await RestoreAsync(run, node, ct);
+            }
+            else
+            {
+                var outcome = await RunStepAsync(run, node, step, timeout.Token, ct);
+                if (outcome is null)
+                {
+                    return; // retry scheduled, execution failed, or the lock was lost
+                }
+
+                port = outcome.Port;
+            }
+
+            var next = port is null ? null : plan.Next(node.Id, port);
+            if (next is null)
+            {
+                await FinishAsync(run, node, port, ct);
+                return;
+            }
+
+            node = next;
+        }
+    }
+
+    private sealed record Outcome(string? Port, object? Result, Func<Task>? AfterSave = null);
+
+    /// <summary>State of one run: the execution, its plan and data, and the document produced so far.</summary>
+    private sealed class Run(Execution execution, ExecutionPlan plan, JsonElement data, IReadOnlyDictionary<string, Guid> templates)
+    {
+        public Execution Execution { get; } = execution;
+        public ExecutionPlan Plan { get; } = plan;
+        public JsonElement Data { get; } = data;
+        public IReadOnlyDictionary<string, Guid> Templates { get; } = templates;
+        public Document? Document { get; set; }
+    }
+
+    private async Task<Outcome?> RunStepAsync(Run run, Workflows.WorkflowNode node, ExecutionStep step, CancellationToken timeoutToken, CancellationToken shutdown)
+    {
+        var execution = run.Execution;
+        var now = clock.GetUtcNow();
+        if (step.Attempt >= MaxStepAttempts)
+        {
+            // Only after Worker crashes mid-step (a crash still counts as an attempt).
+            execution.Fail("step.attempts_exhausted", $"Step '{node.Title}' was interrupted {step.Attempt} times.", now);
+            Event(execution, ExecutionEventTypes.Failed, now, node.Id, new { code = execution.FailureCode });
+            Completed(execution, now);
+            await SaveAsync(execution, CancellationToken.None);
+            return null;
+        }
+
+        step.Start(now);
+        execution.RenewLock(now, Lease);
+        Event(execution, ExecutionEventTypes.StepStarted, now, node.Id, new { attempt = step.Attempt });
+        if (!await SaveAsync(execution, shutdown))
+        {
+            return null;
+        }
+
+        try
+        {
+            var outcome = await ExecuteNodeAsync(run, node, timeoutToken);
+            now = clock.GetUtcNow();
+            step.Succeed(outcome.Port, outcome.Result is null ? null : JsonSerializer.Serialize(outcome.Result, Json), now);
+            execution.RenewLock(now, Lease);
+            Event(execution, ExecutionEventTypes.StepSucceeded, now, node.Id, new { port = outcome.Port });
+            if (!await SaveAsync(execution, CancellationToken.None))
+            {
+                return null;
+            }
+
+            if (outcome.AfterSave is not null)
+            {
+                await outcome.AfterSave();
+            }
+
+            return outcome;
+        }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
+        {
+            // The Worker is stopping. Leave the run resumable: Hangfire re-queues the job and the next run
+            // continues here (or the dispatcher re-queues it if that doesn't happen).
+            if (step.Status == StepStatus.Running)
+            {
+                step.Interrupt();
+            }
+
+            execution.ReleaseLock();
+            await SaveAsync(execution, CancellationToken.None);
+            throw;
+        }
+#pragma warning disable CA1031 // every other failure of a step is recorded on it; nothing escapes unrecorded
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            now = clock.GetUtcNow();
+            var (code, message, retryable) = Describe(ex, timeoutToken);
+            step.Fail(message, now);
+            Event(execution, ExecutionEventTypes.StepFailed, now, node.Id, new { attempt = step.Attempt, code });
+            if (retryable && step.Attempt < MaxStepAttempts)
+            {
+                var delay = RetryDelay(step.Attempt + 1);
+                execution.ScheduleRetry(now + delay);
+                Event(execution, ExecutionEventTypes.RetryScheduled, now, node.Id, new { attempt = step.Attempt + 1, dueAt = now + delay });
+                if (await SaveAsync(execution, CancellationToken.None))
+                {
+                    ScheduleRetry(execution.Id, delay);
+                }
+
+                return null;
+            }
+
+            execution.Fail(code, $"Step '{node.Title}' failed after {step.Attempt} attempt(s): {message}", now);
+            Event(execution, ExecutionEventTypes.Failed, now, node.Id, new { code });
+            Completed(execution, now);
+            await SaveAsync(execution, CancellationToken.None);
+            return null;
+        }
+    }
+
+    private Task<Outcome> ExecuteNodeAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct) => node.Type switch
+    {
+        NodeCatalog.ApiTrigger => Task.FromResult(new Outcome("out", null)),
+        NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
+        NodeCatalog.GeneratePdf => GeneratePdfAsync(run, node, ct),
+        NodeCatalog.Archive => ArchiveAsync(run, node, ct),
+        _ => throw new StepException("node.unsupported", $"Node type '{node.Type}' can't run in this version of Verso.", retryable: false),
+    };
+
+    private static Outcome Validate(Run run, Workflows.WorkflowNode node)
+    {
+        var issues = ValidationRules.Check(node.Config, run.Data);
+        return new Outcome(issues.Count == 0 ? "valid" : "invalid", new { issues });
+    }
+
+    private async Task<Outcome> GeneratePdfAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    {
+        var execution = run.Execution;
+
+        // Idempotent: a document from an earlier, interrupted attempt of this step is reused.
+        if (await FindDocumentAsync(execution.Id, node.Id, ct) is { } existing)
+        {
+            run.Document = existing;
+            return new Outcome("success", DocumentResult(existing, []));
+        }
+
+        if (!run.Templates.TryGetValue(node.Id, out var templateVersionId))
+        {
+            throw new StepException("template.not_resolved", "No template version was pinned for this step at submission.", retryable: false);
+        }
+
+        var version = await db.TemplateVersions.AsNoTracking().SingleAsync(v => v.Id == templateVersionId, ct);
+        var templateName = await db.Templates.AsNoTracking().Where(t => t.Id == version.TemplateId).Select(t => t.Name).SingleAsync(ct);
+        var (layout, _) = LayoutParser.Parse(version.Content.Layout);
+        if (layout is null)
+        {
+            throw new StepException("template.layout_invalid", "The pinned template version has an invalid layout.", retryable: false);
+        }
+
+        var rendered = HtmlRenderer.Render(layout, TemplatePreview.ToPageSetup(version.Content.PageSettings), run.Data, RenderMode.Final, templateName);
+        var errors = rendered.Issues.Where(i => i.Severity == IssueSeverity.Error).ToList();
+        if (errors.Count > 0)
+        {
+            // The data can't make a complete document (e.g. a bound value is missing): a data problem, not technical.
+            return new Outcome("failed", new { issues = errors.Select(i => new { i.Code, i.Path, i.ElementId, i.Message }) });
+        }
+
+        var output = await printer.PrintAsync(rendered.Print, ct);
+        var key = DocumentKeys.Staging(execution.Id, node.Id);
+        await store.WriteAsync(key, output.Content, ct);
+
+        var pattern = PatternText.Resolve(node.Config.GetProperty("fileName").GetString()!, run.Data);
+        var document = Document.Generate(
+            execution.Id, node.Id, templateVersionId, DocumentNames.FileName(pattern.Text), output.Content.LongLength,
+            DocumentKeys.Sha256Hex(output.Content), store.Provider, key, clock.GetUtcNow());
+        db.Documents.Add(document);
+        run.Document = document;
+        var warnings = rendered.Issues.Where(i => i.Severity == IssueSeverity.Warning).Select(i => new { i.Code, i.Path });
+        return new Outcome("success", DocumentResult(document, [.. pattern.Missing.Select(p => $"fileName: no value for '{p}'")], warnings));
+    }
+
+    private async Task<Outcome> ArchiveAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    {
+        var document = run.Document
+            ?? throw new StepException("archive.no_document", "There is no generated document to archive: put a Generate PDF step before Archive on this path.", retryable: false);
+
+        if (document.Status == DocumentStatus.Archived)
+        {
+            var existing = await db.ArchiveRecords.AsNoTracking().SingleAsync(a => a.DocumentId == document.Id, ct);
+            return new Outcome(null, new { documentId = document.Id, existing.FolderPath, existing.RetentionUntil });
+        }
+
+        var warnings = new List<string>();
+        var folder = PatternText.Resolve(node.Config.GetProperty("folderPattern").GetString()!, run.Data);
+        warnings.AddRange(folder.Missing.Select(p => $"folderPattern: no value for '{p}'"));
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var pair in node.Config.GetProperty("metadata").EnumerateArray())
+        {
+            var key = pair.GetProperty("key").GetString()!;
+            var value = PatternText.Resolve(pair.GetProperty("value").GetString()!, run.Data);
+            warnings.AddRange(value.Missing.Select(p => $"metadata {key}: no value for '{p}'"));
+            metadata[key] = value.Text.Length > 300 ? value.Text[..300] : value.Text;
+        }
+
+        // Commit: staging → archive location, verifying the hash on the way in and after writing.
+        var content = await store.ReadAsync(document.StorageKey, ct)
+            ?? throw new StepException("storage.missing", "The generated document is missing from storage.", retryable: true);
+        if (DocumentKeys.Sha256Hex(content) != document.Sha256)
+        {
+            throw new StepException("storage.integrity", "The stored document doesn't match its recorded SHA-256.", retryable: true);
+        }
+
+        var archiveKey = DocumentKeys.Archive(document.Id, document.CreatedAt);
+        await store.WriteAsync(archiveKey, content, ct);
+        var written = await store.ReadAsync(archiveKey, ct);
+        if (written is null || DocumentKeys.Sha256Hex(written) != document.Sha256)
+        {
+            throw new StepException("storage.integrity", "The archived copy doesn't match the document's SHA-256.", retryable: true);
+        }
+
+        var now = clock.GetUtcNow();
+        var retention = node.Config.GetProperty("retention").GetString()!;
+        DateTimeOffset? retentionUntil = retention switch
+        {
+            "7y" => now.AddYears(7),
+            "10y" => now.AddYears(10),
+            _ => null,
+        };
+        var folderPath = DocumentNames.FolderPath(folder.Text);
+        var record = ArchiveRecord.Create(document.Id, retention, retentionUntil, folderPath, JsonSerializer.Serialize(metadata), now);
+        var stagingKey = document.StorageKey;
+        document.MarkArchived(archiveKey, now);
+        db.ArchiveRecords.Add(record);
+
+        return new Outcome(null, new { documentId = document.Id, folderPath, retentionUntil, warnings },
+            AfterSave: () => DeleteStagingAsync(stagingKey));
+    }
+
+    /// <summary>Re-establishes what a step that already succeeded produced (the document, for later steps).</summary>
+    private async Task RestoreAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    {
+        if (node.Type == NodeCatalog.GeneratePdf)
+        {
+            run.Document = await FindDocumentAsync(run.Execution.Id, node.Id, ct);
+        }
+    }
+
+    private async Task FinishAsync(Run run, Workflows.WorkflowNode last, string? port, CancellationToken ct)
+    {
+        var execution = run.Execution;
+        var step = execution.Step(last.Id);
+        var now = clock.GetUtcNow();
+        switch (last.Type, port)
+        {
+            case (NodeCatalog.Validate, "invalid"):
+                using (var result = JsonDocument.Parse(step.Result ?? "{}"))
+                {
+                    var count = result.RootElement.TryGetProperty("issues", out var issues) ? issues.GetArrayLength() : 0;
+                    execution.Reject("data.invalid", $"The data failed {count} validation rule(s) in step '{last.Title}'.", now);
+                }
+
+                Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
+                break;
+            case (NodeCatalog.GeneratePdf, "failed"):
+                execution.Reject("document.data_incomplete", $"The data can't produce a complete document in step '{last.Title}' (see its issues).", now);
+                Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
+                break;
+            default:
+                execution.Succeed(now);
+                Event(execution, ExecutionEventTypes.Succeeded, now);
+                break;
+        }
+
+        Completed(execution, now);
+        await SaveAsync(execution, ct);
+    }
+
+    private Task<Document?> FindDocumentAsync(Guid executionId, string nodeId, CancellationToken ct) =>
+        db.Documents.SingleOrDefaultAsync(d => d.ExecutionId == executionId && d.NodeId == nodeId, ct);
+
+    private static object DocumentResult(Document d, IReadOnlyList<string> warnings, object? renderWarnings = null) =>
+        new { documentId = d.Id, d.FileName, d.SizeBytes, d.Sha256, warnings, renderWarnings };
+
+    /// <summary>Code, sanitized message and retryability of a step failure. Messages never contain payload values.</summary>
+    private static (string Code, string Message, bool Retryable) Describe(Exception ex, CancellationToken timeoutToken)
+    {
+        if (ex is StepException step)
+        {
+            return (step.Code, step.Message, step.Retryable);
+        }
+
+        if (ex is OperationCanceledException && timeoutToken.IsCancellationRequested)
+        {
+            return ("execution.timeout", $"The run exceeded its time limit of {RunTimeout.TotalMinutes:0} minutes.", true);
+        }
+
+        var message = $"{ex.GetType().Name}: {ex.Message}";
+        return ("step.technical_error", message.Length > ExecutionStep.MaxErrorLength ? message[..ExecutionStep.MaxErrorLength] : message, true);
+    }
+
+    private void Event(Execution execution, string type, DateTimeOffset now, string? nodeId = null, object? data = null) =>
+        db.ExecutionEvents.Add(ExecutionEvent.Record(execution.Id, type, now, nodeId, data is null ? null : JsonSerializer.Serialize(data, Json)));
+
+    private void Completed(Execution execution, DateTimeOffset now) =>
+        db.AuditEntries.Add(AuditEntry.Record(
+            ExecutionService.Actions.Completed, ExecutionService.EntityType, execution.Id.ToString(), ActorId, ActorName, now,
+            JsonSerializer.Serialize(new { status = execution.Status.ToString(), failureCode = execution.FailureCode, attempt = execution.Attempt }),
+            execution.CorrelationId));
+
+    /// <summary>False when another run took over this execution (its lock had expired); this run then stops.</summary>
+    private async Task<bool> SaveAsync(Execution execution, CancellationToken ct)
+    {
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            LogLostLock(logger, execution.Id);
+            return false;
+        }
+    }
+
+    private void ScheduleRetry(Guid executionId, TimeSpan delay)
+    {
+        try
+        {
+            jobs.Schedule(executionId, delay);
+        }
+#pragma warning disable CA1031 // the dispatcher re-queues the execution once the retry is overdue
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogScheduleFailed(logger, executionId, ex);
+        }
+    }
+
+    private async Task DeleteStagingAsync(string key)
+    {
+        try
+        {
+            await store.DeleteAsync(key, CancellationToken.None);
+        }
+#pragma warning disable CA1031 // a leftover staging copy is harmless; the archived copy is the record
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogStagingCleanupFailed(logger, key, ex);
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Execution {ExecutionId} was taken over by another run; this run stops")]
+    private static partial void LogLostLock(ILogger logger, Guid executionId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Scheduling the retry of execution {ExecutionId} failed; the dispatcher will queue it")]
+    private static partial void LogScheduleFailed(ILogger logger, Guid executionId, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Deleting staging copy {StorageKey} failed")]
+    private static partial void LogStagingCleanupFailed(ILogger logger, string storageKey, Exception exception);
+}
+
+/// <summary>
+/// Finds executions whose job went missing and queues them again (the "sweeper" of the transactional outbox).
+/// Candidates: Queued or Running, not locked by a live run, and last dispatched more than <see cref="Grace"/> ago
+/// (scheduled retries count as dispatched at their due time). A duplicate job is harmless: the lock lets one run.
+/// </summary>
+public sealed class ExecutionDispatcher(IVersoDbContext db, IExecutionJobs jobs, TimeProvider clock)
+{
+    public static readonly TimeSpan Grace = TimeSpan.FromMinutes(2);
+    public const int BatchSize = 100;
+
+    public async Task<int> RunOnceAsync(CancellationToken ct)
+    {
+        var now = clock.GetUtcNow();
+        var cutoff = now - Grace;
+        var stalled = await db.Executions
+            .Where(e => (e.Status == ExecutionStatus.Queued || e.Status == ExecutionStatus.Running)
+                        && e.DispatchedAt < cutoff
+                        && (e.LockedUntil == null || e.LockedUntil < now))
+            .OrderBy(e => e.DispatchedAt)
+            .Take(BatchSize)
+            .ToListAsync(ct);
+        if (stalled.Count == 0)
+        {
+            return 0;
+        }
+
+        foreach (var execution in stalled)
+        {
+            execution.MarkDispatched(now);
+            db.ExecutionEvents.Add(ExecutionEvent.Record(execution.Id, ExecutionEventTypes.Redispatched, now));
+        }
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return 0; // a run claimed one of them meanwhile; the next sweep looks again
+        }
+
+        foreach (var execution in stalled)
+        {
+            jobs.Enqueue(execution.Id);
+        }
+
+        return stalled.Count;
+    }
+}
