@@ -59,8 +59,13 @@ public static class NodeCatalog
         Node(ApiTrigger, "API trigger", "input",
             "Starts a run when invoice JSON is submitted to POST /api/v1/workflows/{key}/executions.",
             [], [new PortDto("out", "Out", true)],
-            """{ "type": "object", "properties": {} }""",
-            "{}"),
+            """
+            { "type": "object",
+              "properties": {
+                "samplePayload": { "type": "string", "title": "Sample JSON payload", "maxLength": 20000, "x-widget": "json",
+                  "description": "An example of the data this workflow receives. It only suggests field names in other steps; real submissions are not checked against it." } } }
+            """,
+            """{ "samplePayload": "" }"""),
 
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",

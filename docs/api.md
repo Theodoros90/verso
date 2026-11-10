@@ -278,7 +278,7 @@ Saving checks only the **structure** (400 `validation` with paths like `definiti
 
 | `type` | Category | Inputs → outputs | Settings |
 |---|---|---|---|
-| `api-trigger` | input | — → `out` | none |
+| `api-trigger` | input | — → `out` | `samplePayload` (optional JSON object, ≤ 20 000 chars; suggests field names in the designer, never checked against real submissions) |
 | `validate` | process | `in` → `valid`, `invalid` (optional) | `required`: data paths; `types`: `[{ field, type }]` with `type` one of `text`, `number`, `date`, `email`, `eu-vat`, `iban`. At least one rule. |
 | `generate-pdf` | doc | `in` → `success`, `failed` (optional; taken when the data can't make a complete document) | `templateId`; `templateVersion`: `latest-published` (resolved when a run is submitted) or a published version number such as `"2"`; `fileName` pattern such as `{{invoice.number}}.pdf` |
 | `archive` | output | `in` → — | `folderPattern`; `retention`: `7y`, `10y` or `permanent`; `metadata`: `[{ key, value }]` (at most 20) |

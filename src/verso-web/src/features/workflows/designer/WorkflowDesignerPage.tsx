@@ -24,11 +24,11 @@ import { ApiError } from '@/lib/api/client'
 import type { NodeTypeDto, WorkflowDto, WorkflowIssueDto, WorkflowVersionDto } from '@/lib/api/generated'
 import { templatesApi } from '@/lib/api/templates'
 import { workflowsApi } from '@/lib/api/workflows'
-import { scalarPaths, schemaFields } from '@/features/templates/model/schema'
+import { inferSchema, scalarPaths, schemaFields } from '@/features/templates/model/schema'
 
 import { addNode, asDefinition, connect, moveNode, nextPosition, removeEdges, removeNodes, updateNode, type WorkflowDefinition } from '../model/definition'
 import { CATEGORY_COLORS, CATEGORY_LABELS, NODE_ICONS, NodeCard, type VersoFlowNode } from './NodeCard'
-import { SchemaForm, type FieldSchema, type TemplateOption } from './SchemaForm'
+import { parseJsonObject, SchemaForm, type FieldSchema, type TemplateOption } from './SchemaForm'
 import { useWorkflowState } from './workflowState'
 
 interface Loaded {
@@ -131,7 +131,7 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
   const [banner, setBanner] = useState<Banner>(flash ? { tone: 'ok', message: flash } : null)
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({})
   const [templates, setTemplates] = useState<TemplateOption[]>([])
-  const [dataPaths, setDataPaths] = useState<string[]>([])
+  const [templatePaths, setDataPaths] = useState<string[]>([])
   const dragOrigin = useRef<WorkflowDefinition | null>(null)
 
   // ---------- live validation (server is the source of truth) ----------
@@ -193,6 +193,14 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
       .catch(() => setDataPaths([]))
     return () => controller.abort()
   }, [referencedTemplate])
+
+  // Field suggestions: the referenced template's data model plus the API trigger's sample payload.
+  const triggerSample = def.nodes.find((n) => n.type === 'api-trigger')?.config.samplePayload
+  const dataPaths = useMemo(() => {
+    const sample = typeof triggerSample === 'string' ? parseJsonObject(triggerSample) : undefined
+    const fromSample = sample ? scalarPaths(schemaFields(inferSchema(sample))).map((f) => f.path) : []
+    return [...new Set([...templatePaths, ...fromSample])]
+  }, [templatePaths, triggerSample])
 
   // ---------- issues ----------
   const issuesByNode = useMemo(() => {

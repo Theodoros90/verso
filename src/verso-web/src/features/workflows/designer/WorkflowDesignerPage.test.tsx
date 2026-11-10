@@ -13,7 +13,7 @@ const nodeTypes: NodeTypeDto[] = [
   {
     type: 'api-trigger', label: 'API trigger', category: 'input', description: 'Starts a run.',
     inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
-    configSchema: { type: 'object', properties: {} }, defaults: {},
+    configSchema: { type: 'object', properties: { samplePayload: { type: 'string', title: 'Sample JSON payload', 'x-widget': 'json' } } }, defaults: { samplePayload: '' },
   },
   {
     type: 'validate', label: 'Validate data', category: 'process', description: 'Checks required fields.',
@@ -199,5 +199,20 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent("can't be published")
     expect(within(screen.getByRole('region', { name: 'Issues' })).getByText(/has no published version yet/)).toBeInTheDocument()
+  })
+
+  it('suggests fields from the API trigger sample payload and flags a sample that is not a JSON object', async () => {
+    mockApi()
+    await open()
+
+    await screen.findByText('Validate invoice data')
+    selectNode(screen.getAllByText('API trigger').find((el) => !el.closest('[aria-label="Palette"]'))!)
+    const sample = await screen.findByLabelText(/Sample JSON payload/)
+    fireEvent.change(sample, { target: { value: '[1]' } })
+    expect(await screen.findByText('Must be a JSON object.')).toBeInTheDocument()
+
+    fireEvent.change(sample, { target: { value: '{ "order": { "ref": "A-1" } }' } })
+    selectNode(screen.getByText('Validate invoice data'))
+    await waitFor(() => expect(document.querySelector('datalist option[value="order.ref"]')).not.toBeNull())
   })
 })

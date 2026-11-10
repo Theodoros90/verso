@@ -2,7 +2,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useId } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Field, Input, Select } from '@/components/ui/form'
+import { Field, Input, Select, Textarea } from '@/components/ui/form'
 import { cn } from '@/lib/utils'
 
 /** The JSON Schema subset the node catalog uses (see ConfigSchemaValidator on the server), plus designer hints. */
@@ -15,7 +15,7 @@ export interface FieldSchema {
   items?: FieldSchema
   enum?: string[]
   'x-enumLabels'?: string[]
-  'x-widget'?: 'template' | 'template-version' | 'data-path' | 'pattern'
+  'x-widget'?: 'template' | 'template-version' | 'data-path' | 'pattern' | 'json'
   maxItems?: number
 }
 
@@ -187,6 +187,22 @@ function StringInput({
     )
   }
 
+  if (field['x-widget'] === 'json') {
+    return (
+      <div className="flex flex-col gap-1">
+        <Textarea
+          {...common}
+          value={value}
+          rows={10}
+          spellCheck={false}
+          className="font-mono text-[12px]"
+          onChange={(e) => onChange(e.target.value, path)}
+        />
+        {jsonProblem(value) && <p className="text-[12px] text-err">{jsonProblem(value)}</p>}
+      </div>
+    )
+  }
+
   const mono = field['x-widget'] === 'data-path' || field['x-widget'] === 'pattern'
   return (
     <Input
@@ -199,6 +215,27 @@ function StringInput({
       onChange={(e) => onChange(e.target.value, path)}
     />
   )
+}
+
+/** Parses a JSON object typed into a settings field; undefined when blank or not an object. */
+export function parseJsonObject(text: string): Record<string, unknown> | undefined {
+  if (!text.trim()) return undefined
+  try {
+    const v: unknown = JSON.parse(text)
+    return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function jsonProblem(text: string): string | undefined {
+  if (!text.trim()) return undefined
+  try {
+    const v: unknown = JSON.parse(text)
+    return v !== null && typeof v === 'object' && !Array.isArray(v) ? undefined : 'Must be a JSON object.'
+  } catch (e) {
+    return `Not valid JSON: ${(e as Error).message}`
+  }
 }
 
 function emptyItem(items: FieldSchema): unknown {

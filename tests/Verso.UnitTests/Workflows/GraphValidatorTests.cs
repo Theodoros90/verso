@@ -165,6 +165,21 @@ public sealed class GraphValidatorTests
         Assert.Contains("definition.nodes[2].id", errors.Keys); // duplicate
     }
 
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("{ \"invoice\": { \"number\": \"INV-1\" } }", true)]
+    [InlineData("[1, 2]", false)]
+    [InlineData("{ not json", false)]
+    public void ApiTrigger_SamplePayload_MustBeBlankOrAJsonObject(string sample, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]![0]!["config"] = new JsonObject { ["samplePayload"] = sample };
+
+        var result = Validate(definition);
+
+        Assert.Equal(valid, !result.Issues.Any(i => i.NodeId == "trigger" && i.Code == "config.invalid" && i.Field == "samplePayload"));
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {

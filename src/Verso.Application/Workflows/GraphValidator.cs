@@ -188,12 +188,34 @@ public static class GraphValidator
         _ => $"'{port.Label}' isn't connected; the run ends there.",
     };
 
+    private static bool IsJsonObject(string text)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(text);
+            return document.RootElement.ValueKind == JsonValueKind.Object;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>Rules a schema can't express.</summary>
     private static IEnumerable<WorkflowIssueDto> NodeRules(WorkflowNode node, NodeTypeDto type, IReadOnlyDictionary<Guid, TemplateRef> templates)
     {
         var c = node.Config;
         switch (type.Type)
         {
+            case NodeCatalog.ApiTrigger:
+                if (c.TryGetProperty("samplePayload", out var sample) && sample.ValueKind == JsonValueKind.String
+                    && sample.GetString()!.Trim().Length > 0 && !IsJsonObject(sample.GetString()!))
+                {
+                    yield return new(Error, "config.invalid", "The sample payload must be a JSON object.", NodeId: node.Id, Field: "samplePayload");
+                }
+
+                break;
+
             case NodeCatalog.Validate:
                 var rules = Count(c, "required") + Count(c, "types");
                 if (rules == 0)
