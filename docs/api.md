@@ -245,7 +245,7 @@ Notifications are hints, not the source of truth: after one arrives, read the RE
 
 ## Workflows
 
-A workflow is a graph of steps: a trigger, then steps connected output → input. Its lifecycle is the same as a template's: **create** (a draft containing only an API trigger) → **save draft** (`If-Match`) → **publish** (version N, frozen) → **start draft** (copy of the latest published version). Every change is audited (`entityType=Workflow`).
+A workflow is a graph of steps: a trigger, then steps connected output → input. Its lifecycle is the same as a template's: **create** (a draft containing only an API / webhook trigger with default settings) → **save draft** (`If-Match`) → **publish** (version N, frozen) → **start draft** (copy of the latest published version). Every change is audited (`entityType=Workflow`).
 
 | Method | Path | Success | Purpose |
 |---|---|---|---|
@@ -278,7 +278,7 @@ Saving checks only the **structure** (400 `validation` with paths like `definiti
 
 | `type` | Category | Inputs → outputs | Settings |
 |---|---|---|---|
-| `api-trigger` | input | — → `out` | `samplePayload` (optional JSON object, ≤ 20 000 chars; suggests field names in the designer, never checked against real submissions) |
+| `api-trigger` ("API / webhook") | input | — → `out` | `path` (required; mock path such as `/hooks/invoices`, shown as `https://mock.verso.local/…`; nothing listens there, real runs use `POST /api/v1/workflows/{key}/executions`); `auth` (required; `none`, `api-key`, `hmac-sha256`, `oauth2`, `mtls`; descriptive only, not enforced); `expectedSchema` and `samplePayload` (optional JSON objects, ≤ 20 000 chars each; the designer checks the sample against the schema and suggests the sample's field names in later steps; real submissions are not checked against either). New workflows start with these settings filled in. |
 | `validate` | process | `in` → `valid`, `invalid` (optional) | `required`: data paths; `types`: `[{ field, type }]` with `type` one of `text`, `number`, `date`, `email`, `eu-vat`, `iban`. At least one rule. |
 | `generate-pdf` | doc | `in` → `success`, `failed` (optional; taken when the data can't make a complete document) | `templateId`; `templateVersion`: `latest-published` (resolved when a run is submitted) or a published version number such as `"2"`; `fileName` pattern such as `{{invoice.number}}.pdf` |
 | `archive` | output | `in` → — | `folderPattern`; `retention`: `7y`, `10y` or `permanent`; `metadata`: `[{ key, value }]` (at most 20) |

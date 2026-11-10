@@ -28,7 +28,9 @@ import { inferSchema, scalarPaths, schemaFields } from '@/features/templates/mod
 
 import { addNode, asDefinition, connect, moveNode, nextPosition, removeEdges, removeNodes, updateNode, type WorkflowDefinition } from '../model/definition'
 import { CATEGORY_COLORS, CATEGORY_LABELS, NODE_ICONS, NodeCard, type VersoFlowNode } from './NodeCard'
-import { parseJsonObject, SchemaForm, type FieldSchema, type TemplateOption } from './SchemaForm'
+import { parseJsonObject } from '../model/payloadSchema'
+import { ApiTriggerSettings, type TemplateSample } from './ApiTriggerSettings'
+import { SchemaForm, type FieldSchema, type TemplateOption } from './SchemaForm'
 import { useWorkflowState } from './workflowState'
 
 interface Loaded {
@@ -132,6 +134,7 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({})
   const [templates, setTemplates] = useState<TemplateOption[]>([])
   const [templatePaths, setDataPaths] = useState<string[]>([])
+  const [templateSampleData, setTemplateSampleData] = useState<unknown>(undefined)
   const dragOrigin = useRef<WorkflowDefinition | null>(null)
 
   // ---------- live validation (server is the source of truth) ----------
@@ -184,15 +187,25 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
   useEffect(() => {
     if (!referencedTemplate) {
       setDataPaths([])
+      setTemplateSampleData(undefined)
       return
     }
     const controller = new AbortController()
-    // Field suggestions come from the template's latest data model (draft or published).
+    // Field suggestions and sample data come from the template's latest version (draft or published).
     latestTemplateVersion(referencedTemplate, controller.signal)
-      .then((v) => setDataPaths(v ? scalarPaths(schemaFields(v.dataSchema)).map((f) => f.path) : []))
-      .catch(() => setDataPaths([]))
+      .then((v) => {
+        setDataPaths(v ? scalarPaths(schemaFields(v.dataSchema)).map((f) => f.path) : [])
+        setTemplateSampleData(v?.sampleData ?? undefined)
+      })
+      .catch(() => {
+        setDataPaths([])
+        setTemplateSampleData(undefined)
+      })
     return () => controller.abort()
   }, [referencedTemplate])
+  const templateName = templates.find((t) => t.id === referencedTemplate)?.name
+  const templateSample: TemplateSample | undefined =
+    templateSampleData !== undefined && templateSampleData !== null && templateName ? { templateName, data: templateSampleData } : undefined
 
   // Field suggestions: the referenced template's data model plus the API trigger's sample payload.
   const triggerSample = def.nodes.find((n) => n.type === 'api-trigger')?.config.samplePayload
@@ -583,6 +596,8 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
             readOnly={readOnly}
             templates={templates}
             dataPaths={dataPaths}
+            workflowKey={workflow.key}
+            templateSample={templateSample}
             onChange={(patch, key) => actions.edit((d) => updateNode(d, selected.id, patch), { key: `${selected.id}:${key}` })}
             onDelete={() => actions.edit((d) => removeNodes(d, [selected.id]), { select: null })}
           />
@@ -615,6 +630,8 @@ function NodeSettings({
   readOnly,
   templates,
   dataPaths,
+  workflowKey,
+  templateSample,
   onChange,
   onDelete,
 }: {
@@ -624,6 +641,8 @@ function NodeSettings({
   readOnly: boolean
   templates: TemplateOption[]
   dataPaths: string[]
+  workflowKey: string
+  templateSample?: TemplateSample
   onChange: (patch: { title?: string; config?: Record<string, unknown> }, key: string) => void
   onDelete: () => void
 }) {
@@ -655,7 +674,17 @@ function NodeSettings({
       </div>
       <section aria-label="Step settings" className="border-b border-line px-3.5 py-3.5">
         <h4 className="mb-2.5 text-[13px] font-semibold">Settings</h4>
-        {nodeType ? (
+        {nodeType && node.type === 'api-trigger' ? (
+          <ApiTriggerSettings
+            schema={nodeType.configSchema as FieldSchema}
+            value={node.config}
+            onChange={(config, key) => onChange({ config }, key)}
+            errorsFor={fieldErrors}
+            readOnly={readOnly}
+            workflowKey={workflowKey}
+            templateSample={templateSample}
+          />
+        ) : nodeType ? (
           <SchemaForm
             schema={nodeType.configSchema as FieldSchema}
             value={node.config}

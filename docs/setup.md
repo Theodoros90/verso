@@ -116,7 +116,7 @@ The dev server forwards `/api/*` and the SignalR hub `/hubs/*` (WebSockets) to `
 **PDF preview (M5):** in the preview pane, switch to **PDF**. The API queues a job, the Worker prints the saved draft with Chromium, and the PDF appears when the API's SignalR hub announces it (about 2–3 s once Chromium is warm). It needs the Worker running and Chromium installed (step 2). In development, React's StrictMode runs the effect twice, so each PDF request queues two renders; production builds queue one.
 
 **Workflow designer (M6):**
-1. Open Workflow designer, choose **New workflow**, and enter a key (for example `invoice-standard`) and a name. It starts with an API trigger.
+1. Open Workflow designer, choose **New workflow**, and enter a key (for example `invoice-standard`) and a name. It starts with an API / webhook trigger (mock path, authentication method, expected schema and a synthetic sample filled in).
 2. Add steps from the palette by clicking (they go to the right of the selected step) or by dragging them onto the canvas.
 3. Connect a step's output (the dots on the right of its card) to the next step's input (the dot on the left) by dragging. Select a step or connection and press Delete to remove it.
 4. Select a step to edit its settings. Generate PDF needs a template that has a **published** version.

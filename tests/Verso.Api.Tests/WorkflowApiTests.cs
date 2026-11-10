@@ -170,7 +170,7 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
 
     private static JsonObject InvoiceStandard(Guid templateId) => (JsonObject)JsonNode.Parse($$"""
         { "nodes": [
-            { "id": "trigger", "type": "api-trigger", "title": "API trigger", "position": { "x": 0, "y": 80 }, "config": {} },
+            { "id": "trigger", "type": "api-trigger", "title": "API trigger", "position": { "x": 0, "y": 80 }, "config": { "path": "/hooks/invoices", "auth": "hmac-sha256" } },
             { "id": "validate", "type": "validate", "title": "Validate invoice data", "position": { "x": 262.5, "y": 80 },
               "config": { "required": ["invoice.number", "customer.name"], "types": [ { "field": "invoice.date", "type": "date" } ] } },
             { "id": "pdf", "type": "generate-pdf", "title": "Generate invoice PDF", "position": { "x": 520, "y": 96.25 },

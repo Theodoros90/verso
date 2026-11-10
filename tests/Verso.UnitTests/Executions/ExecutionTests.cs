@@ -124,7 +124,7 @@ public sealed class ExecutionTests
             { "nodes": [
                 { "id": "archive", "type": "archive", "title": "Archive", "position": { "x": 0, "y": 0 }, "config": {} },
                 { "id": "pdf", "type": "generate-pdf", "title": "PDF", "position": { "x": 0, "y": 0 }, "config": {} },
-                { "id": "trigger", "type": "api-trigger", "title": "Trigger", "position": { "x": 0, "y": 0 }, "config": {} },
+                { "id": "trigger", "type": "api-trigger", "title": "Trigger", "position": { "x": 0, "y": 0 }, "config": { "path": "/hooks/invoices", "auth": "hmac-sha256" } },
                 { "id": "validate", "type": "validate", "title": "Validate", "position": { "x": 0, "y": 0 }, "config": {} } ],
               "edges": [
                 { "id": "e3", "source": "pdf", "sourcePort": "success", "target": "archive", "targetPort": "in" },

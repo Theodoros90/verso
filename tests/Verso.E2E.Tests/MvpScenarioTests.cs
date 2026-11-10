@@ -55,13 +55,13 @@ public sealed partial class MvpScenarioTests(E2EEnvironment env)
         await page.GetByRole(AriaRole.Button, new() { Name = "Create", Exact = true }).ClickAsync();
         await page.WaitForURLAsync(new Regex("/workflows/[0-9a-f-]{36}$"));
         var canvas = page.GetByLabel("Workflow canvas");
-        await canvas.GetByText("API trigger", new() { Exact = true }).First.ClickAsync(); // card title (the type label below says the same)
+        await canvas.GetByText("API / webhook", new() { Exact = true }).First.ClickAsync(); // card title (the type label below says the same)
         foreach (var step in new[] { "Validate data", "Generate PDF", "Archive" })
         {
             await page.GetByRole(AriaRole.Button, new() { Name = $"Add {step}", Exact = true }).ClickAsync(); // placed right of the selected step
         }
 
-        await ConnectAsync(page, "API trigger: output Out", "Validate data: input");
+        await ConnectAsync(page, "API / webhook: output Out", "Validate data: input");
         await ConnectAsync(page, "Validate data: output Valid", "Generate PDF: input");
         await ConnectAsync(page, "Generate PDF: output Success", "Archive: input");
 

@@ -16,7 +16,7 @@ public sealed class GraphValidatorTests
     /// <summary>The "Invoice standard" workflow from the M6 acceptance criteria: trigger → validate → generate PDF → archive.</summary>
     internal static JsonObject InvoiceStandard(Guid templateId, string version = "latest-published") => (JsonObject)JsonNode.Parse($$"""
         { "nodes": [
-            { "id": "trigger", "type": "api-trigger", "title": "API trigger", "position": { "x": 0, "y": 80 }, "config": {} },
+            { "id": "trigger", "type": "api-trigger", "title": "API trigger", "position": { "x": 0, "y": 80 }, "config": { "path": "/hooks/invoices", "auth": "hmac-sha256" } },
             { "id": "validate", "type": "validate", "title": "Validate invoice data", "position": { "x": 260, "y": 80 },
               "config": { "required": ["invoice.number", "customer.name"], "types": [ { "field": "invoice.date", "type": "date" }, { "field": "totals.gross", "type": "number" } ] } },
             { "id": "pdf", "type": "generate-pdf", "title": "Generate invoice PDF", "position": { "x": 520, "y": 80 },
@@ -111,7 +111,7 @@ public sealed class GraphValidatorTests
         Assert.Contains(":graph.no_trigger", Codes(Validate(none)));
 
         var two = InvoiceStandard(TemplateId);
-        two["nodes"]!.AsArray().Add(JsonNode.Parse("""{ "id": "t2", "type": "api-trigger", "title": "Second", "position": { "x": 0, "y": 300 }, "config": {} }"""));
+        two["nodes"]!.AsArray().Add(JsonNode.Parse("""{ "id": "t2", "type": "api-trigger", "title": "Second", "position": { "x": 0, "y": 300 }, "config": { "path": "/hooks/invoices", "auth": "hmac-sha256" } }"""));
         Assert.Contains("t2:graph.multiple_triggers", Codes(Validate(two)));
     }
 
@@ -166,19 +166,52 @@ public sealed class GraphValidatorTests
     }
 
     [Theory]
-    [InlineData("", true)]
-    [InlineData("{ \"invoice\": { \"number\": \"INV-1\" } }", true)]
-    [InlineData("[1, 2]", false)]
-    [InlineData("{ not json", false)]
-    public void ApiTrigger_SamplePayload_MustBeBlankOrAJsonObject(string sample, bool valid)
+    [InlineData("samplePayload", "", true)]
+    [InlineData("samplePayload", "{ \"invoice\": { \"number\": \"INV-1\" } }", true)]
+    [InlineData("samplePayload", "[1, 2]", false)]
+    [InlineData("samplePayload", "{ not json", false)]
+    [InlineData("expectedSchema", "{ \"type\": \"object\" }", true)]
+    [InlineData("expectedSchema", "\"object\"", false)]
+    [InlineData("expectedSchema", "{ type: object }", false)]
+    public void ApiTrigger_SchemaAndSample_MustBeBlankOrAJsonObject(string field, string text, bool valid)
     {
         var definition = InvoiceStandard(TemplateId);
-        definition["nodes"]![0]!["config"] = new JsonObject { ["samplePayload"] = sample };
+        definition["nodes"]![0]!["config"]![field] = text;
 
         var result = Validate(definition);
 
-        Assert.Equal(valid, !result.Issues.Any(i => i.NodeId == "trigger" && i.Code == "config.invalid" && i.Field == "samplePayload"));
+        Assert.Equal(valid, !result.Issues.Any(i => i.NodeId == "trigger" && i.Code == "config.invalid" && i.Field == field));
     }
+
+    [Theory]
+    [InlineData(null, "config.required")]
+    [InlineData("hooks/invoices", "config.invalid")]
+    [InlineData("/hooks/in voices", "config.invalid")]
+    public void ApiTrigger_Path_IsRequiredAndStartsWithASlash(string? path, string code)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        var config = definition["nodes"]![0]!["config"]!.AsObject();
+        if (path is null) config.Remove("path");
+        else config["path"] = path;
+
+        var result = Validate(definition);
+
+        Assert.Contains(result.Issues, i => i.NodeId == "trigger" && i.Code == code && i.Field == "path");
+        Assert.False(result.Valid);
+    }
+
+    [Fact]
+    public void ApiTrigger_Defaults_AreValid()
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]![0]!["config"] = JsonNode.Parse(NodeCatalog.Find(NodeCatalog.ApiTrigger)!.Defaults.GetRawText());
+
+        var result = Validate(definition);
+
+        Assert.True(result.Valid);
+        Assert.DoesNotContain(result.Issues, i => i.NodeId == "trigger");
+    }
+
 
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()

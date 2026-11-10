@@ -50,22 +50,80 @@ public static class NodeCatalog
         ["permanent"] = "Permanently",
     };
 
+    /// <summary>How callers of the (mock) webhook authenticate. Descriptive only: nothing listens at the mock path.</summary>
+    public static readonly IReadOnlyDictionary<string, string> AuthMethods = new Dictionary<string, string>
+    {
+        ["none"] = "None",
+        ["api-key"] = "API key in header",
+        ["hmac-sha256"] = "HMAC SHA-256 signature",
+        ["oauth2"] = "OAuth 2.0 bearer token",
+        ["mtls"] = "Mutual TLS",
+    };
+
     private const string DataPathPattern = @"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$";
+
+    private const string EndpointPathPattern = @"^/[A-Za-z0-9._~/-]*$";
+
+    /// <summary>The invoice shape the templates and the Validate step use (tests/fixtures/invoice/sample.json).</summary>
+    private const string DefaultExpectedSchema = """
+        {
+          "type": "object",
+          "required": ["invoice", "customer", "lines", "totals"],
+          "properties": {
+            "invoice": {
+              "type": "object",
+              "required": ["number", "date"],
+              "properties": { "number": { "type": "string" }, "date": { "type": "string" }, "dueDate": { "type": "string" }, "currency": { "type": "string" } }
+            },
+            "customer": {
+              "type": "object",
+              "required": ["name"],
+              "properties": { "name": { "type": "string" }, "email": { "type": "string" }, "vatNumber": { "type": "string" } }
+            },
+            "lines": { "type": "array" },
+            "totals": {
+              "type": "object",
+              "required": ["gross"],
+              "properties": { "net": { "type": "number" }, "vat": { "type": "number" }, "gross": { "type": "number" } }
+            }
+          }
+        }
+        """;
+
+    /// <summary>Synthetic sample (fictional company, .example domain).</summary>
+    private const string DefaultSamplePayload = """
+        {
+          "invoice": { "number": "INV-2026-003901", "date": "2026-11-02", "dueDate": "2026-12-02", "currency": "EUR" },
+          "customer": { "name": "Kestrel Logistics Ltd", "email": "ap@kestrel-logistics.example", "vatNumber": "CY99887766K" },
+          "lines": [ { "description": "Electricity supply, October 2026", "qty": 18450, "unit": "kWh", "unitPrice": 0.2185, "vatRate": 19, "amount": 4031.33 } ],
+          "totals": { "net": 4031.33, "vat": 765.95, "gross": 4797.28 }
+        }
+        """;
 
     private static readonly PortDto In = new("in", "In", true);
 
     public static IReadOnlyList<NodeTypeDto> All { get; } =
     [
-        Node(ApiTrigger, "API trigger", "input",
-            "Starts a run when invoice JSON is submitted to POST /api/v1/workflows/{key}/executions.",
+        Node(ApiTrigger, "API / webhook", "input",
+            "Starts a run when a system posts JSON to a URL.",
             [], [new PortDto("out", "Out", true)],
-            """
+            $$"""
             { "type": "object",
               "properties": {
-                "samplePayload": { "type": "string", "title": "Sample JSON payload", "maxLength": 20000, "x-widget": "json",
-                  "description": "An example of the data this workflow receives. It only suggests field names in other steps; real submissions are not checked against it." } } }
+                "path": { "type": "string", "title": "Path", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(EndpointPathPattern)}}", "x-widget": "endpoint-path",
+                  "description": "Mock endpoint for testing. Real runs are submitted to POST /api/v1/workflows/{key}/executions." },
+                "auth": { "type": "string", "title": "Authentication method", "enum": {{JsonSerializer.Serialize(AuthMethods.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(AuthMethods.Values)}} },
+                "expectedSchema": { "type": "string", "title": "Expected JSON schema", "maxLength": 20000, "x-widget": "json" },
+                "samplePayload": { "type": "string", "title": "Sample JSON payload", "maxLength": 20000, "x-widget": "json" } },
+              "required": ["path", "auth"] }
             """,
-            """{ "samplePayload": "" }"""),
+            new JsonObject
+            {
+                ["path"] = "/hooks/invoices",
+                ["auth"] = "hmac-sha256",
+                ["expectedSchema"] = DefaultExpectedSchema,
+                ["samplePayload"] = DefaultSamplePayload,
+            }.ToJsonString()),
 
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",

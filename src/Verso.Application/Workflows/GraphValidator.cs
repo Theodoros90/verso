@@ -208,10 +208,13 @@ public static class GraphValidator
         switch (type.Type)
         {
             case NodeCatalog.ApiTrigger:
-                if (c.TryGetProperty("samplePayload", out var sample) && sample.ValueKind == JsonValueKind.String
-                    && sample.GetString()!.Trim().Length > 0 && !IsJsonObject(sample.GetString()!))
+                foreach (var (field, label) in new[] { ("expectedSchema", "The expected JSON schema"), ("samplePayload", "The sample payload") })
                 {
-                    yield return new(Error, "config.invalid", "The sample payload must be a JSON object.", NodeId: node.Id, Field: "samplePayload");
+                    if (c.TryGetProperty(field, out var text) && text.ValueKind == JsonValueKind.String
+                        && text.GetString()!.Trim().Length > 0 && !IsJsonObject(text.GetString()!))
+                    {
+                        yield return new(Error, "config.invalid", $"{label} must be a JSON object.", NodeId: node.Id, Field: field);
+                    }
                 }
 
                 break;

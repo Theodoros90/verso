@@ -11,9 +11,19 @@ const TPL = '22222222-2222-2222-2222-222222222222'
 
 const nodeTypes: NodeTypeDto[] = [
   {
-    type: 'api-trigger', label: 'API trigger', category: 'input', description: 'Starts a run.',
+    type: 'api-trigger', label: 'API / webhook', category: 'input', description: 'Starts a run when a system posts JSON to a URL.',
     inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
-    configSchema: { type: 'object', properties: { samplePayload: { type: 'string', title: 'Sample JSON payload', 'x-widget': 'json' } } }, defaults: { samplePayload: '' },
+    configSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', title: 'Path', 'x-widget': 'endpoint-path' },
+        auth: { type: 'string', title: 'Authentication method', enum: ['none', 'hmac-sha256'], 'x-enumLabels': ['None', 'HMAC SHA-256 signature'] },
+        expectedSchema: { type: 'string', title: 'Expected JSON schema', 'x-widget': 'json' },
+        samplePayload: { type: 'string', title: 'Sample JSON payload', 'x-widget': 'json' },
+      },
+      required: ['path', 'auth'],
+    },
+    defaults: { path: '/hooks/invoices', auth: 'hmac-sha256', expectedSchema: '', samplePayload: '' },
   },
   {
     type: 'validate', label: 'Validate data', category: 'process', description: 'Checks required fields.',
@@ -48,7 +58,7 @@ const nodeTypes: NodeTypeDto[] = [
 
 const definition = {
   nodes: [
-    { id: 'trigger', type: 'api-trigger', title: 'API trigger', position: { x: 0, y: 80 }, config: {} },
+    { id: 'trigger', type: 'api-trigger', title: 'ERP webhook', position: { x: 0, y: 80 }, config: { path: '/hooks/invoices', auth: 'hmac-sha256', expectedSchema: JSON.stringify({ type: 'object', required: ['invoice'], properties: { invoice: { type: 'object', required: ['number'] } } }), samplePayload: '' } },
     { id: 'validate', type: 'validate', title: 'Validate invoice data', position: { x: 262.5, y: 80 }, config: { required: ['invoice.number'], types: [] } },
     { id: 'pdf', type: 'generate-pdf', title: 'Generate invoice PDF', position: { x: 520, y: 96 }, config: { templateId: TPL, templateVersion: 'latest-published', fileName: '{{invoice.number}}.pdf' } },
   ],
@@ -94,7 +104,7 @@ function mockApi(opts: { issues?: WorkflowIssueDto[]; publish?: 'ok' | 'invalid'
       if (url.startsWith('/api/v1/templates?')) return json({ items: [{ id: TPL, key: 'INV-STD', name: 'Commercial invoice', documentType: 'Invoice', latestPublishedVersion: 2, hasDraft: false, updatedAt: '' }], page: 1, pageSize: 100, total: 1 })
       if (url === `/api/v1/templates/${TPL}/versions`) return json([{ versionId: 't2', versionNumber: 2, status: 'Published' }, { versionId: 't1', versionNumber: 1, status: 'Published' }])
       if (url === `/api/v1/templates/${TPL}`) return json({ id: TPL, draftVersionId: null })
-      if (url === `/api/v1/templates/${TPL}/versions/t2`) return json({ dataSchema: { type: 'object', properties: { invoice: { type: 'object', properties: { number: { type: 'string' }, date: { type: 'string', format: 'date' } } } } } })
+      if (url === `/api/v1/templates/${TPL}/versions/t2`) return json({ dataSchema: { type: 'object', properties: { invoice: { type: 'object', properties: { number: { type: 'string' }, date: { type: 'string', format: 'date' } } } } }, sampleData: { invoice: { number: 'INV-9', date: '2026-11-02' }, order: { ref: 'A-1' } } })
       return json({ title: 'Not found' }, 404)
     }),
   )
@@ -121,7 +131,7 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
 
     await waitFor(() => expect(screen.getByLabelText(/^Generate invoice PDF, Generate PDF: Needs attention/)).toBeInTheDocument())
     expect(screen.getByLabelText(/^Validate invoice data, Validate data: Check/)).toBeInTheDocument()
-    expect(screen.getByLabelText(/^API trigger, API trigger: Configured/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^ERP webhook, API \/ webhook: Configured/)).toBeInTheDocument()
     const issues = screen.getByRole('region', { name: 'Issues' })
     expect(within(issues).getByText("Connect 'Success' to the next step.")).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Publish/ })).toBeDisabled()
@@ -170,7 +180,7 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await open()
     const user = userEvent.setup()
 
-    expect(screen.getByRole('button', { name: 'Add API trigger' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add API / webhook' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Add Validate data' }))
     expect(await screen.findByText('Validate data', { selector: '.truncate.text-\\[13px\\]' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Validate data', level: 3 })).toBeInTheDocument() // the new step is selected
@@ -201,17 +211,40 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     expect(within(screen.getByRole('region', { name: 'Issues' })).getByText(/has no published version yet/)).toBeInTheDocument()
   })
 
-  it('suggests fields from the API trigger sample payload and flags a sample that is not a JSON object', async () => {
+  it('edits the API / webhook endpoint, authentication, schema and sample, with live checks', async () => {
     mockApi()
     await open()
 
     await screen.findByText('Validate invoice data')
-    selectNode(screen.getAllByText('API trigger').find((el) => !el.closest('[aria-label="Palette"]'))!)
-    const sample = await screen.findByLabelText(/Sample JSON payload/)
-    fireEvent.change(sample, { target: { value: '[1]' } })
-    expect(await screen.findByText('Must be a JSON object.')).toBeInTheDocument()
+    selectNode(screen.getByText('ERP webhook'))
+    const settings = await screen.findByRole('region', { name: 'Step settings' })
 
-    fireEvent.change(sample, { target: { value: '{ "order": { "ref": "A-1" } }' } })
+    expect(within(settings).getByText(/Nothing is listening at this address/)).toHaveTextContent('POST /api/v1/workflows/invoice-standard/executions')
+    fireEvent.change(within(settings).getByLabelText(/^Path/), { target: { value: '/hooks/d365/invoices' } })
+    expect(within(settings).getByLabelText('Mock endpoint URL')).toHaveValue('https://mock.verso.local/hooks/d365/invoices')
+
+    expect(within(settings).getByText(/X-Verso-Signature/)).toBeInTheDocument()
+    fireEvent.change(within(settings).getByLabelText('Authentication method'), { target: { value: 'none' } })
+    expect(within(settings).getByText(/Use only for local testing/)).toBeInTheDocument()
+
+    const checks = within(settings).getByRole('list', { name: 'Checks' })
+    expect(checks).toHaveTextContent('Schema is valid JSON')
+    expect(checks).toHaveTextContent('No sample payload yet')
+
+    const sample = within(settings).getByLabelText('Sample JSON payload')
+    fireEvent.change(sample, { target: { value: '{ "invoice": {' } })
+    expect(checks).toHaveTextContent('Sample isn’t valid JSON')
+    fireEvent.change(sample, { target: { value: '{ "invoice": {} }' } })
+    expect(checks).toHaveTextContent('Sample doesn’t match the schema: invoice.number is required but missing')
+
+    // The referenced template's sample data can be loaded; it fits the schema.
+    const load = within(settings).getByLabelText('Load sample data')
+    await waitFor(() => expect(load).toBeEnabled())
+    fireEvent.change(load, { target: { value: 'template' } })
+    expect((sample as HTMLTextAreaElement).value).toContain('"INV-9"')
+    expect(checks).toHaveTextContent('Sample matches the schema')
+
+    // Field names in the sample are suggested in later steps.
     selectNode(screen.getByText('Validate invoice data'))
     await waitFor(() => expect(document.querySelector('datalist option[value="order.ref"]')).not.toBeNull())
   })

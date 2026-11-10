@@ -50,7 +50,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
 
         var definition = JsonNode.Parse($$"""
             { "nodes": [
-                { "id": "trigger", "type": "api-trigger", "title": "API trigger", "position": { "x": 0, "y": 80 }, "config": {} },
+                { "id": "trigger", "type": "api-trigger", "title": "API trigger", "position": { "x": 0, "y": 80 }, "config": { "path": "/hooks/invoices", "auth": "hmac-sha256" } },
                 { "id": "validate", "type": "validate", "title": "Validate invoice data", "position": { "x": 260, "y": 80 }, "config": {} },
                 { "id": "pdf", "type": "generate-pdf", "title": "Generate invoice PDF", "position": { "x": 520, "y": 80 },
                   "config": { "templateId": "{{templateId}}", "templateVersion": "latest-published", "fileName": "{{"{{"}}invoice.number{{"}}"}}.pdf" } },
