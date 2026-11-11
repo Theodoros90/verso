@@ -116,6 +116,9 @@ type Banner = { tone: 'ok' | 'warn' | 'err'; message: string; action?: { label: 
 const nodeTypesForFlow = { verso: NodeCard }
 const isEditable = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))
 
+/** The palette shows the first sentence only (as the prototype does); the rest, such as "Simulated: ...", stays in the settings panel and tooltip. */
+const shortDescription = (description: string) => (description.split(/\.\s/)[0] ?? description).replace(/\.$/, '')
+
 function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string | null; onReload: (message?: string) => void }) {
   const { workflow, version, nodeTypes } = loaded
   const canEdit = usePermissions().workflowAuthoring // others see the workflow read-only (the API refuses their edits anyway)
@@ -431,10 +434,13 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
                       onClick={() => addType(t)}
                       aria-label={`Add ${t.label}`}
                       title={t.category === 'input' && hasTrigger ? 'A workflow has exactly one trigger.' : t.description}
-                      className="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-2 text-left text-[12.5px] font-medium hover:border-cyan hover:text-cyan-strong disabled:cursor-default disabled:opacity-50 disabled:hover:border-line disabled:hover:text-ink"
+                      className="flex items-start gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-2 text-left text-[12.5px] font-medium hover:border-cyan hover:text-cyan-strong disabled:cursor-default disabled:opacity-50 disabled:hover:border-line disabled:hover:text-ink"
                     >
-                      <Icon className="size-4 flex-none" style={{ color: CATEGORY_COLORS[t.category] }} strokeWidth={1.75} aria-hidden="true" />
-                      {t.label}
+                      <Icon className="mt-px size-4 flex-none" style={{ color: CATEGORY_COLORS[t.category] }} strokeWidth={1.75} aria-hidden="true" />
+                      <span className="min-w-0">
+                        <span className="block">{t.label}</span>
+                        <span className="mt-0.5 block text-[11.5px] leading-snug font-normal text-ink-3">{shortDescription(t.description)}</span>
+                      </span>
                     </button>
                   )
                 })}
