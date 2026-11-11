@@ -20,7 +20,7 @@ public sealed record NodeTypeDto(
     JsonElement Defaults);
 
 /// <summary>
-/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder and scheduled-trigger (simulated),
+/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
 /// folder-input (real: the Worker reads approved folders, see Ingestion), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
@@ -31,6 +31,7 @@ public static class NodeCatalog
     public const string FileUpload = "file-upload";
     public const string SftpFolder = "sftp-folder";
     public const string ScheduledTrigger = "scheduled-trigger";
+    public const string ManualTrigger = "manual-trigger";
     public const string FolderInput = "folder-input";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
@@ -110,6 +111,14 @@ public static class NodeCatalog
 
     /// <summary>Five space-separated cron fields (minute hour day-of-month month day-of-week).</summary>
     private const string CronPattern = @"^[0-9A-Za-z*/,?#-]+( [0-9A-Za-z*/,?#-]+){4}$";
+
+    /// <summary>Who may start a manual run (descriptive only: the step records the intent, nothing enforces it yet).</summary>
+    public static readonly IReadOnlyDictionary<string, string> ManualStarters = new Dictionary<string, string>
+    {
+        ["template-leads"] = "Template leads",
+        ["credit-control"] = "Credit control team",
+        ["workspace"] = "Anyone in the workspace",
+    };
 
     /// <summary>Scan intervals of the folder-input trigger (values in <see cref="Ingestion.FolderPaths.Intervals"/>).</summary>
     public static readonly IReadOnlyDictionary<string, string> FolderScanIntervals = new Dictionary<string, string>
@@ -246,6 +255,19 @@ public static class NodeCatalog
               "required": ["cron", "tz"] }
             """,
             """{ "cron": "0 1 * * *", "tz": "Europe/Nicosia" }"""),
+
+        Node(ManualTrigger, "Manual trigger", "input",
+            "Someone starts a run from Verso. Simulated: there is no Run button yet, so runs are submitted to POST /api/v1/workflows/{key}/executions.",
+            [], [new PortDto("out", "Out", true)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "who": { "type": "string", "title": "Who can start it", "enum": {{JsonSerializer.Serialize(ManualStarters.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(ManualStarters.Values)}} },
+                "ask": { "type": "string", "title": "Ask for", "maxLength": 100,
+                  "description": "What the person is asked to enter when they start a run, such as an invoice number. Optional." } },
+              "required": ["who"] }
+            """,
+            """{ "who": "template-leads", "ask": "Invoice number" }"""),
 
         Node(FolderInput, "Folder input", "input",
             "Picks up files from a folder on the Worker's server or a network share (type its path), starts a run for each, and moves the file to the processed or failed folder. JSON files only in this version.",

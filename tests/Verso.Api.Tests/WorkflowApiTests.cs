@@ -18,7 +18,7 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
         using var response = await _client.GetAsync(new Uri("/api/v1/node-types", UriKind.Relative));
         var types = (await ReadAsync(response)).EnumerateArray().ToList();
 
-        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "scheduled-trigger", "folder-input", "validate", "generate-pdf", "archive"], types.Select(t => t.GetProperty("type").GetString()));
+        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "scheduled-trigger", "manual-trigger", "folder-input", "validate", "generate-pdf", "archive"], types.Select(t => t.GetProperty("type").GetString()));
         var validate = types.Single(t => t.GetProperty("type").GetString() == "validate");
         Assert.Equal("process", validate.GetProperty("category").GetString());
         Assert.Equal(["valid", "invalid"], validate.GetProperty("outputs").EnumerateArray().Select(p => p.GetProperty("id").GetString()));

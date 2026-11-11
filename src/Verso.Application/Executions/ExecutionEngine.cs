@@ -226,7 +226,7 @@ public sealed partial class ExecutionEngine(
     {
         // The payload arrived with the submission (for folder-input, the Worker read the file and submitted it).
         NodeCatalog.ApiTrigger or NodeCatalog.ErpConnector or NodeCatalog.FileUpload or NodeCatalog.SftpFolder or NodeCatalog.ScheduledTrigger
-            or NodeCatalog.FolderInput => Task.FromResult(new Outcome("out", null)),
+            or NodeCatalog.ManualTrigger or NodeCatalog.FolderInput => Task.FromResult(new Outcome("out", null)),
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
         NodeCatalog.GeneratePdf => GeneratePdfAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),

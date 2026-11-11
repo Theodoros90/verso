@@ -317,6 +317,28 @@ public sealed class GraphValidatorTests
         Assert.Equal(valid, !result.Issues.Any(i => i.NodeId == "trigger" && i.Severity == GraphValidator.Error));
     }
 
+    [Theory]
+    [InlineData("template-leads", "Invoice number", true)]
+    [InlineData("workspace", "", true)]                // "ask" is optional
+    [InlineData("credit-control", null, true)]
+    [InlineData("everyone", "Invoice number", false)]  // known groups only
+    [InlineData("", "Invoice number", false)]          // required
+    public void ManualTrigger_NeedsAKnownStarterGroup(string who, string? ask, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        var config = new JsonObject { ["who"] = who };
+        if (ask is not null) config["ask"] = ask;
+        definition["nodes"]![0] = new JsonObject
+        {
+            ["id"] = "trigger", ["type"] = "manual-trigger", ["title"] = "Manual trigger", ["position"] = new JsonObject { ["x"] = 0, ["y"] = 80 },
+            ["config"] = config,
+        };
+
+        var result = Validate(definition);
+
+        Assert.Equal(valid, !result.Issues.Any(i => i.NodeId == "trigger" && i.Severity == GraphValidator.Error));
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {

@@ -82,6 +82,19 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { cron: '0 1 * * *', tz: 'Europe/Nicosia' },
   },
   {
+    type: 'manual-trigger', label: 'Manual trigger', category: 'input', description: 'Someone starts a run from Verso.',
+    inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        who: { type: 'string', title: 'Who can start it', enum: ['template-leads', 'workspace'], 'x-enumLabels': ['Template leads', 'Anyone in the workspace'] },
+        ask: { type: 'string', title: 'Ask for' },
+      },
+      required: ['who'],
+    },
+    defaults: { who: 'template-leads', ask: 'Invoice number' },
+  },
+  {
     type: 'validate', label: 'Validate data', category: 'process', description: 'Checks required fields.',
     inputs: [{ id: 'in', label: 'In', required: true }],
     outputs: [{ id: 'valid', label: 'Valid', required: true }, { id: 'invalid', label: 'Invalid', required: false }],
@@ -241,6 +254,7 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     expect(screen.getByRole('button', { name: 'Add File upload' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add SFTP folder' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add Scheduled trigger' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add Manual trigger' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Add Validate data' }))
     expect(await screen.findByText('Validate data', { selector: '.truncate.text-\\[13px\\]' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Validate data', level: 3 })).toBeInTheDocument() // the new step is selected
