@@ -13,7 +13,7 @@ public sealed record DevUserDto(string Id, string Name, IReadOnlyList<string> Ro
 /// <summary>The signed-in person and what they may do (derived from the same policy table the API enforces).</summary>
 public sealed record MeDto(string Id, string Name, IReadOnlyList<string> Roles, PermissionsDto Permissions);
 
-public sealed record PermissionsDto(bool Read, bool TemplateAuthoring, bool WorkflowAuthoring, bool Operate, bool ReadPayload, bool ReadAudit);
+public sealed record PermissionsDto(bool Read, bool TemplateAuthoring, bool WorkflowAuthoring, bool Operate, bool ReadPayload, bool ReadAudit, bool Administer);
 
 public static class AuthEndpoints
 {
@@ -44,7 +44,7 @@ public static class AuthEndpoints
                 bool Has(string policy) => user.Roles.Intersect(Policies.RolesByPolicy[policy], StringComparer.OrdinalIgnoreCase).Any();
                 return Results.Ok(new MeDto(user.Id, user.Name, [.. user.Roles], new PermissionsDto(
                     Has(Policies.Read), Has(Policies.TemplateAuthoring), Has(Policies.WorkflowAuthoring),
-                    Has(Policies.Operate), Has(Policies.ReadPayload), Has(Policies.ReadAudit))));
+                    Has(Policies.Operate), Has(Policies.ReadPayload), Has(Policies.ReadAudit), Has(Policies.Administration))));
             })
             .RequireAuthorization(Policies.SignedIn)
             .WithTags("Auth")

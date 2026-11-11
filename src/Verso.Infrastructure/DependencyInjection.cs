@@ -55,6 +55,8 @@ public static class DependencyInjection
             };
         }
 
+        locations.AllowedRoots = [.. section.GetSection(nameof(FolderAccessOptions.AllowedRoots)).GetChildren().Select(c => c.Value ?? "")];
+
         var ingestion = new FolderIngestionOptions();
         if (TimeSpan.TryParse(section[nameof(FolderIngestionOptions.PollInterval)], CultureInfo.InvariantCulture, out var poll) && poll > TimeSpan.Zero)
         {

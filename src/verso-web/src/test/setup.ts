@@ -12,7 +12,7 @@ export const testAdmin: MeDto = {
   id: 'dev.admin',
   name: 'Alex Admin',
   roles: ['Admin'],
-  permissions: { read: true, templateAuthoring: true, workflowAuthoring: true, operate: true, readPayload: true, readAudit: true },
+  permissions: { read: true, templateAuthoring: true, workflowAuthoring: true, operate: true, readPayload: true, readAudit: true, administer: true },
 }
 
 beforeEach(() => setSession({ mode: 'Development', me: testAdmin, getToken: async () => 'dev:dev.admin', signOut: () => undefined }))

@@ -24,6 +24,7 @@ public static class DependencyInjection
         services.AddScoped<AuditQueries>();
         services.AddScoped<FolderInputQueries>();
         services.AddScoped<FolderAccessTests>();
+        services.AddScoped<FolderLocationAdmin>();
         return services;
     }
 

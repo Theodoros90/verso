@@ -1,6 +1,7 @@
 import type { RouteObject } from 'react-router'
 
 import { AuditPage } from '@/features/audit/AuditPage'
+import { FolderLocationsPage } from '@/features/folders/FolderLocationsPage'
 import { ArchivePage } from '@/features/executions/ArchivePage'
 import { ExecutionDetailPage } from '@/features/executions/ExecutionDetailPage'
 import { ExecutionListPage } from '@/features/executions/ExecutionListPage'
@@ -18,7 +19,7 @@ import { AuthGate } from './AuthGate'
 import { NAV_ITEMS } from './navigation'
 
 /** Screens that exist; the other navigation entries get the "not built yet" placeholder. */
-const BUILT_PATHS = ['/', '/templates', '/workflows', '/executions', '/archive', '/audit']
+const BUILT_PATHS = ['/', '/templates', '/workflows', '/executions', '/archive', '/audit', '/folder-locations']
 
 export const routes: RouteObject[] = [
   {
@@ -40,6 +41,7 @@ export const routes: RouteObject[] = [
       { path: 'executions/:id', element: <ExecutionDetailPage /> },
       { path: 'archive', element: <ArchivePage /> },
       { path: 'audit', element: <AuditPage /> },
+      { path: 'folder-locations', element: <FolderLocationsPage /> },
       ...NAV_ITEMS.filter((item) => !BUILT_PATHS.includes(item.path)).map((item) => ({
         path: item.path.slice(1),
         element: <NotBuiltYetPage item={item} />,

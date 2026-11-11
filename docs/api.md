@@ -46,6 +46,9 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | 409 | `workflow.not_published` | Submission to a workflow with no published version |
 | 409 | `execution.not_retryable` | Retry of an execution that isn't `Failed` (Rejected runs need corrected data, not a retry) |
 | 404 | `folder_access_test.not_found` | Unknown access test id (or deleted after 24 hours) |
+| 409 | `folder_location.key_taken` | Administration: the key is set in the Worker's configuration |
+| 409 | `folder_location.in_use` | Administration: files from or to the location are still being processed |
+| 404 | `folder_location.not_found` | Administration: no managed location with this key |
 
 ## Sign-in and roles
 
@@ -64,7 +67,7 @@ Browsers can't send headers on WebSockets, so the SignalR hub also accepts the t
 
 ### `GET /api/v1/me`
 
-`{ "id": "<oid>", "name": "…", "roles": ["Operator"], "permissions": { "read": true, "templateAuthoring": false, "workflowAuthoring": false, "operate": true, "readPayload": false, "readAudit": false } }`. The SPA uses it to hide what the user can't do; the API enforces it.
+`{ "id": "<oid>", "name": "…", "roles": ["Operator"], "permissions": { "read": true, "templateAuthoring": false, "workflowAuthoring": false, "operate": true, "readPayload": false, "readAudit": false, "administer": false } }`. The SPA uses it to hide what the user can't do; the API enforces it.
 
 ### Roles
 
@@ -80,6 +83,7 @@ Every endpoint names a policy; one with no policy would still require a Verso ro
 | Audit trail (`/audit`, `/audit/actions`) |  |  |  |  | ✓ | ✓ |
 | Approved folder locations, a workflow's folder activity (`/folder-locations`, `/workflows/{id}/folder-input`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Folder "Test access" (`/folder-access-tests`) |  |  |  | ✓ |  | ✓ |
+| Administer folder locations (`/admin/folder-locations`) |  |  |  |  |  | ✓ |
 
 ## Health
 
@@ -442,7 +446,18 @@ The `folder-input` trigger reads files from folders **on the Worker's side**. Th
 | GET | `/api/v1/folder-access-tests/{id}` | 200 `FolderAccessTest` | `status`: `Queued`, `Running`, `Completed` or `Failed` (couldn't run; see `error`). When completed, `results[]` has `{ role, location, subfolder, ok, checks: [{ name, ok, message }] }` plus `identity` and `machine`: the account and server the Worker checked as. Deleted after 24 h. |
 | GET | `/api/v1/workflows/{id}/folder-input` | 200 `FolderInputStatus` | `watch`: the last scan, `{ nodeId, lastScanAt, lastStatus, lastError, lastFilesFound }` (`lastStatus`: `Ok`, `Unavailable`, `AccessDenied`, `Misconfigured`, `Error`; null before the first scan). `files`: the 25 most recent files, `{ id, fileName, relativePath, sizeBytes, status, outcome, errorCode, errorMessage, executionId, deliveredName, deliveryError, claimedAt, completedAt }`. |
 
-How a file is handled:
+### Folder locations administration
+
+Locations can be set in two ways: in the Worker's configuration (`FolderInput:Locations`), or by an **Admin** in the web app (screen *Folder locations*), which stores the path in the database for the Worker to read. Either way the Worker validates the path as its own service identity, and designers only ever see key, name and purpose. Whoever may add a location decides what the Worker's account reads and writes, so these endpoints are **Admin only** and audited (`FolderLocationSaved`, `FolderLocationRemoved`, entity type `FolderLocation`, with the path). A server can limit administrator-managed paths to certain parents with `FolderInput:AllowedRoots` (a list of absolute folders); locations in the Worker's own configuration are not limited by it.
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/admin/folder-locations` | 200 `AdminFolderLocation[]` | `{ key, name, path, input, output, managed, enabled, problem, updatedAt, updatedBy }`. `path` is null for locations set in the Worker's configuration (read-only here). `problem` is what the Worker reported, or "Waiting for the Worker…" until it has picked up a new or changed location (about 15 seconds). |
+| PUT | `/api/v1/admin/folder-locations/{key}` | 200 `AdminFolderLocation` | Create or change `{ name, path, input, output }`. `key`: 2–64 lower-case letters, digits and `-`, starting with a letter; it never changes. `path`: absolute (`D:\…`, `\server\share\…` or `/…`), at most 400 characters, no `.` or `..` parts, no wildcards, no control characters; no passwords. At least one of `input` and `output`. 400 `validation` names the field; 409 `folder_location.key_taken` for a key set in the Worker's configuration. |
+| DELETE | `/api/v1/admin/folder-locations/{key}` | 204 | Remove a managed location. The Worker disables it ("Removed by an administrator."); workflows that use it stop scanning and fail validation. 409 `folder_location.in_use` while files of unfinished ingestions refer to it. Adding the key again brings it back. |
+
+### How a file is handled
+
 
 1. **Handoff.** Senders write under a temporary name and rename it when complete. Names starting with `.` or `~`, or ending with `.tmp`, `.temp`, `.part`, `.partial`, `.filepart`, `.crdownload`, `.lock` or `.download`, are ignored. A file must also be unchanged for `FolderInput:SettleTime` (10 s), and on Windows not open by its writer.
 2. **Claim.** One Worker claims the file (a database row with a unique claim) and moves it into `<folder>/.verso-inflight/`. `status` is `Claimed`.

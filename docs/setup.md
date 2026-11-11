@@ -178,7 +178,7 @@ To try the Folder input step locally, approve two folders in the Worker's user s
 }
 ```
 
-Create the folders and restart the Worker. Then in a workflow, replace the trigger with **Folder input** and choose the locations. Press **Test access**, publish, and copy `tests/fixtures/invoice/sample.json` into the inbound folder. Within about 15 seconds the file moves to `results\processed` and the run appears under Executions. Broken data (`broken.json`) ends up in `results\failed` with an `.error.json` file. Server setup: [runbook B7](runbook.md#b7-folder-input-approved-locations).
+Create the folders and restart the Worker. (Alternatively, sign in as `dev.admin` and use **Folder locations** in the sidebar to add them by typing the paths; no restart needed.) Then in a workflow, replace the trigger with **Folder input** and choose the locations. Press **Test access**, publish, and copy `tests/fixtures/invoice/sample.json` into the inbound folder. Within about 15 seconds the file moves to `results\processed` and the run appears under Executions. Broken data (`broken.json`) ends up in `results\failed` with an `.error.json` file. Server setup: [runbook B7](runbook.md#b7-folder-input-approved-locations).
 
 ## Troubleshooting
 

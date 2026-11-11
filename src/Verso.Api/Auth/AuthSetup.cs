@@ -65,6 +65,9 @@ public static class Policies
     /// <summary>The audit trail.</summary>
     public const string ReadAudit = "ReadAudit";
 
+    /// <summary>Administration: approved folder locations for folder input.</summary>
+    public const string Administration = "Administration";
+
     public static readonly IReadOnlyDictionary<string, string[]> RolesByPolicy = new Dictionary<string, string[]>
     {
         [Read] = [Roles.Viewer, Roles.Operator, Roles.TemplateAuthor, Roles.WorkflowAuthor, Roles.Auditor, Roles.Admin],
@@ -73,6 +76,7 @@ public static class Policies
         [Operate] = [Roles.Operator, Roles.Admin],
         [ReadPayload] = [Roles.Auditor, Roles.Admin],
         [ReadAudit] = [Roles.Auditor, Roles.Admin],
+        [Administration] = [Roles.Admin],
     };
 }
 
@@ -259,6 +263,7 @@ public static class AuthSetup
             .AddPolicy(Policies.Operate, p => p.RequireAuthenticatedUser().RequireClaim(VersoRoleClaim, Policies.RolesByPolicy[Policies.Operate]))
             .AddPolicy(Policies.ReadPayload, p => p.RequireAuthenticatedUser().RequireClaim(VersoRoleClaim, Policies.RolesByPolicy[Policies.ReadPayload]))
             .AddPolicy(Policies.ReadAudit, p => p.RequireAuthenticatedUser().RequireClaim(VersoRoleClaim, Policies.RolesByPolicy[Policies.ReadAudit]))
+            .AddPolicy(Policies.Administration, p => p.RequireAuthenticatedUser().RequireClaim(VersoRoleClaim, Policies.RolesByPolicy[Policies.Administration]))
             // Secure by default: an endpoint that forgets to name a policy still needs a Verso role.
             .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().RequireClaim(VersoRoleClaim, Policies.RolesByPolicy[Policies.Read]).Build());
 

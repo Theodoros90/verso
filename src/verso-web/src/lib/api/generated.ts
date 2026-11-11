@@ -1,6 +1,19 @@
 // GENERATED from docs/openapi/v1.json by scripts/generate-api-types.mjs. Do not edit; run `npm run gen:api`.
 /* eslint-disable */
 
+export interface AdminFolderLocationDto {
+  key: string
+  name: string
+  path: string | null
+  input: boolean
+  output: boolean
+  managed: boolean
+  enabled: boolean
+  problem: string | null
+  updatedAt: string
+  updatedBy: string | null
+}
+
 export interface ArchiveDto {
   archivedAt: string
   folderPath: string
@@ -349,6 +362,7 @@ export interface PermissionsDto {
   operate: boolean
   readPayload: boolean
   readAudit: boolean
+  administer: boolean
 }
 
 export interface PortDto {
@@ -382,6 +396,13 @@ export interface SaveDraftRequest {
   layout: null | JsonElement
   dataSchema: null | JsonElement
   sampleData: null | JsonElement
+}
+
+export interface SaveFolderLocationRequest {
+  name: string | null
+  path: string | null
+  input: boolean | null
+  output: boolean | null
 }
 
 export interface SaveWorkflowDraftRequest {

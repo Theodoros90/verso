@@ -4,17 +4,14 @@ namespace Verso.Worker;
 
 /// <summary>
 /// Folder input (runs only here, as the Worker's service identity). Reports this Worker's approved locations at
-/// startup and every few minutes, then on every poll interval finishes unfinished files and scans due folders.
+/// startup and on every poll interval (including locations administrators manage in Verso), then finishes unfinished files and scans due folders.
 /// A failing pass is logged and the next one tries again; nothing is lost, because each file's state is in the database.
 /// </summary>
 internal sealed partial class FolderInputService(
     IServiceScopeFactory scopes, FolderIngestionOptions options, ILogger<FolderInputService> logger) : BackgroundService
 {
-    private static readonly TimeSpan LocationSyncInterval = TimeSpan.FromMinutes(5);
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var lastSync = DateTimeOffset.MinValue;
         using var timer = new PeriodicTimer(options.PollInterval);
         do
         {
@@ -22,11 +19,8 @@ internal sealed partial class FolderInputService(
             {
                 await using var scope = scopes.CreateAsyncScope();
                 var ingestion = scope.ServiceProvider.GetRequiredService<FolderIngestion>();
-                if (DateTimeOffset.UtcNow - lastSync >= LocationSyncInterval)
-                {
-                    await ingestion.SyncLocationsAsync(stoppingToken);
-                    lastSync = DateTimeOffset.UtcNow;
-                }
+                // Every pass: picks up locations administrators changed in Verso within one poll interval (writes only on change).
+                await ingestion.SyncLocationsAsync(stoppingToken);
 
                 var result = await ingestion.RunOnceAsync(stoppingToken);
                 if (result.Claimed + result.Delivered + result.Errors > 0)

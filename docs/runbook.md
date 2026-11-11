@@ -175,6 +175,8 @@ The `folder-input` step ([ADR 0001](adr/0001-folder-input.md)) makes the **Worke
    ```
 
    Optional: `PollInterval` (default `00:00:15`), `SettleTime` (`00:00:10`), `MaxFileBytes` (1048576). **Every Worker must have the same locations**, because a file may be handled by any Worker.
+
+   **Or add them in the web app.** An Admin can open **Folder locations** in the sidebar (Govern) and add, change, test and remove locations by typing the path, with no configuration file or restart. The path is as the Worker's server sees it. The Worker reads it from the database within about 15 seconds and shows the result in the table's Status column. Every change is audited. To limit what an administrator can approve this way, set `FolderInput:AllowedRoots` on every Worker, for example `"AllowedRoots": ["\\fileserver\verso", "D:\Verso"]`: managed paths must then lie inside one of those folders (locations in the Worker's own configuration are not limited). Without `AllowedRoots`, an Admin can approve any folder the Worker's account can reach, so grant that account only what it needs.
 4. **Restart the Worker.** It reports the locations (key, name, purpose; never the path) at startup and every 5 minutes. A location with an invalid path is listed as unavailable with the reason, and the Worker log shows it. Locations removed from the configuration are disabled, not deleted.
 5. In the workflow designer, choose the locations on the Folder input step and press **Test access**. The Worker checks each folder as its own account and shows the account it used.
 6. **Tell senders the handoff rule:** write the file under a temporary name (for example `inv-1.json.tmp`) and rename it when complete. Leave `.verso-inflight` alone.

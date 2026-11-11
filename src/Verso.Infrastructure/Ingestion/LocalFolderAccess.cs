@@ -27,6 +27,12 @@ public sealed class FolderLocationOptions
 public sealed class FolderAccessOptions
 {
     public Dictionary<string, FolderLocationOptions> Locations { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Optional: absolute folders. When set, locations administrators add in Verso must lie inside one of them. Locations
+    /// in this configuration are not restricted by it (an administrator of the server wrote them).
+    /// </summary>
+    public List<string> AllowedRoots { get; set; } = [];
 }
 
 /// <summary>
@@ -41,7 +47,15 @@ public sealed class LocalFolderAccess : IFolderAccess
 
     private static readonly StringComparison PathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
-    private readonly Dictionary<string, (FolderLocationOptions Options, string? Root, string? Problem)> _locations = new(StringComparer.Ordinal);
+    private sealed record Entry(FolderLocationOptions Options, string? Root, string? Problem, bool Managed);
+
+    /// <summary>The locations in effect: configured ones plus managed ones. Replaced as a whole, so readers never see a half-built set.</summary>
+    private sealed record Snapshot(Dictionary<string, Entry> Map, IReadOnlyList<ConfiguredFolderLocation> List);
+
+    private readonly Dictionary<string, Entry> _configured = new(StringComparer.Ordinal);
+    private readonly IReadOnlyList<string> _allowedRoots;
+    private IReadOnlyCollection<ManagedFolderPath> _managed = [];
+    private volatile Snapshot _snapshot;
 
     public LocalFolderAccess(IOptions<FolderAccessOptions> options)
     {
@@ -49,15 +63,58 @@ public sealed class LocalFolderAccess : IFolderAccess
         foreach (var (key, location) in options.Value.Locations)
         {
             var (root, problem) = Validate(key, location);
-            _locations[key] = (location, root, problem);
+            _configured[key] = new Entry(location, root, problem, Managed: false);
         }
 
-        Locations = [.. _locations.Select(l => new ConfiguredFolderLocation(
-            l.Key, string.IsNullOrWhiteSpace(l.Value.Options.Name) ? l.Key : l.Value.Options.Name.Trim(), l.Value.Options.Input, l.Value.Options.Output, l.Value.Problem))
-            .Where(l => FolderPaths.IsValidLocationKey(l.Key))];
+        // Optional limit for locations administrators add in Verso (never applied to the ones in this configuration).
+        _allowedRoots = [.. options.Value.AllowedRoots
+            .Where(r => !string.IsNullOrWhiteSpace(r) && Path.IsPathFullyQualified(r.Trim()))
+            .Select(r => Path.TrimEndingDirectorySeparator(Path.GetFullPath(r.Trim())))];
+        _snapshot = Build();
     }
 
-    public IReadOnlyList<ConfiguredFolderLocation> Locations { get; }
+    public IReadOnlyList<ConfiguredFolderLocation> Locations => _snapshot.List;
+
+    private Dictionary<string, Entry> Map => _snapshot.Map;
+
+    public void SetManagedLocations(IReadOnlyCollection<ManagedFolderPath> locations)
+    {
+        ArgumentNullException.ThrowIfNull(locations);
+        var ordered = locations.OrderBy(l => l.Key, StringComparer.Ordinal).ToList();
+        if (ordered.SequenceEqual(_managed.OrderBy(l => l.Key, StringComparer.Ordinal)))
+        {
+            return; // nothing changed since the last pass
+        }
+
+        _managed = ordered;
+        _snapshot = Build();
+    }
+
+    private Snapshot Build()
+    {
+        var map = new Dictionary<string, Entry>(_configured, StringComparer.Ordinal);
+        foreach (var m in _managed.Where(m => !map.ContainsKey(m.Key))) // the configuration wins over a managed location with the same key
+        {
+            var options = new FolderLocationOptions { Name = m.Name, Path = m.Path, Input = m.Input, Output = m.Output };
+            var (root, problem) = Validate(m.Key, options);
+            if (problem is null && root is not null && _allowedRoots.Count > 0 && !_allowedRoots.Any(a => IsInside(root, a)))
+            {
+                (root, problem) = (null, "The path isn't inside a folder this server allows for locations managed in Verso (FolderInput:AllowedRoots).");
+            }
+
+            map[m.Key] = new Entry(options, root, problem, Managed: true);
+        }
+
+        var list = map.Where(l => FolderPaths.IsValidLocationKey(l.Key))
+            .Select(l => new ConfiguredFolderLocation(
+                l.Key, string.IsNullOrWhiteSpace(l.Value.Options.Name) ? l.Key : l.Value.Options.Name.Trim(),
+                l.Value.Options.Input, l.Value.Options.Output, l.Value.Managed, l.Value.Problem))
+            .ToList();
+        return new Snapshot(map, list);
+    }
+
+    private static bool IsInside(string path, string root) =>
+        string.Equals(path, root, PathComparison) || path.StartsWith(root + Path.DirectorySeparatorChar, PathComparison);
 
     public string Identity { get; } = $"{Environment.UserDomainName}\\{Environment.UserName}";
 
@@ -365,7 +422,7 @@ public sealed class LocalFolderAccess : IFolderAccess
     private string Resolve(FolderRef target, FolderAccessMode mode)
     {
         ArgumentNullException.ThrowIfNull(target);
-        if (!_locations.TryGetValue(target.Location, out var location))
+        if (!Map.TryGetValue(target.Location, out var location))
         {
             throw new FolderException(FolderErrors.UnknownLocation, $"Location '{target.Location}' isn't configured on this Worker ({Environment.MachineName}).");
         }
@@ -385,7 +442,7 @@ public sealed class LocalFolderAccess : IFolderAccess
 
     private string ResolvePath(FolderRef target)
     {
-        if (!_locations.TryGetValue(target.Location, out var location) || location.Root is null)
+        if (!Map.TryGetValue(target.Location, out var location) || location.Root is null)
         {
             throw new FolderException(FolderErrors.UnknownLocation, $"Location '{target.Location}' isn't configured on this Worker.");
         }
@@ -414,7 +471,7 @@ public sealed class LocalFolderAccess : IFolderAccess
     /// <summary>Refuses linked folders between the location's root and <paramref name="folder"/> (they could point anywhere).</summary>
     private void EnsureNoLinks(FolderRef target, string folder)
     {
-        var root = _locations[target.Location].Root!;
+        var root = Map[target.Location].Root!;
         var current = folder;
         while (current.Length > root.Length && !string.Equals(Path.TrimEndingDirectorySeparator(current), root, PathComparison))
         {

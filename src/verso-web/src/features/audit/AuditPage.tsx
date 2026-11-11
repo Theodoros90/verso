@@ -10,7 +10,7 @@ import type { AuditEntryDto } from '@/lib/api/generated'
 import { dayEndIso, dayStartIso, formatDateTime, shortId } from '../executions/format'
 
 const PAGE_SIZE = 50
-const ENTITY_TYPES = ['Template', 'Workflow', 'Execution', 'Document'] as const
+const ENTITY_TYPES = ['Template', 'Workflow', 'Execution', 'Document', 'FolderLocation', 'FolderAccessTest'] as const
 
 type ListState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; items: AuditEntryDto[]; total: number }
 

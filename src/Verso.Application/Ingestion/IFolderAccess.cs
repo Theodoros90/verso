@@ -1,7 +1,10 @@
 namespace Verso.Application.Ingestion;
 
 /// <summary>An approved location as configured on this Worker (no path: that never leaves the file-system adapter).</summary>
-public sealed record ConfiguredFolderLocation(string Key, string Name, bool Input, bool Output, string? Problem);
+public sealed record ConfiguredFolderLocation(string Key, string Name, bool Input, bool Output, bool Managed, string? Problem);
+
+/// <summary>A location an administrator manages in Verso, with its path (read from the database by the Worker).</summary>
+public sealed record ManagedFolderPath(string Key, string Name, string Path, bool Input, bool Output);
 
 /// <summary>A file found by a scan, ready to claim (complete by the handoff convention).</summary>
 public sealed record FoundFile(string RelativePath, string FileName, long SizeBytes, DateTimeOffset LastWriteAt);
@@ -45,7 +48,11 @@ public sealed class FolderException(string code, string message, Exception? inne
 /// </summary>
 public interface IFolderAccess
 {
+    /// <summary>Locations from the Worker's configuration plus the managed ones set with <see cref="SetManagedLocations"/>. A key in the configuration wins.</summary>
     IReadOnlyList<ConfiguredFolderLocation> Locations { get; }
+
+    /// <summary>Replaces the administrator-managed locations (called by the Worker on every pass; cheap when nothing changed).</summary>
+    void SetManagedLocations(IReadOnlyCollection<ManagedFolderPath> locations);
 
     /// <summary>The account this process accesses folders as (e.g. <c>CORP\svc-verso-worker$</c>).</summary>
     string Identity { get; }

@@ -618,6 +618,9 @@ namespace Verso.Infrastructure.Persistence.Migrations
                     b.Property<bool>("Enabled")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("Managed")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -681,6 +684,45 @@ namespace Verso.Infrastructure.Persistence.Migrations
                     b.HasKey("WorkflowId");
 
                     b.ToTable("FolderWatches", "ingestion");
+                });
+
+            modelBuilder.Entity("Verso.Domain.Ingestion.ManagedFolderLocation", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<bool>("AllowInput")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("AllowOutput")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<bool>("Removed")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("ManagedFolderLocations", "ingestion");
                 });
 
             modelBuilder.Entity("Verso.Domain.Templates.PdfPreview", b =>

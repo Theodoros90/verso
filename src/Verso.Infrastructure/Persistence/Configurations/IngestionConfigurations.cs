@@ -97,3 +97,16 @@ internal sealed class FolderAccessTestConfiguration : IEntityTypeConfiguration<F
         builder.HasIndex(t => t.RequestedAt).HasDatabaseName("IX_FolderAccessTests_RequestedAt"); // 24 h cleanup
     }
 }
+
+internal sealed class ManagedFolderLocationConfiguration : IEntityTypeConfiguration<ManagedFolderLocation>
+{
+    public void Configure(EntityTypeBuilder<ManagedFolderLocation> builder)
+    {
+        builder.ToTable("ManagedFolderLocations", Schemas.Ingestion);
+        builder.HasKey(l => l.Key);
+        builder.Property(l => l.Key).HasMaxLength(64).IsUnicode(false);
+        builder.Property(l => l.Name).HasMaxLength(200).IsRequired();
+        builder.Property(l => l.Path).HasMaxLength(ManagedFolderLocation.MaxPathLength).IsRequired();
+        builder.Property(l => l.UpdatedBy).HasMaxLength(200).IsRequired();
+    }
+}

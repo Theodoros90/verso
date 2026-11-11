@@ -41,7 +41,7 @@ const viewer: MeDto = {
   id: 'dev.viewer',
   name: 'Vera Viewer',
   roles: ['Viewer'],
-  permissions: { read: true, templateAuthoring: false, workflowAuthoring: false, operate: false, readPayload: false, readAudit: false },
+  permissions: { read: true, templateAuthoring: false, workflowAuthoring: false, operate: false, readPayload: false, readAudit: false, administer: false },
 }
 
 const noAccess: MeDto = { ...viewer, id: 'dev.no-access', name: 'Nico No-Access', roles: [], permissions: { ...viewer.permissions, read: false } }
