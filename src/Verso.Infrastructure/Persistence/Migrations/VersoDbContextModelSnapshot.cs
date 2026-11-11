@@ -66,9 +66,9 @@ namespace Verso.Infrastructure.Persistence.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Sequence"));
 
                     b.Property<string>("TraceId")
-                        .HasMaxLength(32)
+                        .HasMaxLength(64)
                         .IsUnicode(false)
-                        .HasColumnType("varchar(32)");
+                        .HasColumnType("varchar(64)");
 
                     b.HasKey("Id");
 
@@ -402,6 +402,285 @@ namespace Verso.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("UX_ExecutionSteps_Node");
 
                     b.ToTable("ExecutionSteps", "executions");
+                });
+
+            modelBuilder.Entity("Verso.Domain.Ingestion.FolderAccessTest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Identity")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Machine")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Results")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Targets")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestedAt")
+                        .HasDatabaseName("IX_FolderAccessTests_RequestedAt");
+
+                    b.ToTable("FolderAccessTests", "ingestion");
+                });
+
+            modelBuilder.Entity("Verso.Domain.Ingestion.FolderFile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ClaimedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ClaimedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DeliveredName")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("DeliveryError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid?>("ExecutionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FailedLocation")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("FailedSubfolder")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTimeOffset>("LastWriteAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("LockedUntil")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("NodeId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Outcome")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("ProcessedLocation")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("ProcessedSubfolder")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("RelativePath")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Sha256")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SourceLocation")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("SourceSubfolder")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid>("WorkflowId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("WorkflowKey")
+                        .IsRequired()
+                        .HasMaxLength(48)
+                        .HasColumnType("nvarchar(48)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExecutionId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_FolderFiles_Execution")
+                        .HasFilter("[ExecutionId] IS NOT NULL");
+
+                    b.HasIndex("Status", "ClaimedAt")
+                        .HasDatabaseName("IX_FolderFiles_Unfinished")
+                        .HasFilter("[Status] <> 'Completed'");
+
+                    b.HasIndex("WorkflowId", "ClaimedAt")
+                        .HasDatabaseName("IX_FolderFiles_Workflow");
+
+                    b.HasIndex("SourceLocation", "SourceSubfolder", "RelativePath")
+                        .IsUnique()
+                        .HasDatabaseName("UX_FolderFiles_Claim")
+                        .HasFilter("[Status] = 'Claimed'");
+
+                    b.ToTable("FolderFiles", "ingestion", t =>
+                        {
+                            t.HasCheckConstraint("CK_FolderFiles_Completed", "([Status] = 'Completed' AND [CompletedAt] IS NOT NULL) OR ([Status] <> 'Completed' AND [CompletedAt] IS NULL)");
+
+                            t.HasCheckConstraint("CK_FolderFiles_Submitted", "[Status] <> 'Submitted' OR [ExecutionId] IS NOT NULL");
+                        });
+                });
+
+            modelBuilder.Entity("Verso.Domain.Ingestion.FolderLocation", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<bool>("AllowInput")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("AllowOutput")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Problem")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ReportedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("FolderLocations", "ingestion");
+                });
+
+            modelBuilder.Entity("Verso.Domain.Ingestion.FolderWatch", b =>
+                {
+                    b.Property<Guid>("WorkflowId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("LastFilesFound")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("LastScanAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("LastScanStartedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LastStatus")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("NodeId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("WorkflowKey")
+                        .IsRequired()
+                        .HasMaxLength(48)
+                        .HasColumnType("nvarchar(48)");
+
+                    b.HasKey("WorkflowId");
+
+                    b.ToTable("FolderWatches", "ingestion");
                 });
 
             modelBuilder.Entity("Verso.Domain.Templates.PdfPreview", b =>

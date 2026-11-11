@@ -280,6 +280,157 @@
         }
       }
     },
+    "/api/v1/folder-locations": {
+      "get": {
+        "tags": [
+          "Folder input"
+        ],
+        "operationId": "ListFolderLocations",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FolderLocationDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/folder-access-tests": {
+      "post": {
+        "tags": [
+          "Folder input"
+        ],
+        "operationId": "RequestFolderAccessTest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FolderAccessTestRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderAccessTestDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/folder-access-tests/{id}": {
+      "get": {
+        "tags": [
+          "Folder input"
+        ],
+        "operationId": "GetFolderAccessTest",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderAccessTestDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/{id}/folder-input": {
+      "get": {
+        "tags": [
+          "Folder input"
+        ],
+        "operationId": "GetWorkflowFolderInput",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderInputStatusDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/templates": {
       "get": {
         "tags": [
@@ -2885,6 +3036,378 @@
           }
         }
       },
+      "FolderAccessResultDto": {
+        "required": [
+          "role",
+          "location",
+          "subfolder",
+          "ok",
+          "checks"
+        ],
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "subfolder": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FolderCheckDto"
+            }
+          }
+        }
+      },
+      "FolderAccessTargetDto": {
+        "required": [
+          "role",
+          "location",
+          "subfolder"
+        ],
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "subfolder": {
+            "type": "string"
+          }
+        }
+      },
+      "FolderAccessTargetRequest": {
+        "required": [
+          "role",
+          "location",
+          "subfolder"
+        ],
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "location": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "subfolder": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "FolderAccessTestDto": {
+        "required": [
+          "id",
+          "status",
+          "targets",
+          "results",
+          "identity",
+          "machine",
+          "error",
+          "requestedAt",
+          "completedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FolderAccessTargetDto"
+            }
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FolderAccessResultDto"
+            }
+          },
+          "identity": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "machine": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "FolderAccessTestRequest": {
+        "required": [
+          "targets"
+        ],
+        "type": "object",
+        "properties": {
+          "targets": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/FolderAccessTargetRequest"
+            }
+          }
+        }
+      },
+      "FolderCheckDto": {
+        "required": [
+          "name",
+          "ok",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "FolderFileDto": {
+        "required": [
+          "id",
+          "fileName",
+          "relativePath",
+          "sizeBytes",
+          "status",
+          "outcome",
+          "errorCode",
+          "errorMessage",
+          "executionId",
+          "deliveredName",
+          "deliveryError",
+          "claimedAt",
+          "completedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "relativePath": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "status": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "errorCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "errorMessage": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "executionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "deliveredName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "deliveryError": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "claimedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "FolderInputStatusDto": {
+        "required": [
+          "watch",
+          "files"
+        ],
+        "type": "object",
+        "properties": {
+          "watch": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FolderWatchDto"
+              }
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FolderFileDto"
+            }
+          }
+        }
+      },
+      "FolderLocationDto": {
+        "required": [
+          "key",
+          "name",
+          "input",
+          "output",
+          "enabled",
+          "problem",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "input": {
+            "type": "boolean"
+          },
+          "output": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "problem": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FolderWatchDto": {
+        "required": [
+          "nodeId",
+          "lastScanAt",
+          "lastStatus",
+          "lastError",
+          "lastFilesFound"
+        ],
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          },
+          "lastScanAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastStatus": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lastError": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lastFilesFound": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "HealthCheckEntry": {
         "required": [
           "name",
@@ -4247,6 +4770,9 @@
     },
     {
       "name": "Executions"
+    },
+    {
+      "name": "Folder input"
     },
     {
       "name": "Previews"

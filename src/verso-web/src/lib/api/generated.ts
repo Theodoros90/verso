@@ -154,6 +154,87 @@ export interface ExecutionWorkflowDto {
   versionId: string
 }
 
+export interface FolderAccessResultDto {
+  role: string
+  location: string
+  subfolder: string
+  ok: boolean
+  checks: FolderCheckDto[]
+}
+
+export interface FolderAccessTargetDto {
+  role: string
+  location: string
+  subfolder: string
+}
+
+export interface FolderAccessTargetRequest {
+  role: string | null
+  location: string | null
+  subfolder: string | null
+}
+
+export interface FolderAccessTestDto {
+  id: string
+  status: string
+  targets: FolderAccessTargetDto[]
+  results: FolderAccessResultDto[]
+  identity: string | null
+  machine: string | null
+  error: string | null
+  requestedAt: string
+  completedAt: string | null
+}
+
+export interface FolderAccessTestRequest {
+  targets: FolderAccessTargetRequest[] | null
+}
+
+export interface FolderCheckDto {
+  name: string
+  ok: boolean
+  message: string
+}
+
+export interface FolderFileDto {
+  id: string
+  fileName: string
+  relativePath: string
+  sizeBytes: number
+  status: string
+  outcome: string | null
+  errorCode: string | null
+  errorMessage: string | null
+  executionId: string | null
+  deliveredName: string | null
+  deliveryError: string | null
+  claimedAt: string
+  completedAt: string | null
+}
+
+export interface FolderInputStatusDto {
+  watch: null | FolderWatchDto
+  files: FolderFileDto[]
+}
+
+export interface FolderLocationDto {
+  key: string
+  name: string
+  input: boolean
+  output: boolean
+  enabled: boolean
+  problem: string | null
+  updatedAt: string
+}
+
+export interface FolderWatchDto {
+  nodeId: string
+  lastScanAt: string | null
+  lastStatus: string | null
+  lastError: string | null
+  lastFilesFound: number
+}
+
 export interface HealthCheckEntry {
   name: string
   status: string

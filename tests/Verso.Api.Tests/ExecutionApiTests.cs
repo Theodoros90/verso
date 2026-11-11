@@ -53,6 +53,35 @@ public sealed class ExecutionApiTests(MigratedDatabaseFixture fixture) : IDispos
         Assert.Equal("out", first.GetProperty("outputPort").GetString());
     }
 
+    /// <summary>
+    /// Regression: the run's audit entry stores the correlation id as its trace id. The API accepts correlation ids of
+    /// up to 64 characters, and the column held only 32, so such a run failed at its last save and never finished.
+    /// </summary>
+    [Fact]
+    public async Task LongestAllowedCorrelationId_RunFinishes_AndIsAudited()
+    {
+        var key = await Kit.PublishInvoiceWorkflowAsync();
+        var correlationId = "erp-batch:" + new string('7', 54); // 64 characters, the maximum
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri($"/api/v1/workflows/{key}/executions", UriKind.Relative))
+        {
+            Content = System.Net.Http.Json.JsonContent.Create(new JsonObject { ["data"] = ExecutionTestKit.Sample }),
+        };
+        request.Headers.TryAddWithoutValidation("Idempotency-Key", Guid.NewGuid().ToString());
+        request.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId);
+        using var submitted = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Accepted, submitted.StatusCode);
+        var id = (await ExecutionTestKit.ReadAsync(submitted)).GetProperty("executionId").GetGuid();
+
+        await Kit.RunEngineAsync(id, _printer, _store, _jobs);
+
+        var done = await Kit.GetExecutionAsync(id);
+        Assert.Equal("Succeeded", done.GetProperty("status").GetString());
+        Assert.Equal(correlationId, done.GetProperty("correlationId").GetString());
+        var traceId = await Kit.WithDbAsync(db => db.AuditEntries.Where(a => a.EntityId == id.ToString() && a.Action == ExecutionService.Actions.Completed)
+            .Select(a => a.TraceId).SingleAsync());
+        Assert.Equal(correlationId, traceId);
+    }
+
     [Fact]
     public async Task ValidFixture_Succeeds_WithOneArchivedDocumentWhoseHashMatches()
     {

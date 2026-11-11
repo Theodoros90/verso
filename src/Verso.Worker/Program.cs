@@ -30,5 +30,9 @@ builder.Services.AddVersoJobServer(builder.Configuration);
 builder.Services.AddHostedService<WorkerHeartbeat>();
 builder.Services.AddHostedService<RecurringJobsRegistration>();
 
+// Folder input: approved folders from FolderInput:Locations, read as this service's identity (no stored passwords).
+builder.Services.AddVersoFolderAccess(builder.Configuration);
+builder.Services.AddHostedService<FolderInputService>();
+
 var host = builder.Build();
 host.Run();

@@ -298,7 +298,14 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
                 })
                 .ToListAsync(ct);
         var templates = rows.ToDictionary(r => r.Id, r => new TemplateRef(r.Id, r.Name, r.Published.ToHashSet()));
-        return GraphValidator.Validate(definition, templates);
+
+        // Approved folder locations (reported by the Worker), only when a folder-input step needs them.
+        var locations = definition.Nodes.Any(n => n.Type == NodeCatalog.FolderInput)
+            ? await db.FolderLocations.AsNoTracking()
+                .Select(l => new FolderLocationRef(l.Key, l.Name, l.AllowInput, l.AllowOutput, l.Enabled))
+                .ToDictionaryAsync(l => l.Key, StringComparer.Ordinal, ct)
+            : [];
+        return GraphValidator.Validate(definition, templates, locations);
     }
 
     private async Task<Result<Versioned<WorkflowVersionDto>>> SaveWithConcurrencyAsync(WorkflowVersion version, CancellationToken ct)

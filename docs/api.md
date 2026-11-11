@@ -45,6 +45,7 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | 409 | `execution.idempotency_conflict` | `Idempotency-Key` already used for this workflow with **different** data; `executionId` names the original |
 | 409 | `workflow.not_published` | Submission to a workflow with no published version |
 | 409 | `execution.not_retryable` | Retry of an execution that isn't `Failed` (Rejected runs need corrected data, not a retry) |
+| 404 | `folder_access_test.not_found` | Unknown access test id (or deleted after 24 hours) |
 
 ## Sign-in and roles
 
@@ -77,6 +78,8 @@ Every endpoint names a policy; one with no policy would still require a Verso ro
 | Submit executions, retry failed ones |  | ✓ |  |  |  | ✓ |
 | Read submitted payloads (`/executions/{id}/input`) |  |  |  |  | ✓ | ✓ |
 | Audit trail (`/audit`, `/audit/actions`) |  |  |  |  | ✓ | ✓ |
+| Approved folder locations, a workflow's folder activity (`/folder-locations`, `/workflows/{id}/folder-input`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Folder "Test access" (`/folder-access-tests`) |  |  |  | ✓ |  | ✓ |
 
 ## Health
 
@@ -283,6 +286,7 @@ Saving checks only the **structure** (400 `validation` with paths like `definiti
 | `file-upload` ("File upload") | input | — → `out` | `accept` (accepted file types, required, ≤ 200 chars, e.g. `PDF, XML, CSV`), `maxSize` (`10mb`, `25mb`, `100mb`), `who` (`staff`, `portal-customers`, `anyone-with-link`). **Simulated**: there is no upload screen or portal yet; runs are submitted to `POST /api/v1/workflows/{key}/executions` and the step passes the submitted data on. |
 | `sftp-folder` ("SFTP folder") | input | — → `out` | `host` (required, a plain host name such as `sftp.example.com`: no user name, password or URL), `folder` (required, starts with `/`), `pattern` (optional file pattern such as `*.xml`, no path parts), `poll` (`every-minute`, `every-5-minutes`, `hourly`). A new step has an empty host. **Simulated**: nothing connects to an SFTP server and no credentials are stored; runs are submitted to `POST /api/v1/workflows/{key}/executions` and the step passes the submitted data on. |
 | `scheduled-trigger` ("Scheduled trigger") | input | — → `out` | `cron` (required, five fields: minute hour day-of-month month day-of-week, e.g. `0 1 * * *`; only letters, digits and `* / , ? # -`), `tz` (`Europe/Nicosia`, `UTC`, `Europe/Luxembourg`). **Simulated**: nothing in Verso runs on a schedule yet, so the expression is stored and checked but never fires; runs are submitted to `POST /api/v1/workflows/{key}/executions` and the step passes the submitted data on. |
+| `folder-input` ("Folder input") | input | — → `out` | `sourceLocation` (required: the key of an approved location allowed for input; see [Folder input](#folder-input)), `sourceSubfolder` (optional relative path such as `invoices/incoming`: letters, digits, space, `.`, `_`, `-` separated by `/`; no `..`, no leading `.`, no backslashes, at most 8 levels), `pattern` (required, such as `*.json`; `*` and `?`, no path parts, not starting with `.`), `includeSubfolders` (boolean), `interval` (`every-minute`, `every-5-minutes`, `every-15-minutes`, `hourly`), `processedLocation` / `failedLocation` (required, approved for output) and `processedSubfolder` / `failedSubfolder` (optional; defaults `processed` and `failed`). **Real**: the Worker scans the folder and starts a run per file (JSON only in this version). There are no credential settings: folders are reached as the Worker's service identity. Processed or failed files must not land where the trigger scans. Runs can still also be submitted to `POST /api/v1/workflows/{key}/executions`. |
 | `validate` | process | `in` → `valid`, `invalid` (optional) | `required`: data paths; `types`: `[{ field, type }]` with `type` one of `text`, `number`, `date`, `email`, `eu-vat`, `iban`. At least one rule. |
 | `generate-pdf` | doc | `in` → `success`, `failed` (optional; taken when the data can't make a complete document) | `templateId`; `templateVersion`: `latest-published` (resolved when a run is submitted) or a published version number such as `"2"`; `fileName` pattern such as `{{invoice.number}}.pdf` |
 | `archive` | output | `in` → — | `folderPattern`; `retention`: `7y`, `10y` or `permanent`; `metadata`: `[{ key, value }]` (at most 20) |
@@ -309,6 +313,9 @@ Saving checks only the **structure** (400 `validation` with paths like `definiti
 | `port.unconnected` | error / warning | A required output isn't connected (error); an optional one (`invalid`, `failed`) is a warning |
 | `config.required` / `config.invalid` / `config.unknown` | error | Settings don't match the node's schema; `field` is the settings path (e.g. `metadata[0].key`) |
 | `template.not_found` / `template.not_published` | error | The referenced template doesn't exist, or the chosen version (or, for `latest-published`, any version) isn't published. Drafts can't be used in workflows. |
+| `folder.location_unknown` / `folder.location_disabled` / `folder.location_purpose` | error | Folder input: the location isn't approved, is currently not available on the Worker, or isn't approved for this purpose (input for the source, output for processed/failed files) |
+| `folder.subfolder_invalid` | error | A subfolder would leave its location (see the `folder-input` settings) |
+| `folder.destination_scanned` | error | Processed or failed files would land in the scanned folder (or below it, with subfolders included) and be picked up again |
 
 `valid` is true when there are no errors. Publishing a draft with errors returns **409 `workflow.invalid`** with the same `issues` array in the problem body.
 
@@ -423,6 +430,35 @@ Each step is tried up to **3 times** for technical errors, 5 s and then 10 s apa
 ### Retry: `POST /api/v1/executions/{id}/retry`
 
 No body. Only for `Failed` executions: the status becomes `Queued`, `attempt` increases, the failed step gets a fresh budget of 3 attempts, and the run continues from there. Returns 202 with the execution. Errors: 404 `execution.not_found`, 409 `execution.not_retryable`.
+
+## Folder input
+
+The `folder-input` trigger reads files from folders **on the Worker's side**. The Worker scans each published workflow whose latest version starts with this trigger, starts one run per file, and moves the file to the processed or failed folder. The API never touches folders: it lists what the Worker reported, queues access tests for the Worker, and shows the scan status. Design: [ADR 0001](adr/0001-folder-input.md). Server setup: [runbook B7](runbook.md#b7-folder-input-approved-locations).
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/folder-locations` | 200 `FolderLocation[]` | Approved locations: `{ key, name, input, output, enabled, problem, updatedAt }`. Never a path. |
+| POST | `/api/v1/folder-access-tests` | 202 `FolderAccessTest`, `Location` | "Test access": `{ targets: [{ role, location, subfolder }] }`, 1–3 targets, `role` one of `source`, `processed`, `failed`. 400 `validation` for an unknown location, the wrong purpose or an invalid subfolder (`targets[i].location`, `targets[i].subfolder`). Audited (`FolderAccessTestRequested`). |
+| GET | `/api/v1/folder-access-tests/{id}` | 200 `FolderAccessTest` | `status`: `Queued`, `Running`, `Completed` or `Failed` (couldn't run; see `error`). When completed, `results[]` has `{ role, location, subfolder, ok, checks: [{ name, ok, message }] }` plus `identity` and `machine`: the account and server the Worker checked as. Deleted after 24 h. |
+| GET | `/api/v1/workflows/{id}/folder-input` | 200 `FolderInputStatus` | `watch`: the last scan, `{ nodeId, lastScanAt, lastStatus, lastError, lastFilesFound }` (`lastStatus`: `Ok`, `Unavailable`, `AccessDenied`, `Misconfigured`, `Error`; null before the first scan). `files`: the 25 most recent files, `{ id, fileName, relativePath, sizeBytes, status, outcome, errorCode, errorMessage, executionId, deliveredName, deliveryError, claimedAt, completedAt }`. |
+
+How a file is handled:
+
+1. **Handoff.** Senders write under a temporary name and rename it when complete. Names starting with `.` or `~`, or ending with `.tmp`, `.temp`, `.part`, `.partial`, `.filepart`, `.crdownload`, `.lock` or `.download`, are ignored. A file must also be unchanged for `FolderInput:SettleTime` (10 s), and on Windows not open by its writer.
+2. **Claim.** One Worker claims the file (a database row with a unique claim) and moves it into `<folder>/.verso-inflight/`. `status` is `Claimed`.
+3. **Run.** The file must be a JSON object of at most 1 MB. It is submitted like `POST …/executions`. The idempotency key is derived from the data, so the same data never runs twice. The run is recorded as submitted by `verso.folder-input`, and its correlation id is the file's `id`. `status` is `Submitted`.
+4. **Move.** When the run finishes (`status` `Delivering`, then `Completed`), the file goes to the processed folder if the run `Succeeded`, and to the failed folder otherwise, together with `<name>.error.json` (`code`, `message`, `executionId`). An existing file with the same name is never overwritten: the new one gets a suffix.
+
+| `errorCode` | Meaning |
+|---|---|
+| `file.invalid_json` | Not a JSON object (XML and CSV aren't mapped yet) |
+| `file.too_large` | Over `FolderInput:MaxFileBytes` (1 MB) |
+| `file.duplicate` | The same data was already picked up; not run again |
+| `file.missing` | The file was removed by someone else before Verso finished it |
+| the run's `failureCode` (e.g. `data.invalid`) | The run was Rejected or Failed |
+| a submission error (e.g. `workflow.template_unavailable`) | The run couldn't be started |
+
+A Worker that stops mid-file is taken over after a 2-minute lease, and every step is safe to repeat. An unreachable destination shows as `deliveryError` and is retried on every pass.
 
 ## Documents (archive)
 

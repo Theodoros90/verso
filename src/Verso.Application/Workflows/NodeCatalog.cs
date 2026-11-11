@@ -20,7 +20,8 @@ public sealed record NodeTypeDto(
     JsonElement Defaults);
 
 /// <summary>
-/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder and scheduled-trigger (simulated), validate, generate-pdf, archive.
+/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder and scheduled-trigger (simulated),
+/// folder-input (real: the Worker reads approved folders, see Ingestion), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -30,6 +31,7 @@ public static class NodeCatalog
     public const string FileUpload = "file-upload";
     public const string SftpFolder = "sftp-folder";
     public const string ScheduledTrigger = "scheduled-trigger";
+    public const string FolderInput = "folder-input";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string Archive = "archive";
@@ -108,6 +110,15 @@ public static class NodeCatalog
 
     /// <summary>Five space-separated cron fields (minute hour day-of-month month day-of-week).</summary>
     private const string CronPattern = @"^[0-9A-Za-z*/,?#-]+( [0-9A-Za-z*/,?#-]+){4}$";
+
+    /// <summary>Scan intervals of the folder-input trigger (values in <see cref="Ingestion.FolderPaths.Intervals"/>).</summary>
+    public static readonly IReadOnlyDictionary<string, string> FolderScanIntervals = new Dictionary<string, string>
+    {
+        ["every-minute"] = "Every minute",
+        ["every-5-minutes"] = "Every 5 minutes",
+        ["every-15-minutes"] = "Every 15 minutes",
+        ["hourly"] = "Hourly",
+    };
 
     public static readonly IReadOnlyDictionary<string, string> ErpModes = new Dictionary<string, string>
     {
@@ -235,6 +246,32 @@ public static class NodeCatalog
               "required": ["cron", "tz"] }
             """,
             """{ "cron": "0 1 * * *", "tz": "Europe/Nicosia" }"""),
+
+        Node(FolderInput, "Folder input", "input",
+            "Picks up files from an approved folder on the Worker's server or network share, starts a run for each, and moves the file to the processed or failed folder. JSON files only in this version.",
+            [], [new PortDto("out", "Out", true)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "sourceLocation": { "type": "string", "title": "Source folder", "maxLength": 64, "pattern": "{{Escape(Ingestion.FolderPaths.LocationKeyPattern)}}", "x-widget": "folder-location-input",
+                  "description": "An approved location. Administrators approve locations in the Worker's configuration." },
+                "sourceSubfolder": { "type": "string", "title": "Source subfolder", "maxLength": {{Ingestion.FolderPaths.MaxSubfolderLength}}, "pattern": "{{Escape(Ingestion.FolderPaths.SubfolderPattern)}}", "x-widget": "mono",
+                  "description": "Optional, relative to the location, such as invoices/incoming." },
+                "pattern": { "type": "string", "title": "File pattern", "minLength": 1, "maxLength": 100, "pattern": "{{Escape(Ingestion.FolderPaths.FilePatternPattern)}}", "x-widget": "mono",
+                  "description": "For example *.json. Senders write under a temporary name (such as .tmp) and rename when the file is complete." },
+                "includeSubfolders": { "type": "boolean", "title": "Include subfolders" },
+                "interval": { "type": "string", "title": "Scan interval", "enum": {{JsonSerializer.Serialize(FolderScanIntervals.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(FolderScanIntervals.Values)}} },
+                "processedLocation": { "type": "string", "title": "Processed files: location", "maxLength": 64, "pattern": "{{Escape(Ingestion.FolderPaths.LocationKeyPattern)}}", "x-widget": "folder-location-output" },
+                "processedSubfolder": { "type": "string", "title": "Processed files: subfolder", "maxLength": {{Ingestion.FolderPaths.MaxSubfolderLength}}, "pattern": "{{Escape(Ingestion.FolderPaths.SubfolderPattern)}}", "x-widget": "mono" },
+                "failedLocation": { "type": "string", "title": "Failed files: location", "maxLength": 64, "pattern": "{{Escape(Ingestion.FolderPaths.LocationKeyPattern)}}", "x-widget": "folder-location-output" },
+                "failedSubfolder": { "type": "string", "title": "Failed files: subfolder", "maxLength": {{Ingestion.FolderPaths.MaxSubfolderLength}}, "pattern": "{{Escape(Ingestion.FolderPaths.SubfolderPattern)}}", "x-widget": "mono",
+                  "description": "An error file (name.error.json) explains each failure." } },
+              "required": ["sourceLocation", "pattern", "includeSubfolders", "interval", "processedLocation", "failedLocation"] }
+            """,
+            """
+            { "sourceLocation": "", "sourceSubfolder": "", "pattern": "*.json", "includeSubfolders": false, "interval": "every-minute",
+              "processedLocation": "", "processedSubfolder": "processed", "failedLocation": "", "failedSubfolder": "failed" }
+            """),
 
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",

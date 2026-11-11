@@ -1,8 +1,12 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Verso.Application;
+using Verso.Application.Ingestion;
+using Verso.Infrastructure.Ingestion;
 using Verso.Infrastructure.Persistence;
 
 namespace Verso.Infrastructure;
@@ -29,6 +33,46 @@ public static class DependencyInjection
             sql => sql.UseCompatibilityLevel(SqlServerCompatibilityLevel)));
         services.AddScoped<IVersoDbContext>(sp => sp.GetRequiredService<VersoDbContext>());
 
+        return services;
+    }
+
+    /// <summary>
+    /// Worker only: approved folders (<c>FolderInput:Locations</c>) and folder-input settings (<c>FolderInput</c>).
+    /// The API never touches folders; it only reads what the Worker reported.
+    /// </summary>
+    public static IServiceCollection AddVersoFolderAccess(this IServiceCollection services, IConfiguration configuration)
+    {
+        var section = configuration.GetSection(FolderIngestionOptions.Section);
+        var locations = new FolderAccessOptions();
+        foreach (var child in section.GetSection(nameof(FolderAccessOptions.Locations)).GetChildren())
+        {
+            locations.Locations[child.Key] = new FolderLocationOptions
+            {
+                Name = child[nameof(FolderLocationOptions.Name)] ?? "",
+                Path = child[nameof(FolderLocationOptions.Path)] ?? "",
+                Input = bool.TryParse(child[nameof(FolderLocationOptions.Input)], out var input) && input,
+                Output = bool.TryParse(child[nameof(FolderLocationOptions.Output)], out var output) && output,
+            };
+        }
+
+        var ingestion = new FolderIngestionOptions();
+        if (TimeSpan.TryParse(section[nameof(FolderIngestionOptions.PollInterval)], CultureInfo.InvariantCulture, out var poll) && poll > TimeSpan.Zero)
+        {
+            ingestion.PollInterval = poll;
+        }
+
+        if (TimeSpan.TryParse(section[nameof(FolderIngestionOptions.SettleTime)], CultureInfo.InvariantCulture, out var settle) && settle >= TimeSpan.Zero)
+        {
+            ingestion.SettleTime = settle;
+        }
+
+        if (long.TryParse(section[nameof(FolderIngestionOptions.MaxFileBytes)], CultureInfo.InvariantCulture, out var max) && max > 0)
+        {
+            ingestion.MaxFileBytes = max;
+        }
+
+        services.AddSingleton(ingestion);
+        services.AddSingleton<IFolderAccess>(new LocalFolderAccess(Options.Create(locations)));
         return services;
     }
 

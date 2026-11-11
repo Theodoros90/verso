@@ -2,14 +2,15 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useId } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Field, Input, Select, Textarea } from '@/components/ui/form'
+import { Field, Input, Select, Switch, Textarea } from '@/components/ui/form'
+import type { FolderLocationDto } from '@/lib/api/generated'
 import { cn } from '@/lib/utils'
 
 import { jsonObjectProblem } from '../model/payloadSchema'
 
 /** The JSON Schema subset the node catalog uses (see ConfigSchemaValidator on the server), plus designer hints. */
 export interface FieldSchema {
-  type: 'object' | 'array' | 'string'
+  type: 'object' | 'array' | 'string' | 'boolean'
   title?: string
   description?: string
   properties?: Record<string, FieldSchema>
@@ -17,7 +18,7 @@ export interface FieldSchema {
   items?: FieldSchema
   enum?: string[]
   'x-enumLabels'?: string[]
-  'x-widget'?: 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono'
+  'x-widget'?: 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-location-input' | 'folder-location-output'
   maxItems?: number
 }
 
@@ -36,6 +37,8 @@ export interface FormContext {
   /** Server issues for a settings path, e.g. `fileName` or `metadata[0].key`. */
   errorsFor: (field: string) => string[]
   readOnly: boolean
+  /** Approved folder locations (folder-input steps). */
+  folderLocations?: FolderLocationDto[]
 }
 
 type Value = Record<string, unknown>
@@ -112,6 +115,15 @@ function PropertyField({
     return <ArrayField path={path} field={field} value={Array.isArray(value) ? value : []} onChange={onChange} ctx={ctx} listId={listId} label={label} />
   }
 
+  if (field.type === 'boolean') {
+    return (
+      <div className="flex flex-col gap-1">
+        <Switch checked={value === true} onCheckedChange={(v) => onChange(v, path)} label={field.title ?? name} disabled={ctx.readOnly} />
+        {errors[0] && <p className="text-xs text-err">{errors[0]}</p>}
+      </div>
+    )
+  }
+
   return (
     <Field label={label} htmlFor={id} hint={field.description} error={errors[0]}>
       <StringInput id={id} path={path} field={field} value={typeof value === 'string' ? value : ''} parent={parent} onChange={onChange} ctx={ctx} listId={listId} invalid={errors.length > 0} />
@@ -167,6 +179,26 @@ function StringInput({
         {ctx.templates.map((t) => (
           <option key={t.id} value={t.id}>
             {t.name} ({t.key}){t.publishedVersions && t.publishedVersions.length === 0 ? ', not published' : ''}
+          </option>
+        ))}
+      </Select>
+    )
+  }
+
+  if (field['x-widget'] === 'folder-location-input' || field['x-widget'] === 'folder-location-output') {
+    const input = field['x-widget'] === 'folder-location-input'
+    const all = ctx.folderLocations ?? []
+    const usable = all.filter((l) => (input ? l.input : l.output))
+    const current = all.find((l) => l.key === value)
+    return (
+      <Select {...common} value={value} onChange={(e) => onChange(e.target.value, path)}>
+        <option value="">{usable.length === 0 ? 'No approved locations yet' : 'Choose an approved location…'}</option>
+        {value && !usable.some((l) => l.key === value) && (
+          <option value={value}>{current ? `${current.name} (not approved for this)` : `Unknown location (${value})`}</option>
+        )}
+        {usable.map((l) => (
+          <option key={l.key} value={l.key} disabled={!l.enabled}>
+            {l.name} ({l.key}){l.enabled ? '' : ', unavailable'}
           </option>
         ))}
       </Select>

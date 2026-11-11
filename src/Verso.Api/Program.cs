@@ -7,6 +7,7 @@ using Verso.Api.Common;
 using Verso.Api.Documents;
 using Verso.Api.Executions;
 using Verso.Api.Health;
+using Verso.Api.Ingestion;
 using Verso.Api.Realtime;
 using Verso.Api.Templates;
 using Verso.Api.Workflows;
@@ -131,6 +132,7 @@ app.MapWorkflowEndpoints();
 app.MapExecutionEndpoints();
 app.MapDocumentEndpoints();
 app.MapAuditEndpoints();
+app.MapFolderInputEndpoints();
 app.MapHub<ExecutionsHub>(ExecutionsHub.Path).RequireAuthorization(Policies.Read);
 
 app.Run();

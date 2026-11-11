@@ -33,6 +33,8 @@ GRANT SELECT, INSERT, UPDATE ON SCHEMA::executions TO verso_api;  -- submit, ret
 GRANT SELECT                 ON SCHEMA::documents  TO verso_api;  -- archive search, downloads
 GRANT SELECT, INSERT         ON SCHEMA::audit      TO verso_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::hangfire TO verso_api;  -- the Hangfire client queues jobs
+GRANT SELECT                 ON SCHEMA::ingestion  TO verso_api;  -- approved locations, folder status (reported by the Worker)
+GRANT INSERT, UPDATE         ON OBJECT::ingestion.FolderAccessTests TO verso_api;  -- "Test access" requests
 
 -- ----- Worker: runs executions and previews; never authors templates or workflows -----
 GRANT SELECT                 ON SCHEMA::templates  TO verso_worker;
@@ -43,6 +45,9 @@ GRANT SELECT, INSERT, UPDATE ON OBJECT::documents.Documents      TO verso_worker
 GRANT SELECT, INSERT         ON OBJECT::documents.ArchiveRecords TO verso_worker;
 GRANT SELECT, INSERT         ON SCHEMA::audit      TO verso_worker;
 GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::hangfire TO verso_worker;  -- the Hangfire server
+GRANT SELECT, INSERT, UPDATE ON SCHEMA::ingestion  TO verso_worker;  -- folder input: locations, scans, files, access tests
+GRANT DELETE                 ON OBJECT::ingestion.FolderFiles       TO verso_worker;  -- releasing a claim on a file still being written
+GRANT DELETE                 ON OBJECT::ingestion.FolderAccessTests TO verso_worker;  -- 24 h cleanup
 
 -- ----- Write-once and no-delete rules (DENY wins over any GRANT, including future ones) -----
 DENY UPDATE, DELETE ON OBJECT::audit.AuditEntries        TO verso_api, verso_worker;
@@ -52,3 +57,5 @@ DENY DELETE         ON SCHEMA::executions                TO verso_api, verso_wor
 DENY DELETE         ON SCHEMA::workflows                 TO verso_api, verso_worker;
 DENY DELETE         ON OBJECT::templates.Templates       TO verso_api, verso_worker;
 DENY DELETE         ON OBJECT::templates.TemplateVersions TO verso_api, verso_worker;
+DENY DELETE         ON OBJECT::ingestion.FolderLocations  TO verso_api, verso_worker;  -- withdrawn locations are disabled, never deleted
+DENY UPDATE         ON OBJECT::ingestion.FolderFiles      TO verso_api;               -- only the Worker changes ingestion records

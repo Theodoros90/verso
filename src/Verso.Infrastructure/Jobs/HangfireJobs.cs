@@ -3,6 +3,7 @@ using Hangfire.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Verso.Application.Executions;
+using Verso.Application.Ingestion;
 using Verso.Application.Templates;
 using Verso.Infrastructure.Persistence;
 
@@ -34,6 +35,7 @@ public static class HangfireJobs
             }));
         services.AddScoped<IPreviewJobs, HangfirePreviewJobs>();
         services.AddScoped<IExecutionJobs, HangfireExecutionJobs>();
+        services.AddScoped<IFolderAccessJobs, HangfireFolderAccessJobs>();
         return services;
     }
 
@@ -50,6 +52,7 @@ public static class HangfireJobs
         services.AddScoped<PdfPreviewCleanupJob>();
         services.AddScoped<ExecutionJob>();
         services.AddScoped<ExecutionDispatchJob>();
+        services.AddScoped<FolderAccessTestJob>();
         return services;
     }
 
@@ -101,6 +104,18 @@ public sealed class ExecutionJob(ExecutionEngine engine)
 {
     [AutomaticRetry(Attempts = 0)]
     public Task RunAsync(Guid executionId, CancellationToken cancellationToken) => engine.RunAsync(executionId, cancellationToken);
+}
+
+internal sealed class HangfireFolderAccessJobs(IBackgroundJobClient client) : IFolderAccessJobs
+{
+    public void Enqueue(Guid testId) => client.Enqueue<FolderAccessTestJob>(j => j.RunAsync(testId, CancellationToken.None));
+}
+
+/// <summary>Hangfire entry point for "Test access": checks folders as the Worker's service identity. Not retried (the user can test again).</summary>
+public sealed class FolderAccessTestJob(FolderAccessTestRunner runner)
+{
+    [AutomaticRetry(Attempts = 0)]
+    public Task RunAsync(Guid testId, CancellationToken cancellationToken) => runner.RunAsync(testId, cancellationToken);
 }
 
 /// <summary>Every minute: re-queues executions whose job went missing (transactional outbox sweeper).</summary>

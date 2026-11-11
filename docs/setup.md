@@ -164,6 +164,22 @@ Backend integration tests create uniquely named `Verso_Test_*` databases and dro
 
 `dotnet run` uses the Development environment through the launch profile, and with it Development sign-in.
 
+## 6. Folder input (optional)
+
+To try the Folder input step locally, approve two folders in the Worker's user secrets or in `src/Verso.Worker/appsettings.Development.json` (absolute paths; JSON escapes backslashes):
+
+```json
+"FolderInput": {
+  "SettleTime": "00:00:02",
+  "Locations": {
+    "dev-inbound": { "Name": "Dev inbound", "Path": "C:\VersoDev\inbound", "Input": true },
+    "dev-results": { "Name": "Dev results", "Path": "C:\VersoDev\results", "Output": true }
+  }
+}
+```
+
+Create the folders and restart the Worker. Then in a workflow, replace the trigger with **Folder input** and choose the locations. Press **Test access**, publish, and copy `tests/fixtures/invoice/sample.json` into the inbound folder. Within about 15 seconds the file moves to `results\processed` and the run appears under Executions. Broken data (`broken.json`) ends up in `results\failed` with an `.error.json` file. Server setup: [runbook B7](runbook.md#b7-folder-input-approved-locations).
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

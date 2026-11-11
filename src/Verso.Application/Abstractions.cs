@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Verso.Domain.Audit;
 using Verso.Domain.Documents;
 using Verso.Domain.Executions;
+using Verso.Domain.Ingestion;
 using Verso.Domain.Templates;
 using Verso.Domain.Workflows;
 
@@ -20,8 +21,15 @@ public interface IVersoDbContext
     DbSet<ExecutionEvent> ExecutionEvents { get; }
     DbSet<Document> Documents { get; }
     DbSet<ArchiveRecord> ArchiveRecords { get; }
+    DbSet<FolderLocation> FolderLocations { get; }
+    DbSet<FolderWatch> FolderWatches { get; }
+    DbSet<FolderFile> FolderFiles { get; }
+    DbSet<FolderAccessTest> FolderAccessTests { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Lets a use case discard tracked changes after a lost race (e.g. another Worker claimed the same file).</summary>
+    Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker ChangeTracker { get; }
 
     /// <summary>Tells EF which rowversion the caller last saw, so a concurrent change fails the save.</summary>
     void SetOriginalRowVersion(TemplateVersion version, byte[] rowVersion);
@@ -38,6 +46,14 @@ public interface ICurrentUser
 
     /// <summary>Verso roles of the person (see <see cref="Roles"/>). Until Entra ID exists these come from configuration.</summary>
     IReadOnlyCollection<string> Roles { get; }
+}
+
+/// <summary>The Worker's own identity, recorded on runs it starts by itself (folder input).</summary>
+public sealed class WorkerUser : ICurrentUser
+{
+    public string Id => Ingestion.FolderIngestion.ActorId;
+    public string Name => Ingestion.FolderIngestion.ActorName;
+    public IReadOnlyCollection<string> Roles => [];
 }
 
 /// <summary>

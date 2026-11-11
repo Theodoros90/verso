@@ -10,6 +10,9 @@ public sealed record WorkflowValidationDto(bool Valid, IReadOnlyList<WorkflowIss
 /// <summary>What the validator needs to know about a referenced template.</summary>
 public sealed record TemplateRef(Guid Id, string Name, IReadOnlySet<int> PublishedVersions);
 
+/// <summary>What the validator needs to know about an approved folder location.</summary>
+public sealed record FolderLocationRef(string Key, string Name, bool Input, bool Output, bool Enabled);
+
 /// <summary>
 /// Server-side graph validation (plan §5.4, M6): exactly one trigger; known node types and ports; one edge per
 /// output port; no cycles; every node reachable from the trigger; required ports connected; settings valid
@@ -21,10 +24,12 @@ public static class GraphValidator
     public const string Error = "error";
     public const string Warning = "warning";
 
-    public static WorkflowValidationDto Validate(ParsedDefinition definition, IReadOnlyDictionary<Guid, TemplateRef> templates)
+    public static WorkflowValidationDto Validate(
+        ParsedDefinition definition, IReadOnlyDictionary<Guid, TemplateRef> templates, IReadOnlyDictionary<string, FolderLocationRef>? locations = null)
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(templates);
+        locations ??= new Dictionary<string, FolderLocationRef>();
         var issues = new List<WorkflowIssueDto>();
         var nodes = definition.Nodes.ToDictionary(n => n.Id, StringComparer.Ordinal);
         var types = new Dictionary<string, NodeTypeDto>(StringComparer.Ordinal);
@@ -176,6 +181,10 @@ public static class GraphValidator
             }
 
             issues.AddRange(NodeRules(node, type, templates));
+            if (type.Type == NodeCatalog.FolderInput)
+            {
+                issues.AddRange(FolderRules(node, locations));
+            }
         }
 
         return new WorkflowValidationDto(issues.All(i => i.Severity != Error), issues);
@@ -257,6 +266,63 @@ public static class GraphValidator
                 }
 
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Folder input: each location must be approved for its purpose and enabled, subfolders must stay inside it, and
+    /// processed/failed files must not land where the trigger scans (they would be picked up again).
+    /// </summary>
+    private static IEnumerable<WorkflowIssueDto> FolderRules(WorkflowNode node, IReadOnlyDictionary<string, FolderLocationRef> locations)
+    {
+        var c = node.Config;
+        string Text(string name) => c.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()!.Trim() : "";
+
+        foreach (var (field, input, label) in new[]
+                 {
+                     ("sourceLocation", true, "source"), ("processedLocation", false, "processed files"), ("failedLocation", false, "failed files"),
+                 })
+        {
+            var key = Text(field);
+            if (key.Length == 0)
+            {
+                continue; // reported by the schema check
+            }
+
+            if (!locations.TryGetValue(key, out var location))
+            {
+                yield return new(Error, "folder.location_unknown", $"'{key}' isn't an approved location. Choose one from the list.", NodeId: node.Id, Field: field);
+            }
+            else if (!location.Enabled)
+            {
+                yield return new(Error, "folder.location_disabled", $"'{location.Name}' is currently not available on the Worker. Ask an administrator.", NodeId: node.Id, Field: field);
+            }
+            else if (input ? !location.Input : !location.Output)
+            {
+                yield return new(Error, "folder.location_purpose", $"'{location.Name}' isn't approved for {label}.", NodeId: node.Id, Field: field);
+            }
+        }
+
+        foreach (var field in new[] { "sourceSubfolder", "processedSubfolder", "failedSubfolder" })
+        {
+            if (Ingestion.FolderPaths.SubfolderProblem(Ingestion.FolderPaths.NormalizeSubfolder(Text(field))) is { } problem)
+            {
+                yield return new(Error, "folder.subfolder_invalid", problem, NodeId: node.Id, Field: field);
+            }
+        }
+
+        if (Ingestion.FolderInputSettings.Parse(c) is { } settings)
+        {
+            foreach (var (destination, field) in new[] { (settings.Processed, "processedSubfolder"), (settings.Failed, "failedSubfolder") })
+            {
+                if (Ingestion.FolderPaths.WouldRescan(settings.Source, destination, settings.IncludeSubfolders))
+                {
+                    yield return new(Error, "folder.destination_scanned",
+                        "Files moved here would be picked up again. Choose a subfolder outside the scanned folder" +
+                        (settings.IncludeSubfolders ? " (subfolders are included)." : "."),
+                        NodeId: node.Id, Field: field);
+                }
+            }
         }
     }
 

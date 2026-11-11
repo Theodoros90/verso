@@ -1,5 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { Archive, CalendarClock, Circle, Database, FileText, FolderInput, ShieldCheck, Upload, Webhook, type LucideIcon } from 'lucide-react'
+import { Archive, CalendarClock, Circle, Database, FileText, FolderInput, FolderSync, ShieldCheck, Upload, Webhook, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NodeTypeDto, WorkflowIssueDto } from '@/lib/api/generated'
@@ -30,6 +30,7 @@ export const NODE_ICONS: Record<string, LucideIcon> = {
   'file-upload': Upload,
   'sftp-folder': FolderInput,
   'scheduled-trigger': CalendarClock,
+  'folder-input': FolderSync,
   validate: ShieldCheck,
   'generate-pdf': FileText,
   archive: Archive,

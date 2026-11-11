@@ -224,7 +224,9 @@ public sealed partial class ExecutionEngine(
 
     private Task<Outcome> ExecuteNodeAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct) => node.Type switch
     {
-        NodeCatalog.ApiTrigger or NodeCatalog.ErpConnector or NodeCatalog.FileUpload or NodeCatalog.SftpFolder or NodeCatalog.ScheduledTrigger => Task.FromResult(new Outcome("out", null)), // the payload arrived with the submission
+        // The payload arrived with the submission (for folder-input, the Worker read the file and submitted it).
+        NodeCatalog.ApiTrigger or NodeCatalog.ErpConnector or NodeCatalog.FileUpload or NodeCatalog.SftpFolder or NodeCatalog.ScheduledTrigger
+            or NodeCatalog.FolderInput => Task.FromResult(new Outcome("out", null)),
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
         NodeCatalog.GeneratePdf => GeneratePdfAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),

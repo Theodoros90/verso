@@ -17,7 +17,8 @@ Bank-focused document-generation and workflow platform. MVP: maintain an invoice
 **M6: Workflow definitions and designer** — accepted 2026-11-09.
 **M7: Execution engine** — accepted 2026-11-10.
 **M8: Execution history and live progress** — accepted 2026-11-10.
-**M9: MVP hardening** — accepted 2026-11-10 (full `tools/ci.ps1` run passed). **MVP complete (M1–M9).** No next milestone agreed yet; post-MVP items are listed under "Not in MVP" in plan §9 and the open decisions in plan §10.
+**M9: MVP hardening** — accepted 2026-11-10 (full `tools/ci.ps1` run passed). **MVP complete (M1–M9).**
+Post-MVP: **Folder input** (2026-11-11, ADR 0001) implemented; awaiting acceptance. No next milestone agreed yet; post-MVP items are listed under "Not in MVP" in plan §9 and the open decisions in plan §10.
 Update this line when a milestone is accepted and the next one is agreed.
 
 ## Commands
@@ -58,7 +59,7 @@ Ask before adding a dependency or changing a version not listed here.
 
 - Modular monolith, not microservices. Two processes: `Verso.Api` and `Verso.Worker`. They share code and the database, and nothing else (no direct network calls between them).
 - Layered projects: `Verso.Domain` → nothing; `Verso.Rendering` → nothing; `Verso.Rendering.Pdf` → Rendering + Playwright; `Verso.Application` → Domain + Rendering; `Verso.Infrastructure` → Application (+ Hangfire); `Verso.Api` and `Verso.Worker` → Application + Infrastructure; only `Verso.Worker` also references `Verso.Rendering.Pdf`. Frontend in `src/verso-web`. Keep it lightweight: no abstraction or new project without a concrete need.
-- Modules (Templates, Workflows, Executions, Documents, Audit) are folders inside the layered projects. Module folders don't reach into each other's internals. One `VersoDbContext`; each module's tables go in its own SQL schema (`Schemas` class); no cross-schema foreign keys.
+- Modules (Templates, Workflows, Executions, Documents, Audit, Ingestion) are folders inside the layered projects. Module folders don't reach into each other's internals. One `VersoDbContext`; each module's tables go in its own SQL schema (`Schemas` class); no cross-schema foreign keys.
 - Template designer and workflow designer are separate modules and screens. Workflows reference template **versions**; they never embed template content.
 - Rendering lives in `Verso.Rendering` (layout JSON + data → HTML; no dependencies, enforced by RendererPurityTests). Only the Worker uses Playwright/Chromium. The API never runs Chromium. PDFs are printed from the renderer's `Print` parts (body + header/footer templates), not from the preview HTML.
 - Migrations are applied with `dotnet ef database update`, never automatically at app startup.
@@ -66,7 +67,7 @@ Ask before adding a dependency or changing a version not listed here.
 - Execution states: `Queued → Running → Succeeded | Rejected | Failed`. Rejected = data failed validation (not retryable). Failed = technical error (retryable).
 - Progress: the Worker writes `ExecutionEvent` rows, and an API hosted service relays them to SignalR. SignalR messages are notifications; the REST API is the source of truth.
 - Document storage goes through `IDocumentStore` (configurable). The MVP adapter is the local file system.
-- AI features are deferred. No email, print, ERP, SFTP or banking integrations.
+- AI features are deferred. No email, print, ERP, SFTP or banking integrations. Folder input (approved 2026-11-11, docs/adr/0001-folder-input.md) is the one real file integration: the Worker reads only folders approved in its configuration (`FolderInput:Locations`), as its own service identity, and never stores credentials.
 
 ## Working rules
 
@@ -91,7 +92,7 @@ Ask before adding a dependency or changing a version not listed here.
 - Don't apply destructive database changes (dropping or truncating tables or columns, data-losing migrations, resetting databases other than throwaway local/test ones) without approval.
 - Never access production systems.
 - Don't execute arbitrary user-authored code: no `eval`, scripting engines or raw template HTML/JS. Templates are structured layout JSON; bound values are HTML-encoded; Chromium runs with JavaScript disabled and network requests blocked.
-- External integrations stay simulated until explicitly approved.
+- External integrations stay simulated until explicitly approved (approved so far: folder input).
 
 **Milestone close-out**
 - End each milestone with: what was built, verification steps (commands + results, manual checks), how it meets the acceptance criteria, and remaining limitations / open issues.

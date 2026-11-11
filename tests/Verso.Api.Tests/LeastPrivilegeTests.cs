@@ -1,5 +1,11 @@
 using System.Data.Common;
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json.Nodes;
+using Microsoft.Extensions.Options;
+using Verso.Application;
+using Verso.Application.Ingestion;
+using Verso.Infrastructure.Ingestion;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -139,6 +145,85 @@ public sealed class LeastPrivilegeTests(LeastPrivilegeFixture grants) : IClassFi
         Assert.Contains("\"pendingMigrations\":0", await health.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
+
+    [Fact]
+    public async Task FolderInput_RunsUnderTheApiAndWorkerRoles()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "verso-test-folders", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "in"));
+        Directory.CreateDirectory(Path.Combine(root, "out"));
+        try
+        {
+            var folders = new LocalFolderAccess(Options.Create(new FolderAccessOptions
+            {
+                Locations = new()
+                {
+                    ["lp-in"] = new() { Name = "In", Path = Path.Combine(root, "in"), Input = true },
+                    ["lp-out"] = new() { Name = "Out", Path = Path.Combine(root, "out"), Output = true },
+                },
+            }));
+            var jobs = new RecordingExecutionJobs();
+            async Task<FolderPassResult> PassAsync(Func<FolderIngestion, Task<FolderPassResult>> action)
+            {
+                await using var db = grants.WorkerDb();
+                var executions = new ExecutionService(db, jobs, new WorkerUser(), TimeProvider.System, NullLogger<ExecutionService>.Instance);
+                return await action(new FolderIngestion(db, folders, executions, new FolderIngestionOptions { SettleTime = TimeSpan.Zero }, TimeProvider.System, NullLogger<FolderIngestion>.Instance));
+            }
+
+            await PassAsync(async i => { await i.SyncLocationsAsync(CancellationToken.None); return null!; }); // Worker: report locations
+            using var client = grants.Api.CreateClient();
+            var kit = new ExecutionTestKit(grants.BaseFactory, client);
+            var trigger = JsonNode.Parse("""
+                { "id": "trigger", "type": "folder-input", "title": "Folder", "position": { "x": 0, "y": 80 },
+                  "config": { "sourceLocation": "lp-in", "sourceSubfolder": "", "pattern": "*.json", "includeSubfolders": false, "interval": "every-minute",
+                              "processedLocation": "lp-out", "processedSubfolder": "processed", "failedLocation": "lp-out", "failedSubfolder": "failed" } }
+                """)!;
+            await kit.PublishInvoiceWorkflowAsync(trigger: trigger);                                     // API: validate against locations, publish
+
+            using var test = await client.PostAsJsonAsync(new Uri("/api/v1/folder-access-tests", UriKind.Relative),
+                new { targets = new[] { new { role = "source", location = "lp-in", subfolder = "" } } });       // API: request a test
+            Assert.Equal(HttpStatusCode.Accepted, test.StatusCode);
+            var testId = (await ExecutionTestKit.ReadAsync(test)).GetProperty("id").GetGuid();
+            await using (var db = grants.WorkerDb())
+            {
+                await new FolderAccessTestRunner(db, folders, TimeProvider.System).RunAsync(testId, CancellationToken.None); // Worker: run it
+            }
+
+            var sample = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "invoice", "sample.json"));
+            File.WriteAllText(Path.Combine(root, "in", "a.json"), sample);
+            File.WriteAllText(Path.Combine(root, "in", "copy.json"), sample);
+            var busy = Path.Combine(root, "in", "busy.json");
+            File.WriteAllText(busy, "{}");
+            using (new FileStream(busy, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                await PassAsync(i => i.RunOnceAsync(CancellationToken.None));                             // Worker: claim, submit, duplicate, release a busy file
+            }
+
+            var execution = Assert.Single(jobs.Enqueued);
+            await RunAsWorkerAsync(execution);
+            await PassAsync(i => i.RunOnceAsync(CancellationToken.None));                                 // Worker: move files
+            await using (var db = grants.WorkerDb())
+            {
+                await new FolderAccessTestRunner(db, folders, new ShiftedClock(TimeSpan.FromDays(2))).CleanupAsync(CancellationToken.None); // Worker: cleanup
+            }
+
+            Assert.True(File.Exists(Path.Combine(root, "out", "processed", "a.json")));
+            Assert.True(File.Exists(Path.Combine(root, "out", "failed", "copy.json")));
+            var workflowId = await kit.WithDbAsync(db => db.FolderWatches.Select(w => w.WorkflowId).SingleAsync());
+            using var status = await client.GetAsync(new Uri($"/api/v1/workflows/{workflowId}/folder-input", UriKind.Relative)); // API: read status
+            Assert.Equal(HttpStatusCode.OK, status.StatusCode);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private sealed class ShiftedClock(TimeSpan offset) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => base.GetUtcNow() + offset;
+    }
+
     [Theory]
     [InlineData(LeastPrivilegeFixture.ApiUser, "UPDATE [audit].[AuditEntries] SET [ActorName] = N'x'")]
     [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [audit].[AuditEntries]")]
@@ -155,6 +240,9 @@ public sealed class LeastPrivilegeTests(LeastPrivilegeFixture grants) : IClassFi
     [InlineData(LeastPrivilegeFixture.WorkerUser, "UPDATE [workflows].[WorkflowVersions] SET [UpdatedBy] = N'x'")]
     [InlineData(LeastPrivilegeFixture.ApiUser, "CREATE TABLE [dbo].[Sneaky] ([Id] int)")]
     [InlineData(LeastPrivilegeFixture.WorkerUser, "ALTER TABLE [audit].[AuditEntries] ADD [Sneaky] int NULL")]
+    [InlineData(LeastPrivilegeFixture.ApiUser, "UPDATE [ingestion].[FolderFiles] SET [Status] = N'Completed'")]      // only the Worker changes ingestion records
+    [InlineData(LeastPrivilegeFixture.ApiUser, "INSERT INTO [ingestion].[FolderLocations] ([Key], [Name], [AllowInput], [AllowOutput], [Enabled], [ReportedBy], [UpdatedAt]) VALUES ('c-drive', N'C', 1, 1, 1, N'x', SYSDATETIMEOFFSET())")] // only the Worker reports locations
+    [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [ingestion].[FolderLocations]")]
     public async Task ForbiddenChanges_AreRefusedByTheDatabase(string user, string sql)
     {
         await using var db = grants.DbAs(user);

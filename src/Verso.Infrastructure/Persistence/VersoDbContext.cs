@@ -3,6 +3,7 @@ using Verso.Application;
 using Verso.Domain.Audit;
 using Verso.Domain.Documents;
 using Verso.Domain.Executions;
+using Verso.Domain.Ingestion;
 using Verso.Domain.Templates;
 using Verso.Domain.Workflows;
 
@@ -24,6 +25,10 @@ public sealed class VersoDbContext(DbContextOptions<VersoDbContext> options) : D
     public DbSet<ExecutionEvent> ExecutionEvents => Set<ExecutionEvent>();
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<ArchiveRecord> ArchiveRecords => Set<ArchiveRecord>();
+    public DbSet<FolderLocation> FolderLocations => Set<FolderLocation>();
+    public DbSet<FolderWatch> FolderWatches => Set<FolderWatch>();
+    public DbSet<FolderFile> FolderFiles => Set<FolderFile>();
+    public DbSet<FolderAccessTest> FolderAccessTests => Set<FolderAccessTest>();
 
     public void SetOriginalRowVersion(TemplateVersion version, byte[] rowVersion) =>
         Entry(version).Property(v => v.RowVersion).OriginalValue = rowVersion;

@@ -18,7 +18,8 @@ internal sealed class AuditEntryConfiguration : IEntityTypeConfiguration<AuditEn
         builder.Property(e => e.Action).HasMaxLength(64).IsRequired();
         builder.Property(e => e.EntityType).HasMaxLength(64).IsRequired();
         builder.Property(e => e.EntityId).HasMaxLength(64).IsRequired();
-        builder.Property(e => e.TraceId).HasMaxLength(32).IsUnicode(false);
+        // A request trace id (32 hex) or an execution's correlation id, which callers may send with up to 64 characters.
+        builder.Property(e => e.TraceId).HasMaxLength(64).IsUnicode(false);
         builder.HasIndex(e => new { e.EntityType, e.EntityId, e.Sequence });
     }
 }

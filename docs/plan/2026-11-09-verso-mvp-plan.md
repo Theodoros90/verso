@@ -556,7 +556,20 @@ Decisions made while implementing M9 (2026-11-10). The user chose the first four
 
 **MVP done = M1–M9 accepted.** ✅ Reached 2026-11-10.
 
-Not in MVP: email/print/SFTP/ERP/API delivery, AI nodes and Assistant, map-fields/branching nodes, DOCX/HTML email output, QR/barcode, maker-checker publishing, multi-tenant issuers, production storage adapters, dashboard/overview metrics.
+Not in MVP: email/print/SFTP/ERP/API delivery (folder input followed after the MVP, see below), AI nodes and Assistant, map-fields/branching nodes, DOCX/HTML email output, QR/barcode, maker-checker publishing, multi-tenant issuers, production storage adapters, dashboard/overview metrics.
+
+## Post-MVP features
+
+### Folder input (2026-11-11)
+
+Requested by the user as a separate feature. It is the first real (not simulated) input besides the API trigger. Full decision record: [ADR 0001](../adr/0001-folder-input.md).
+- New node `folder-input`, beside the simulated `file-upload` (unchanged). The Worker scans approved folders, starts one run per JSON file, and moves the file to the processed or failed folder (`<name>.error.json` explains failures).
+- Approved locations are configured on the Worker (`FolderInput:Locations`), which reports key, name and purpose only. Designers pick keys and relative subfolders; paths are validated at design time and resolved, contained and checked for links on the Worker. There are no stored credentials: folders are reached as the Worker's service identity, on Windows (local or UNC) and Linux (OS mounts).
+- Reliable ingestion: a handoff convention (temporary names, settle time, exclusive open) and a database claim (filtered unique index) plus an atomic move into `.verso-inflight`. State moves Claimed → Submitted → Delivering → Completed, with 2-minute leases for restart recovery. A content-derived idempotency key means no duplicate runs.
+- New schema `ingestion` (migration `AddFolderInput`), endpoints `GET /folder-locations`, `POST|GET /folder-access-tests`, `GET /workflows/{id}/folder-input`. Roles: reads for every role; Test access for WorkflowAuthor/Admin. `tools/db/least-privilege.sql` extended.
+- Designer: location pickers, an "Include subfolders" switch (the settings schema gained `boolean`), Test access with per-check results and the identity used, and folder activity (last scan, errors, recent files linking to their runs).
+- Not included: XML/CSV mapping, alerting on scan failures, a screen listing all ingested files across workflows.
+- Fixed alongside (found by these tests): audit `TraceId` was `varchar(32)`, but it also stores execution correlation ids, which the API accepts with up to 64 characters. A run submitted with a longer `X-Correlation-Id` failed at its final save and never finished. The column is now `varchar(64)` (migration `WidenAuditTraceId`, widening only), with a regression test.
 
 ## 10. Assumptions and unresolved decisions
 

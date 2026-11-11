@@ -323,11 +323,13 @@ public sealed class GraphValidatorTests
         foreach (var type in NodeCatalog.All)
         {
             var errors = ConfigSchemaValidator.Validate(type.ConfigSchema, type.Defaults);
-            // These need user input: generate-pdf a template, sftp-folder a host. Everything else is valid out of the box.
+            // These need user input: generate-pdf a template, sftp-folder a host, folder-input its approved locations.
+            // Everything else is valid out of the box.
             var expected = type.Type switch
             {
                 NodeCatalog.GeneratePdf => ["templateId"],
                 NodeCatalog.SftpFolder => ["host"],
+                NodeCatalog.FolderInput => ["sourceLocation", "processedLocation", "failedLocation"],
                 _ => Array.Empty<string>(),
             };
             Assert.Equal(expected, errors.Select(e => e.Field).ToArray());

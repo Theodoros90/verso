@@ -5,7 +5,7 @@ namespace Verso.Application.Workflows;
 
 /// <summary>
 /// Validates node settings against the node's config schema. Supports only the JSON Schema subset the catalog
-/// uses: <c>type</c> (object, array, string), <c>properties</c>, <c>required</c>, <c>items</c>, <c>minItems</c>,
+/// uses: <c>type</c> (object, array, string, boolean), <c>properties</c>, <c>required</c>, <c>items</c>, <c>minItems</c>,
 /// <c>maxItems</c>, <c>minLength</c>, <c>maxLength</c>, <c>pattern</c>, <c>enum</c>, <c>format: uuid</c>.
 /// Unknown properties are errors (settings round-trip exactly; nothing hides in them).
 /// The schemas are our own code, so a general-purpose JSON Schema library isn't needed.
@@ -139,6 +139,14 @@ public static class ConfigSchemaValidator
                 if (schema.TryGetProperty("pattern", out var pattern) && !Regex.IsMatch(s, pattern.GetString()!, RegexOptions.None, RegexTimeout))
                 {
                     errors.Add(new(path, "config.invalid", $"{Label(title)}: '{Shorten(s)}' isn't valid here."));
+                }
+
+                break;
+
+            case "boolean":
+                if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                {
+                    errors.Add(new(path, "config.invalid", $"{Label(title)} must be true or false."));
                 }
 
                 break;
