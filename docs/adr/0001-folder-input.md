@@ -46,7 +46,7 @@ Banks commonly hand documents to output systems through watched folders on a fil
 
 10. **Test access** (`POST /api/v1/folder-access-tests`, WorkflowAuthor/Admin): the API validates the targets and queues a Hangfire job. The Worker checks each folder as its own identity: approved for this purpose, folder reachable and listable (output folders are created if missing), and a probe file created, moved into the working folder (source) and deleted. The result names the identity and machine. Requests are audited (`FolderAccessTestRequested`) and deleted after 24 h.
 
-11. **Content.** JSON only in this version. XML and CSV need a field mapping to the invoice data model, which is a separate decision; such files go to the failed location with an explanation.
+11. **Content.** JSON only in this version. XML and CSV need a field mapping to the invoice data model, which is a separate decision; such files go to the failed location with an explanation. (The `parse` step now reads XML/CSV text found in a field of the submitted data, but the folder trigger doesn't feed it yet: it still submits the JSON file itself.)
 
 12. **Database permissions** (`tools/db/least-privilege.sql`): the API reads `ingestion` and may insert access tests. The Worker reads and writes `ingestion` and may delete only claims (`FolderFiles`) and old access tests. Nobody deletes locations, and the API can't change ingestion records.
 

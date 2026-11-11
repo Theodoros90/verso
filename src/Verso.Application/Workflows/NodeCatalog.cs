@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), validate, generate-pdf, archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -33,6 +33,7 @@ public static class NodeCatalog
     public const string ScheduledTrigger = "scheduled-trigger";
     public const string ManualTrigger = "manual-trigger";
     public const string FolderInput = "folder-input";
+    public const string ParseContent = "parse";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string Archive = "archive";
@@ -137,6 +138,8 @@ public static class NodeCatalog
     };
 
     private const string DataPathPattern =@"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$";
+
+    private const string OptionalDataPathPattern = @"^([A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*)?$";
 
     private const string EndpointPathPattern = @"^/[A-Za-z0-9._~/-]*$";
 
@@ -296,6 +299,24 @@ public static class NodeCatalog
             """
             { "sourcePath": "", "pattern": "*.json", "includeSubfolders": false, "interval": "every-minute", "processedPath": "", "failedPath": "" }
             """),
+
+        Node(ParseContent, "Parse JSON / XML / CSV", "process",
+            "Turns raw file content into structured data: reads the text in one field of the submitted data and replaces the run's data with that one record. A list is accepted only with a single entry.",
+            [In], [new PortDto("success", "Success", true), new PortDto("failed", "Failed", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "source": { "type": "string", "title": "Content field", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DataPathPattern)}}", "x-widget": "mono",
+                  "description": "The field of the submitted data that holds the file's content, such as content." },
+                "format": { "type": "string", "title": "Format", "enum": {{JsonSerializer.Serialize(Executions.RecordParser.Formats.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Executions.RecordParser.Formats.Values)}} },
+                "encoding": { "type": "string", "title": "Encoding", "enum": {{JsonSerializer.Serialize(Executions.RecordParser.Encodings.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Executions.RecordParser.Encodings.Values)}},
+                  "description": "UTF-8: the field holds the text itself. The others: the field holds the file's bytes as base64." },
+                "recordPath": { "type": "string", "title": "Record path (optional)", "maxLength": 200, "pattern": "{{Escape(OptionalDataPathPattern)}}", "x-widget": "mono",
+                  "description": "Dotted names down to the record, such as invoices.invoice. XML keeps its root element's name. Leave empty to use the whole content." },
+                "numbers": { "type": "boolean", "title": "Read plain numbers in XML and CSV as numbers" } },
+              "required": ["source", "format", "encoding"] }
+            """,
+            """{ "source": "content", "format": "auto", "encoding": "utf-8", "recordPath": "", "numbers": true }"""),
 
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",

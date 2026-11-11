@@ -133,7 +133,8 @@ public sealed partial class ExecutionEngine(
     {
         public Execution Execution { get; } = execution;
         public ExecutionPlan Plan { get; } = plan;
-        public JsonElement Data { get; } = data;
+        /// <summary>The submitted data; a Parse step replaces it with the parsed record.</summary>
+        public JsonElement Data { get; set; } = data;
         public IReadOnlyDictionary<string, Guid> Templates { get; } = templates;
         public Document? Document { get; set; }
     }
@@ -227,11 +228,25 @@ public sealed partial class ExecutionEngine(
         // The payload arrived with the submission (for folder-input, the Worker read the file and submitted it).
         NodeCatalog.ApiTrigger or NodeCatalog.ErpConnector or NodeCatalog.FileUpload or NodeCatalog.SftpFolder or NodeCatalog.ScheduledTrigger
             or NodeCatalog.ManualTrigger or NodeCatalog.FolderInput => Task.FromResult(new Outcome("out", null)),
+        NodeCatalog.ParseContent => Task.FromResult(Parse(run, node)),
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
         NodeCatalog.GeneratePdf => GeneratePdfAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
         _ => throw new StepException("node.unsupported", $"Node type '{node.Type}' can't run in this version of Verso.", retryable: false),
     };
+
+    /// <summary>Unparseable content is a data problem (port 'failed', the run ends Rejected unless the workflow handles it). The result holds no content.</summary>
+    private static Outcome Parse(Run run, Workflows.WorkflowNode node)
+    {
+        var result = RecordParser.Parse(node.Config, run.Data);
+        if (result.Data is not { } parsed)
+        {
+            return new Outcome("failed", new { issues = new[] { new { code = result.Issue!.Code, message = result.Issue.Message } } });
+        }
+
+        run.Data = parsed;
+        return new Outcome("success", new { format = result.Format });
+    }
 
     private static Outcome Validate(Run run, Workflows.WorkflowNode node)
     {
@@ -343,12 +358,18 @@ public sealed partial class ExecutionEngine(
             AfterSave: () => DeleteStagingAsync(stagingKey));
     }
 
-    /// <summary>Re-establishes what a step that already succeeded produced (the document, for later steps).</summary>
+    /// <summary>Re-establishes what a step that already succeeded produced (the parsed data or the document, for later steps).</summary>
     private async Task RestoreAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
     {
         if (node.Type == NodeCatalog.GeneratePdf)
         {
             run.Document = await FindDocumentAsync(run.Execution.Id, node.Id, ct);
+        }
+        else if (node.Type == NodeCatalog.ParseContent && run.Execution.Step(node.Id).OutputPort == "success")
+        {
+            // Parsing is deterministic, so the data is rebuilt rather than stored a second time.
+            run.Data = RecordParser.Parse(node.Config, run.Data).Data
+                ?? throw new StepException("parse.restore", $"Step '{node.Title}' succeeded before but its content can't be parsed again.", retryable: false);
         }
     }
 
@@ -366,6 +387,10 @@ public sealed partial class ExecutionEngine(
                     execution.Reject("data.invalid", $"The data failed {count} validation rule(s) in step '{last.Title}'.", now);
                 }
 
+                Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
+                break;
+            case (NodeCatalog.ParseContent, "failed"):
+                execution.Reject("data.unparseable", $"The content couldn't be parsed in step '{last.Title}' (see its issues).", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;
             case (NodeCatalog.GeneratePdf, "failed"):

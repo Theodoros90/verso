@@ -40,7 +40,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null)
     {
         var templateId = await PublishInvoiceTemplateAsync();
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -64,6 +64,14 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
             """)!;
         definition["nodes"]![1]!["config"] = (rules ?? StandardRules).DeepClone();
         if (trigger is not null) definition["nodes"]![0] = trigger.DeepClone();
+        if (parseConfig is not null)
+        {
+            // trigger → parse (success) → validate …
+            definition["nodes"]!.AsArray().Insert(1, JsonNode.Parse("""{ "id": "parse", "type": "parse", "title": "Parse content", "position": { "x": 130, "y": 80 }, "config": {} }"""));
+            definition["nodes"]![1]!["config"] = parseConfig.DeepClone();
+            definition["edges"]![0]!["target"] = "parse";
+            definition["edges"]!.AsArray().Add(JsonNode.Parse("""{ "id": "e0", "source": "parse", "sourcePort": "success", "target": "validate", "targetPort": "in" }"""));
+        }
 
         using var draft = await client.GetAsync(new Uri($"/api/v1/workflows/{workflowId}/draft", UriKind.Relative));
         using var save = await SendAsync(HttpMethod.Put, $"/api/v1/workflows/{workflowId}/draft", draft.Headers.ETag!.ToString(), new JsonObject { ["definition"] = definition });
