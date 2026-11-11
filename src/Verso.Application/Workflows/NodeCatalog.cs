@@ -248,29 +248,31 @@ public static class NodeCatalog
             """{ "cron": "0 1 * * *", "tz": "Europe/Nicosia" }"""),
 
         Node(FolderInput, "Folder input", "input",
-            "Picks up files from an approved folder on the Worker's server or network share, starts a run for each, and moves the file to the processed or failed folder. JSON files only in this version.",
+            "Picks up files from a folder on the Worker's server or a network share (type its path), starts a run for each, and moves the file to the processed or failed folder. JSON files only in this version.",
             [], [new PortDto("out", "Out", true)],
             $$"""
             { "type": "object",
               "properties": {
-                "sourceLocation": { "type": "string", "title": "Source folder", "maxLength": 64, "pattern": "{{Escape(Ingestion.FolderPaths.LocationKeyPattern)}}", "x-widget": "folder-location-input",
-                  "description": "An approved location. Administrators approve locations in the Worker's configuration." },
-                "sourceSubfolder": { "type": "string", "title": "Source subfolder", "maxLength": {{Ingestion.FolderPaths.MaxSubfolderLength}}, "pattern": "{{Escape(Ingestion.FolderPaths.SubfolderPattern)}}", "x-widget": "mono",
-                  "description": "Optional, relative to the location, such as invoices/incoming." },
+                "sourcePath": { "type": "string", "title": "Source folder", "maxLength": {{Ingestion.FolderPaths.MaxPathLength}}, "x-widget": "folder-path",
+                  "description": "Absolute path as the Worker's server sees it, such as D:\\Invoices\\in, \\\\fileserver\\share\\in or /mnt/verso/in. The Worker's service account needs Modify access." },
                 "pattern": { "type": "string", "title": "File pattern", "minLength": 1, "maxLength": 100, "pattern": "{{Escape(Ingestion.FolderPaths.FilePatternPattern)}}", "x-widget": "mono",
                   "description": "For example *.json. Senders write under a temporary name (such as .tmp) and rename when the file is complete." },
                 "includeSubfolders": { "type": "boolean", "title": "Include subfolders" },
                 "interval": { "type": "string", "title": "Scan interval", "enum": {{JsonSerializer.Serialize(FolderScanIntervals.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(FolderScanIntervals.Values)}} },
-                "processedLocation": { "type": "string", "title": "Processed files: location", "maxLength": 64, "pattern": "{{Escape(Ingestion.FolderPaths.LocationKeyPattern)}}", "x-widget": "folder-location-output" },
-                "processedSubfolder": { "type": "string", "title": "Processed files: subfolder", "maxLength": {{Ingestion.FolderPaths.MaxSubfolderLength}}, "pattern": "{{Escape(Ingestion.FolderPaths.SubfolderPattern)}}", "x-widget": "mono" },
-                "failedLocation": { "type": "string", "title": "Failed files: location", "maxLength": 64, "pattern": "{{Escape(Ingestion.FolderPaths.LocationKeyPattern)}}", "x-widget": "folder-location-output" },
-                "failedSubfolder": { "type": "string", "title": "Failed files: subfolder", "maxLength": {{Ingestion.FolderPaths.MaxSubfolderLength}}, "pattern": "{{Escape(Ingestion.FolderPaths.SubfolderPattern)}}", "x-widget": "mono",
-                  "description": "An error file (name.error.json) explains each failure." } },
-              "required": ["sourceLocation", "pattern", "includeSubfolders", "interval", "processedLocation", "failedLocation"] }
+                "processedPath": { "type": "string", "title": "Processed files go to", "maxLength": {{Ingestion.FolderPaths.MaxPathLength}}, "x-widget": "folder-path",
+                  "description": "Must not be inside the source folder when subfolders are included, or the files would be picked up again." },
+                "failedPath": { "type": "string", "title": "Failed files go to", "maxLength": {{Ingestion.FolderPaths.MaxPathLength}}, "x-widget": "folder-path",
+                  "description": "An error file (name.error.json) explains each failure." },
+                "sourceLocation": { "type": "string", "maxLength": 64, "pattern": "{{Escape(Ingestion.FolderPaths.LocationKeyPattern)}}", "x-widget": "legacy" },
+                "sourceSubfolder": { "type": "string", "maxLength": {{Ingestion.FolderPaths.MaxSubfolderLength}}, "pattern": "{{Escape(Ingestion.FolderPaths.SubfolderPattern)}}", "x-widget": "legacy" },
+                "processedLocation": { "type": "string", "maxLength": 64, "pattern": "{{Escape(Ingestion.FolderPaths.LocationKeyPattern)}}", "x-widget": "legacy" },
+                "processedSubfolder": { "type": "string", "maxLength": {{Ingestion.FolderPaths.MaxSubfolderLength}}, "pattern": "{{Escape(Ingestion.FolderPaths.SubfolderPattern)}}", "x-widget": "legacy" },
+                "failedLocation": { "type": "string", "maxLength": 64, "pattern": "{{Escape(Ingestion.FolderPaths.LocationKeyPattern)}}", "x-widget": "legacy" },
+                "failedSubfolder": { "type": "string", "maxLength": {{Ingestion.FolderPaths.MaxSubfolderLength}}, "pattern": "{{Escape(Ingestion.FolderPaths.SubfolderPattern)}}", "x-widget": "legacy" } },
+              "required": ["pattern", "includeSubfolders", "interval"] }
             """,
             """
-            { "sourceLocation": "", "sourceSubfolder": "", "pattern": "*.json", "includeSubfolders": false, "interval": "every-minute",
-              "processedLocation": "", "processedSubfolder": "processed", "failedLocation": "", "failedSubfolder": "failed" }
+            { "sourcePath": "", "pattern": "*.json", "includeSubfolders": false, "interval": "every-minute", "processedPath": "", "failedPath": "" }
             """),
 
         Node(Validate, "Validate data", "process",

@@ -9,11 +9,22 @@ public sealed record FolderRef(string Location, string Subfolder)
     public override string ToString() => Subfolder.Length == 0 ? Location : $"{Location}/{Subfolder}";
 }
 
-/// <summary>The settings of a <c>folder-input</c> node, read from its config.</summary>
+/// <summary>
+/// The settings of a <c>folder-input</c> node, read from its config. Each of the three folders is a typed absolute
+/// path (<c>sourcePath</c>, <c>processedPath</c>, <c>failedPath</c>) or, in workflows saved before paths could be
+/// typed, an approved location key plus subfolder (<c>sourceLocation</c> + <c>sourceSubfolder</c>, and so on).
+/// </summary>
 public sealed record FolderInputSettings(
     FolderRef Source, string Pattern, bool IncludeSubfolders, string Interval, FolderRef Processed, FolderRef Failed)
 {
+    public const string SourceRole = "source";
+    public const string ProcessedRole = "processed";
+    public const string FailedRole = "failed";
+
     public TimeSpan IntervalTime => FolderPaths.Intervals.TryGetValue(Interval, out var t) ? t : TimeSpan.FromMinutes(1);
+
+    /// <summary>The typed path of a role, trimmed, or empty.</summary>
+    public static string TypedPath(JsonElement config, string role) => Text(config, role + "Path");
 
     /// <summary>Null when a required setting is missing (the graph validator reports it).</summary>
     public static FolderInputSettings? Parse(JsonElement config)
@@ -23,21 +34,41 @@ public sealed record FolderInputSettings(
             return null;
         }
 
-        string Text(string name) => config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()!.Trim() : "";
         var include = config.TryGetProperty("includeSubfolders", out var b) && b.ValueKind == JsonValueKind.True;
         var settings = new FolderInputSettings(
-            new FolderRef(Text("sourceLocation"), FolderPaths.NormalizeSubfolder(Text("sourceSubfolder"))),
-            Text("pattern"),
-            include,
-            Text("interval"),
-            new FolderRef(Text("processedLocation"), FolderPaths.NormalizeSubfolder(Text("processedSubfolder"))),
-            new FolderRef(Text("failedLocation"), FolderPaths.NormalizeSubfolder(Text("failedSubfolder"))));
+            Ref(config, SourceRole), Text(config, "pattern"), include, Text(config, "interval"), Ref(config, ProcessedRole), Ref(config, FailedRole));
         return settings.Source.Location.Length == 0 || settings.Pattern.Length == 0
                || settings.Processed.Location.Length == 0 || settings.Failed.Location.Length == 0
             ? null
             : settings;
     }
+
+    /// <summary>The typed paths of a node with the purpose each is used for (source: input; processed and failed: output).</summary>
+    public static IReadOnlyList<TypedPathUse> TypedPaths(JsonElement config)
+    {
+        var uses = new List<TypedPathUse>();
+        foreach (var role in new[] { SourceRole, ProcessedRole, FailedRole })
+        {
+            if (TypedPath(config, role) is { Length: > 0 } path)
+            {
+                uses.Add(new TypedPathUse(role, path, Input: role == SourceRole, Output: role != SourceRole));
+            }
+        }
+
+        return uses;
+    }
+
+    private static FolderRef Ref(JsonElement config, string role) =>
+        TypedPath(config, role) is { Length: > 0 } path
+            ? new FolderRef(FolderPaths.KeyForPath(path), "")
+            : new FolderRef(Text(config, role + "Location"), FolderPaths.NormalizeSubfolder(Text(config, role + "Subfolder")));
+
+    private static string Text(JsonElement config, string name) =>
+        config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()!.Trim() : "";
 }
+
+/// <summary>A path typed into a step and what it is used for.</summary>
+public sealed record TypedPathUse(string Role, string Path, bool Input, bool Output);
 
 /// <summary>
 /// Rules for location keys, subfolders and file patterns. Pure, so the API (design time) and the Worker (run time)
@@ -124,6 +155,72 @@ public static partial class FolderPaths
         }
 
         return null;
+    }
+
+    public const int MaxPathLength = 400;
+
+    /// <summary>
+    /// A typed path as stored: trimmed, no trailing separators, and '/' written as '\' for drive and network paths.
+    /// The same folder typed two ways (with or without a trailing slash) gets the same key.
+    /// </summary>
+    public static string NormalizePath(string path)
+    {
+        var p = path.Trim();
+        var windows = p.StartsWith(@"\\", StringComparison.Ordinal) || (p.Length >= 2 && char.IsAsciiLetter(p[0]) && p[1] == ':');
+        if (windows)
+        {
+            p = p.Replace('/', '\\');
+        }
+
+        return p.Length > 3 ? p.TrimEnd('\\', '/') : p;
+    }
+
+    /// <summary>The key of a typed path: <c>path-</c> and 16 hex characters of the SHA-256 of its normalized text.</summary>
+    public static string KeyForPath(string path) =>
+        "path-" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(NormalizePath(path))))[..16];
+
+    /// <summary>
+    /// Checks only what is true on every operating system: absolute (drive letter, UNC or leading '/'), no '.' or '..'
+    /// parts, no control or reserved characters. The Worker checks the rest where the path lives. Null when fine.
+    /// </summary>
+    public static string? AbsolutePathProblem(string path)
+    {
+        if (path.Length == 0)
+        {
+            return "Required: the absolute path as the Worker's server sees it, such as D:\\Verso\\inbound, \\\\fileserver\\share\\inbound or /mnt/verso/inbound.";
+        }
+
+        if (path.Length > MaxPathLength)
+        {
+            return $"At most {MaxPathLength} characters.";
+        }
+
+        if (path.Any(char.IsControl) || path.IndexOfAny(['<', '>', '"', '|', '?', '*']) >= 0)
+        {
+            return "Contains characters a folder name can't have.";
+        }
+
+        var drive = path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && (path[2] == '\\' || path[2] == '/');
+        if (!drive && !path.StartsWith(@"\\", StringComparison.Ordinal) && !path.StartsWith('/'))
+        {
+            return "Must be absolute: a drive path (D:\\…), a network share (\\\\server\\share\\…) or a path starting with '/'.";
+        }
+
+        if (path.Split('\\', '/').Any(s => s is ".." or "."))
+        {
+            return "No '.' or '..' parts.";
+        }
+
+        return null;
+    }
+
+    /// <summary>Whether files moved into the typed <paramref name="destination"/> would be found again by a scan of <paramref name="source"/>.</summary>
+    public static bool PathWouldRescan(string source, string destination, bool includeSubfolders)
+    {
+        static string Key(string p) => NormalizePath(p).Replace('\\', '/').TrimEnd('/');
+        var (s, d) = (Key(source), Key(destination));
+        return string.Equals(s, d, StringComparison.OrdinalIgnoreCase)
+               || (includeSubfolders && d.StartsWith(s + "/", StringComparison.OrdinalIgnoreCase));
     }
 
     public static bool IsValidFilePattern(string pattern) => pattern.Length is > 0 and <= 100 && FilePatternRegex().IsMatch(pattern);

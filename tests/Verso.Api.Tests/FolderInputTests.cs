@@ -470,6 +470,160 @@ public sealed class FolderInputTests : IDisposable
         Assert.Contains("Not configured", location.Problem, StringComparison.Ordinal);
     }
 
+    // ----- paths typed into the step -----
+
+    private string Dir(string name) => Path.Combine(_root, name);
+
+    private JsonObject TypedTrigger(string? source = null, string? processed = null, string? failed = null) => new()
+    {
+        ["id"] = "trigger", ["type"] = "folder-input", ["title"] = "Typed folder", ["position"] = new JsonObject { ["x"] = 0, ["y"] = 80 },
+        ["config"] = new JsonObject
+        {
+            ["sourcePath"] = source ?? Dir("in"), ["pattern"] = "*.json", ["includeSubfolders"] = false, ["interval"] = "every-minute",
+            ["processedPath"] = processed ?? Dir(Path.Combine("out", "processed")), ["failedPath"] = failed ?? Dir(Path.Combine("out", "failed")),
+        },
+    };
+
+    /// <summary>One iteration of the Worker's loop: report locations and typed paths, then scan and deliver.</summary>
+    private async Task<FolderPassResult> LoopAsync(TimeSpan? clockOffset = null)
+    {
+        await WithDb(db => Ingestion(db, clockOffset).SyncLocationsAsync(CancellationToken.None));
+        return await PassAsync(clockOffset);
+    }
+
+    [Fact]
+    public async Task TypedPaths_PickUpAFile_RunIt_AndMoveItToTheTypedFolders()
+    {
+        var key = await _kit.PublishInvoiceWorkflowAsync(trigger: TypedTrigger()); // no approved location involved
+        Drop("inv-typed.json", ExecutionTestKit.Fixture("invoice/sample.json"));
+
+        await LoopAsync();
+        var row = Assert.Single(await RowsAsync(key));
+        Assert.Equal(FolderFileStatus.Submitted, row.Status);
+        Assert.Equal(FolderPaths.KeyForPath(Dir("in")), row.SourceLocation);
+
+        await RunQueuedExecutionsAsync();
+        await LoopAsync();
+
+        row = Assert.Single(await RowsAsync(key));
+        Assert.Equal((FolderFileStatus.Completed, FolderFileOutcome.Processed), (row.Status, row.Outcome));
+        Assert.Equal(["inv-typed.json"], FilesIn("out/processed"));
+        Assert.Equal("Succeeded", (await _kit.GetExecutionAsync(row.ExecutionId!.Value)).GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Publishing_RecordsEachTypedPath_WithItsPurpose_AndAuditsWhoTypedIt()
+    {
+        await _kit.PublishInvoiceWorkflowAsync(trigger: TypedTrigger());
+
+        var (rows, audit) = await WithDb(async db =>
+        {
+            var keys = new[] { Dir("in"), Dir(Path.Combine("out", "processed")), Dir(Path.Combine("out", "failed")) }.Select(FolderPaths.KeyForPath).ToList();
+            return (await db.TypedFolderPaths.AsNoTracking().Where(p => keys.Contains(p.Key)).ToListAsync(),
+                    await db.AuditEntries.AsNoTracking().Where(a => a.EntityType == FolderPathRegistry.EntityType && keys.Contains(a.EntityId)).ToListAsync());
+        });
+
+        Assert.Equal(3, rows.Count);
+        Assert.Equal((true, false), (rows.Single(r => r.Path == Dir("in")).AllowInput, rows.Single(r => r.Path == Dir("in")).AllowOutput));
+        Assert.Equal((false, true), (rows.Single(r => r.Path.EndsWith("processed", StringComparison.Ordinal)).AllowInput, rows.Single(r => r.Path.EndsWith("processed", StringComparison.Ordinal)).AllowOutput));
+        Assert.Equal(3, audit.Count);
+        Assert.All(audit, a => Assert.Equal(("FolderPathRegistered", "dev.admin"), (a.Action, a.ActorId)));
+        Assert.Contains(audit, a => a.Details!.Contains("\"created\":true", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ATypedFolderThatDoesNotExist_ShowsTheProblemWithItsPath()
+    {
+        var missing = Dir("not-there");
+        var key = await _kit.PublishInvoiceWorkflowAsync(trigger: TypedTrigger(source: missing));
+
+        await LoopAsync();
+
+        var watch = (await StatusAsync(key)).GetProperty("watch");
+        Assert.Equal("Unavailable", watch.GetProperty("lastStatus").GetString());
+        Assert.Contains(missing, watch.GetProperty("lastError").GetString(), StringComparison.OrdinalIgnoreCase); // the path the author typed, not a key
+    }
+
+    [Fact]
+    public async Task TypedPaths_ThatLoopBack_AreRefusedAtDesignTime()
+    {
+        var workflow = await CreateWorkflowWithTriggerAsync(TypedTrigger(processed: Dir("in")));
+
+        using var validate = await _client.PostAsync(new Uri($"/api/v1/workflows/{workflow}/draft/validate", UriKind.Relative), null);
+
+        var issues = (await ExecutionTestKit.ReadAsync(validate)).GetProperty("issues").EnumerateArray().Select(i => i.GetProperty("code").GetString()).ToList();
+        Assert.Contains("folder.destination_scanned", issues);
+    }
+
+    [Fact]
+    public async Task ABadTypedPath_IsRefusedAtDesignTime_AndNothingIsRegistered()
+    {
+        var workflow = await CreateWorkflowWithTriggerAsync(TypedTrigger(source: @"..\..\Windows"));
+
+        using var validate = await _client.PostAsync(new Uri($"/api/v1/workflows/{workflow}/draft/validate", UriKind.Relative), null);
+
+        var issue = (await ExecutionTestKit.ReadAsync(validate)).GetProperty("issues").EnumerateArray()
+            .Single(i => i.GetProperty("code").GetString() == "folder.path_invalid");
+        Assert.Equal("sourcePath", issue.GetProperty("field").GetString());
+        Assert.False(await WithDb(db => db.TypedFolderPaths.AnyAsync(p => p.Path.Contains("Windows"))));
+    }
+
+    [Fact]
+    public async Task TestAccess_WithTypedPaths_IsCheckedByTheWorker()
+    {
+        using var request = await _client.PostAsJsonAsync(new Uri("/api/v1/folder-access-tests", UriKind.Relative), new
+        {
+            targets = new object[]
+            {
+                new { role = "source", path = Dir("in") },
+                new { role = "processed", path = Dir(Path.Combine("out", "new-sub")) }, // created by the check
+            },
+        });
+        Assert.Equal(HttpStatusCode.Accepted, request.StatusCode);
+        var id = (await ExecutionTestKit.ReadAsync(request)).GetProperty("id").GetGuid();
+
+        await WithDb(db => new FolderAccessTestRunner(db, _folders, TimeProvider.System).RunAsync(id, CancellationToken.None));
+
+        using var result = await _client.GetAsync(new Uri($"/api/v1/folder-access-tests/{id}", UriKind.Relative));
+        var test = await ExecutionTestKit.ReadAsync(result);
+        Assert.Equal("Completed", test.GetProperty("status").GetString());
+        Assert.All(test.GetProperty("results").EnumerateArray(), r => Assert.True(r.GetProperty("ok").GetBoolean(), r.ToString()));
+        Assert.True(Directory.Exists(Dir(Path.Combine("out", "new-sub"))));
+        Assert.True(await WithDb(db => db.TypedFolderPaths.AnyAsync(p => p.Path == Dir("in"))));
+    }
+
+    [Fact]
+    public async Task TestAccess_RefusesATypedPathThatIsNotAbsolute()
+    {
+        using var response = await _client.PostAsJsonAsync(new Uri("/api/v1/folder-access-tests", UriKind.Relative),
+            new { targets = new object[] { new { role = "source", path = "relative/folder" } } });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True((await ExecutionTestKit.ReadAsync(response)).GetProperty("errors").TryGetProperty("targets[0].path", out _));
+        Assert.False(await WithDb(db => db.TypedFolderPaths.AnyAsync(p => p.Path == "relative/folder")));
+    }
+
+    [Fact]
+    public async Task TypedPaths_SurviveANewWorkflowVersion_SoUnfinishedFilesCanBeResolved()
+    {
+        var key = await _kit.PublishInvoiceWorkflowAsync(trigger: TypedTrigger());
+        Drop("inv-restart.json", ExecutionTestKit.Fixture("invoice/sample.json"));
+        await LoopAsync();
+        var row = Assert.Single(await RowsAsync(key));
+        await RunQueuedExecutionsAsync();
+
+        // A "restarted" Worker: a fresh adapter that knows nothing but the database.
+        var fresh = new LocalFolderAccess(Options.Create(new FolderAccessOptions()));
+        await WithDb(db => new FolderIngestion(db, fresh, new ExecutionService(db, _jobs, new WorkerUser(), TimeProvider.System, NullLogger<ExecutionService>.Instance),
+            new FolderIngestionOptions { SettleTime = TimeSpan.Zero }, TimeProvider.System, NullLogger<FolderIngestion>.Instance).SyncLocationsAsync(CancellationToken.None));
+        await WithDb(db => new FolderIngestion(db, fresh, new ExecutionService(db, _jobs, new WorkerUser(), TimeProvider.System, NullLogger<ExecutionService>.Instance),
+            new FolderIngestionOptions { SettleTime = TimeSpan.Zero }, TimeProvider.System, NullLogger<FolderIngestion>.Instance).RunOnceAsync(CancellationToken.None));
+
+        row = Assert.Single(await RowsAsync(key));
+        Assert.Equal(FolderFileStatus.Completed, row.Status);
+        Assert.Equal(["inv-restart.json"], FilesIn("out/processed"));
+    }
+
     private async Task<Guid> CreateWorkflowWithTriggerAsync(JsonObject trigger)
     {
         using var create = await _client.PostAsJsonAsync(new Uri("/api/v1/workflows", UriKind.Relative),

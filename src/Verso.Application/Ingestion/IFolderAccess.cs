@@ -54,6 +54,12 @@ public interface IFolderAccess
     /// <summary>Replaces the administrator-managed locations (called by the Worker on every pass; cheap when nothing changed).</summary>
     void SetManagedLocations(IReadOnlyCollection<ManagedFolderPath> locations);
 
+    /// <summary>
+    /// Replaces the paths workflow authors typed into steps (see FolderPathRegistry). They are resolved like locations
+    /// but are not part of <see cref="Locations"/>, which only lists named locations.
+    /// </summary>
+    void SetTypedPaths(IReadOnlyCollection<ManagedFolderPath> paths);
+
     /// <summary>The account this process accesses folders as (e.g. <c>CORP\svc-verso-worker$</c>).</summary>
     string Identity { get; }
 

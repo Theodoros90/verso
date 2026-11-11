@@ -67,7 +67,7 @@ Ask before adding a dependency or changing a version not listed here.
 - Execution states: `Queued → Running → Succeeded | Rejected | Failed`. Rejected = data failed validation (not retryable). Failed = technical error (retryable).
 - Progress: the Worker writes `ExecutionEvent` rows, and an API hosted service relays them to SignalR. SignalR messages are notifications; the REST API is the source of truth.
 - Document storage goes through `IDocumentStore` (configurable). The MVP adapter is the local file system.
-- AI features are deferred. No email, print, ERP, SFTP or banking integrations. Folder input (approved 2026-11-11, docs/adr/0001-folder-input.md) is the one real file integration: the Worker reads only folders approved in its configuration (`FolderInput:Locations`), as its own service identity, and never stores credentials.
+- AI features are deferred. No email, print, ERP, SFTP or banking integrations. Folder input (approved 2026-11-11, docs/adr/0001-folder-input.md) is the one real file integration: the Worker reads folders whose paths workflow authors type into the step (recorded and audited when a workflow is published, optionally limited by `FolderInput:AllowedRoots`) or that are named locations, always as its own service identity, and never stores credentials.
 
 ## Working rules
 

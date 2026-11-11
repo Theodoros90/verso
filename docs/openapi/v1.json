@@ -3297,6 +3297,12 @@
               "null",
               "string"
             ]
+          },
+          "path": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

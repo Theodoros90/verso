@@ -270,57 +270,72 @@ public static class GraphValidator
     }
 
     /// <summary>
-    /// Folder input: each location must be approved for its purpose and enabled, subfolders must stay inside it, and
-    /// processed/failed files must not land where the trigger scans (they would be picked up again).
+    /// Folder input: each of the three folders is a typed absolute path (shape checked here; the Worker validates it
+    /// where it lives) or, in workflows saved before paths could be typed, an approved location with a subfolder that
+    /// stays inside it. Processed and failed files must not land where the trigger scans (they would be picked up again).
     /// </summary>
     private static IEnumerable<WorkflowIssueDto> FolderRules(WorkflowNode node, IReadOnlyDictionary<string, FolderLocationRef> locations)
     {
         var c = node.Config;
         string Text(string name) => c.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()!.Trim() : "";
 
-        foreach (var (field, input, label) in new[]
+        foreach (var (role, input, label, title) in new[]
                  {
-                     ("sourceLocation", true, "source"), ("processedLocation", false, "processed files"), ("failedLocation", false, "failed files"),
+                     ("source", true, "source", "Source folder"), ("processed", false, "processed files", "Processed files"), ("failed", false, "failed files", "Failed files"),
                  })
         {
-            var key = Text(field);
-            if (key.Length == 0)
+            var path = Text(role + "Path");
+            var key = Text(role + "Location");
+            if (path.Length > 0)
             {
-                continue; // reported by the schema check
+                if (Ingestion.FolderPaths.AbsolutePathProblem(path) is { } pathProblem)
+                {
+                    yield return new(Error, "folder.path_invalid", pathProblem, NodeId: node.Id, Field: role + "Path");
+                }
+
+                continue;
             }
 
+            if (key.Length == 0)
+            {
+                yield return new(Error, "config.required", $"{title} is required: type the folder's path.", NodeId: node.Id, Field: role + "Path");
+                continue;
+            }
+
+            // A workflow saved when folders were chosen from approved locations.
             if (!locations.TryGetValue(key, out var location))
             {
-                yield return new(Error, "folder.location_unknown", $"'{key}' isn't an approved location. Choose one from the list.", NodeId: node.Id, Field: field);
+                yield return new(Error, "folder.location_unknown", $"'{key}' isn't an approved location. Type the folder's path instead.", NodeId: node.Id, Field: role + "Location");
             }
             else if (!location.Enabled)
             {
-                yield return new(Error, "folder.location_disabled", $"'{location.Name}' is currently not available on the Worker. Ask an administrator.", NodeId: node.Id, Field: field);
+                yield return new(Error, "folder.location_disabled", $"'{location.Name}' is currently not available on the Worker. Type a path instead, or ask an administrator.", NodeId: node.Id, Field: role + "Location");
             }
             else if (input ? !location.Input : !location.Output)
             {
-                yield return new(Error, "folder.location_purpose", $"'{location.Name}' isn't approved for {label}.", NodeId: node.Id, Field: field);
+                yield return new(Error, "folder.location_purpose", $"'{location.Name}' isn't approved for {label}.", NodeId: node.Id, Field: role + "Location");
             }
-        }
 
-        foreach (var field in new[] { "sourceSubfolder", "processedSubfolder", "failedSubfolder" })
-        {
-            if (Ingestion.FolderPaths.SubfolderProblem(Ingestion.FolderPaths.NormalizeSubfolder(Text(field))) is { } problem)
+            if (Ingestion.FolderPaths.SubfolderProblem(Ingestion.FolderPaths.NormalizeSubfolder(Text(role + "Subfolder"))) is { } problem)
             {
-                yield return new(Error, "folder.subfolder_invalid", problem, NodeId: node.Id, Field: field);
+                yield return new(Error, "folder.subfolder_invalid", problem, NodeId: node.Id, Field: role + "Subfolder");
             }
         }
 
+        var include = c.TryGetProperty("includeSubfolders", out var inc) && inc.ValueKind == JsonValueKind.True;
+        const string Again = "Files moved here would be picked up again. Choose a folder outside the scanned folder";
         if (Ingestion.FolderInputSettings.Parse(c) is { } settings)
         {
-            foreach (var (destination, field) in new[] { (settings.Processed, "processedSubfolder"), (settings.Failed, "failedSubfolder") })
+            foreach (var (role, destination) in new[] { ("processed", settings.Processed), ("failed", settings.Failed) })
             {
-                if (Ingestion.FolderPaths.WouldRescan(settings.Source, destination, settings.IncludeSubfolders))
+                var typed = Text("sourcePath").Length > 0 && Text(role + "Path").Length > 0;
+                var loops = typed
+                    ? Ingestion.FolderPaths.PathWouldRescan(Text("sourcePath"), Text(role + "Path"), include)
+                    : Ingestion.FolderPaths.WouldRescan(settings.Source, destination, include);
+                if (loops)
                 {
-                    yield return new(Error, "folder.destination_scanned",
-                        "Files moved here would be picked up again. Choose a subfolder outside the scanned folder" +
-                        (settings.IncludeSubfolders ? " (subfolders are included)." : "."),
-                        NodeId: node.Id, Field: field);
+                    yield return new(Error, "folder.destination_scanned", Again + (include ? " (subfolders are included)." : "."),
+                        NodeId: node.Id, Field: Text(role + "Path").Length > 0 ? role + "Path" : role + "Subfolder");
                 }
             }
         }

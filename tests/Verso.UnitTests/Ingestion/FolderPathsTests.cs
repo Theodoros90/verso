@@ -90,4 +90,42 @@ public sealed class FolderPathsTests
         using var config = JsonDocument.Parse("""{ "sourceLocation": "", "pattern": "*.json", "processedLocation": "out", "failedLocation": "out" }""");
         Assert.Null(FolderInputSettings.Parse(config.RootElement));
     }
+
+    [Fact]
+    public void TheSameFolder_TypedTwoWays_HasOneKey()
+    {
+        var key = FolderPaths.KeyForPath(@"D:\Invoices\in");
+        Assert.Equal(key, FolderPaths.KeyForPath(@"D:\Invoices\in\"));
+        Assert.Equal(key, FolderPaths.KeyForPath("D:/Invoices/in"));
+        Assert.Equal(key, FolderPaths.KeyForPath(@"  D:\Invoices\in  "));
+        Assert.NotEqual(key, FolderPaths.KeyForPath(@"D:\Invoices\out"));
+        Assert.Matches(FolderPaths.LocationKeyPattern, key);
+        Assert.Equal(21, key.Length);
+    }
+
+    [Theory]
+    [InlineData(@"D:\a\in", @"d:\A\IN\", false, true)]
+    [InlineData(@"D:\a\in", @"D:\a\in\done", true, true)]
+    [InlineData(@"D:\a\in", @"D:\a\in\done", false, false)]
+    [InlineData(@"D:\a\in", @"D:\a\in-done", true, false)]
+    [InlineData("/mnt/in", "/mnt/in/sub", true, true)]
+    [InlineData(@"\\srv\share\in", @"\\srv\share\out", true, false)]
+    public void PathWouldRescan(string source, string destination, bool include, bool expected) =>
+        Assert.Equal(expected, FolderPaths.PathWouldRescan(source, destination, include));
+
+    [Fact]
+    public void Settings_ReadTypedPaths_AndTheirPurposes()
+    {
+        using var config = JsonDocument.Parse("""
+            { "sourcePath": "D:\\in", "pattern": "*.json", "includeSubfolders": false, "interval": "hourly",
+              "processedPath": "D:\\done", "failedPath": "D:\\failed" }
+            """);
+
+        var settings = FolderInputSettings.Parse(config.RootElement)!;
+
+        Assert.Equal(new FolderRef(FolderPaths.KeyForPath(@"D:\in"), ""), settings.Source);
+        Assert.Equal(TimeSpan.FromHours(1), settings.IntervalTime);
+        var uses = FolderInputSettings.TypedPaths(config.RootElement);
+        Assert.Equal([("source", true, false), ("processed", false, true), ("failed", false, true)], uses.Select(u => (u.Role, u.Input, u.Output)));
+    }
 }

@@ -13,7 +13,8 @@ public interface IFolderAccessJobs
 }
 
 /// <param name="Role"><c>source</c> (read and move files out), <c>processed</c> or <c>failed</c> (create files).</param>
-public sealed record FolderAccessTargetRequest(string? Role, string? Location, string? Subfolder);
+/// <param name="Path">A typed absolute path (used instead of Location and Subfolder).</param>
+public sealed record FolderAccessTargetRequest(string? Role, string? Location, string? Subfolder, string? Path = null);
 
 public sealed record FolderAccessTestRequest(IReadOnlyList<FolderAccessTargetRequest>? Targets);
 
@@ -56,10 +57,31 @@ public sealed class FolderAccessTests(IVersoDbContext db, IFolderAccessJobs jobs
         var locations = await db.FolderLocations.AsNoTracking().ToDictionaryAsync(l => l.Key, StringComparer.Ordinal, ct);
         var errors = new Dictionary<string, string[]>();
         var accepted = new List<FolderAccessTargetDto>();
+        var typedUses = new List<TypedPathUse>();
         for (var i = 0; i < targets.Count; i++)
         {
             var t = targets[i];
             var role = t?.Role ?? "";
+            if (t?.Path?.Trim() is { Length: > 0 } typed)
+            {
+                // A path typed into the step: checked for shape here, resolved and validated by the Worker.
+                if (role is not (SourceRole or ProcessedRole or FailedRole))
+                {
+                    errors[$"targets[{i}].role"] = ["One of: source, processed, failed."];
+                }
+                else if (FolderPaths.AbsolutePathProblem(typed) is { } pathProblem)
+                {
+                    errors[$"targets[{i}].path"] = [pathProblem];
+                }
+                else
+                {
+                    typedUses.Add(new TypedPathUse(role, typed, Input: role == SourceRole, Output: role != SourceRole));
+                    accepted.Add(new FolderAccessTargetDto(role, FolderPaths.KeyForPath(typed), ""));
+                }
+
+                continue;
+            }
+
             var key = t?.Location?.Trim() ?? "";
             var subfolder = FolderPaths.NormalizeSubfolder(t?.Subfolder);
             if (role is not (SourceRole or ProcessedRole or FailedRole))
@@ -89,6 +111,7 @@ public sealed class FolderAccessTests(IVersoDbContext db, IFolderAccessJobs jobs
             return AppError.Validation(errors);
         }
 
+        await new FolderPathRegistry(db, user, clock).RegisterAsync(typedUses, ct); // saved with the request below
         var now = clock.GetUtcNow();
         var test = new FolderAccessTest(JsonSerializer.Serialize(accepted, Json), user.Id, now);
         db.FolderAccessTests.Add(test);
@@ -136,6 +159,8 @@ public sealed class FolderAccessTestRunner(IVersoDbContext db, IFolderAccess fol
 
         test.Start();
         await db.SaveChangesAsync(ct);
+
+        await FolderPathRegistry.LoadAllAsync(db, folders, ct); // the loop may not have seen a path typed a moment ago
 
         var targets = JsonSerializer.Deserialize<List<FolderAccessTargetDto>>(test.Targets, FolderAccessTests.Json) ?? [];
         var results = new List<FolderAccessResultDto>();

@@ -3,7 +3,6 @@ import { useId } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Field, Input, Select, Switch, Textarea } from '@/components/ui/form'
-import type { FolderLocationDto } from '@/lib/api/generated'
 import { cn } from '@/lib/utils'
 
 import { jsonObjectProblem } from '../model/payloadSchema'
@@ -18,7 +17,7 @@ export interface FieldSchema {
   items?: FieldSchema
   enum?: string[]
   'x-enumLabels'?: string[]
-  'x-widget'?: 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-location-input' | 'folder-location-output'
+  'x-widget'?: 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy'
   maxItems?: number
 }
 
@@ -37,8 +36,6 @@ export interface FormContext {
   /** Server issues for a settings path, e.g. `fileName` or `metadata[0].key`. */
   errorsFor: (field: string) => string[]
   readOnly: boolean
-  /** Approved folder locations (folder-input steps). */
-  folderLocations?: FolderLocationDto[]
 }
 
 type Value = Record<string, unknown>
@@ -56,7 +53,7 @@ export function SchemaForm({
   ctx: FormContext
 }) {
   const listId = useId()
-  const props = Object.entries(schema.properties ?? {})
+  const props = Object.entries(schema.properties ?? {}).filter(([, f]) => f['x-widget'] !== 'legacy') // legacy settings stay in the saved workflow but aren't shown
   if (props.length === 0) return <p className="text-[12.5px] text-ink-3">This step has no settings.</p>
 
   const set = (name: string, v: unknown, key = name) => onChange({ ...value, [name]: v }, key)
@@ -185,26 +182,6 @@ function StringInput({
     )
   }
 
-  if (field['x-widget'] === 'folder-location-input' || field['x-widget'] === 'folder-location-output') {
-    const input = field['x-widget'] === 'folder-location-input'
-    const all = ctx.folderLocations ?? []
-    const usable = all.filter((l) => (input ? l.input : l.output))
-    const current = all.find((l) => l.key === value)
-    return (
-      <Select {...common} value={value} onChange={(e) => onChange(e.target.value, path)}>
-        <option value="">{usable.length === 0 ? 'No approved locations yet' : 'Choose an approved location…'}</option>
-        {value && !usable.some((l) => l.key === value) && (
-          <option value={value}>{current ? `${current.name} (not approved for this)` : `Unknown location (${value})`}</option>
-        )}
-        {usable.map((l) => (
-          <option key={l.key} value={l.key} disabled={!l.enabled}>
-            {l.name} ({l.key}){l.enabled ? '' : ', unavailable'}
-          </option>
-        ))}
-      </Select>
-    )
-  }
-
   if (field['x-widget'] === 'template-version') {
     const template = ctx.templates.find((t) => t.id === parent.templateId)
     const versions = template?.publishedVersions ?? []
@@ -237,13 +214,13 @@ function StringInput({
     )
   }
 
-  const mono = field['x-widget'] === 'data-path' || field['x-widget'] === 'pattern' || field['x-widget'] === 'endpoint-path' || field['x-widget'] === 'mono'
+  const mono = field['x-widget'] === 'data-path' || field['x-widget'] === 'pattern' || field['x-widget'] === 'endpoint-path' || field['x-widget'] === 'mono' || field['x-widget'] === 'folder-path'
   return (
     <Input
       {...common}
       value={value}
       list={field['x-widget'] === 'data-path' ? listId : undefined}
-      placeholder={field['x-widget'] === 'data-path' ? 'invoice.number' : undefined}
+      placeholder={field['x-widget'] === 'data-path' ? 'invoice.number' : field['x-widget'] === 'folder-path' ? 'D:\\Invoices\\in   or   \\\\fileserver\\share\\in' : undefined}
       className={cn(mono && 'font-mono text-[12.5px]')}
       spellCheck={!mono}
       onChange={(e) => onChange(e.target.value, path)}

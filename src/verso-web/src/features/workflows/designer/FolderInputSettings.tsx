@@ -5,7 +5,7 @@ import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/api/client'
 import { folderInputApi } from '@/lib/api/folderInput'
-import type { FolderAccessTargetRequest, FolderAccessTestDto, FolderInputStatusDto, FolderLocationDto } from '@/lib/api/generated'
+import type { FolderAccessTargetRequest, FolderAccessTestDto, FolderInputStatusDto } from '@/lib/api/generated'
 import { cn } from '@/lib/utils'
 
 import { SchemaForm, type FieldSchema } from './SchemaForm'
@@ -18,17 +18,23 @@ const ROLE_LABELS: Record<string, string> = { source: 'Source folder', processed
 export const TEST_POLL_MS = 1000
 const TEST_POLL_LIMIT = 30
 
-/** The folders an access test should check, from the step's settings (only those with a location chosen). */
+/** The folders an access test should check: the typed paths (only those filled in). */
 export function accessTargets(config: Config): FolderAccessTargetRequest[] {
-  const text = (k: string) => (typeof config[k] === 'string' ? (config[k] as string) : '')
+  const text = (k: string) => (typeof config[k] === 'string' ? (config[k] as string).trim() : '')
   return (['source', 'processed', 'failed'] as const)
-    .map((role) => ({ role, location: text(`${role}Location`), subfolder: text(`${role}Subfolder`) }))
-    .filter((t) => t.location !== '')
+    .map((role) => ({ role, location: null, subfolder: null, path: text(`${role}Path`) }))
+    .filter((t) => t.path !== '')
+}
+
+/** A workflow saved when folders were chosen from approved locations still works; typing a path replaces that choice. */
+export function usesApprovedLocations(config: Config): boolean {
+  return ['source', 'processed', 'failed'].some((r) => typeof config[`${r}Location`] === 'string' && config[`${r}Location`] !== '' && !config[`${r}Path`])
 }
 
 /**
- * Settings of the Folder input step: approved locations (chosen from what administrators configured on the Worker,
- * never typed paths), "Test access" (run by the Worker under its service identity), and the folder's activity.
+ * Settings of the Folder input step: the folders are typed as absolute paths (as the Worker's server sees them),
+ * "Test access" is run by the Worker under its service identity, and the folder's activity shows scan errors and
+ * recent files.
  */
 export function FolderInputSettings({
   schema,
@@ -37,7 +43,6 @@ export function FolderInputSettings({
   errorsFor,
   readOnly,
   canTest,
-  locations,
   workflowId,
   published,
 }: {
@@ -48,19 +53,22 @@ export function FolderInputSettings({
   readOnly: boolean
   /** Workflow authors may run access tests, also on a published version. */
   canTest: boolean
-  locations: FolderLocationDto[] | undefined
   workflowId: string
   /** The workflow has a published version (only then does the Worker scan). */
   published: boolean
 }) {
   return (
     <div className="flex flex-col gap-5">
-      {locations !== undefined && locations.length === 0 && (
+      {usesApprovedLocations(value) && (
         <p className="rounded-md bg-warn-soft px-2.5 py-1.5 text-[12.5px] text-warn">
-          No folders are approved yet. An administrator adds them to the Worker's configuration (FolderInput:Locations).
+          This step still uses folders chosen from approved locations, and keeps working. Type a path below to replace one.
         </p>
       )}
-      <SchemaForm schema={schema} value={value} onChange={onChange} ctx={{ templates: [], dataPaths: [], errorsFor, readOnly, folderLocations: locations }} />
+      <SchemaForm schema={schema} value={value} onChange={onChange} ctx={{ templates: [], dataPaths: [], errorsFor, readOnly }} />
+      <p className="text-xs text-ink-3">
+        Paths are as the Worker’s server sees them. The Worker reaches the folders with its own service account, so give that account Modify access to each. No
+        passwords are stored.
+      </p>
       {canTest && <AccessTest targets={accessTargets(value)} />}
       {published && <FolderActivity workflowId={workflowId} />}
     </div>
@@ -100,7 +108,7 @@ function AccessTest({ targets }: { targets: FolderAccessTargetRequest[] }) {
         <Button size="sm" onClick={run} disabled={running || targets.length === 0}>
           {running ? <LoaderCircle className="animate-spin" /> : <FolderCheck />} Test access
         </Button>
-        <span className="text-xs text-ink-3">{targets.length === 0 ? 'Choose the locations first.' : 'Checked by the Worker, as its service account.'}</span>
+        <span className="text-xs text-ink-3">{targets.length === 0 ? 'Type the folder paths first.' : 'Checked by the Worker, as its service account.'}</span>
       </div>
       {error && <p className="text-[12.5px] text-err">{error}</p>}
       {test?.status === 'Failed' && <p className="text-[12.5px] text-err">{test.error}</p>}

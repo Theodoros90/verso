@@ -135,40 +135,7 @@ public sealed class FolderLocationAdmin(IVersoDbContext db, ICurrentUser user, T
         return Result.Success(true);
     }
 
-    /// <summary>
-    /// Checks only what is true on every operating system: absolute (drive letter, UNC or leading '/'), no '.' or '..'
-    /// parts, no control or reserved characters. The Worker checks the rest where the path lives.
-    /// </summary>
-    public static string? PathProblem(string path)
-    {
-        if (path.Length == 0)
-        {
-            return "Required: the absolute path as the Worker's server sees it, such as D:\\Verso\\inbound, \\\\fileserver\\share\\inbound or /mnt/verso/inbound.";
-        }
-
-        if (path.Length > ManagedFolderLocation.MaxPathLength)
-        {
-            return $"At most {ManagedFolderLocation.MaxPathLength} characters.";
-        }
-
-        if (path.Any(char.IsControl) || path.IndexOfAny(['<', '>', '"', '|', '?', '*']) >= 0)
-        {
-            return "Contains characters a folder name can't have.";
-        }
-
-        var drive = path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && (path[2] == '\\' || path[2] == '/');
-        if (!drive && !path.StartsWith(@"\\", StringComparison.Ordinal) && !path.StartsWith('/'))
-        {
-            return "Must be absolute: a drive path (D:\\…), a network share (\\\\server\\share\\…) or a path starting with '/'.";
-        }
-
-        if (path.Split('\\', '/').Any(s => s is ".." or "."))
-        {
-            return "No '.' or '..' parts.";
-        }
-
-        return null;
-    }
+    public static string? PathProblem(string path) => FolderPaths.AbsolutePathProblem(path);
 
     private void Audit(string action, string key, DateTimeOffset now, object details) =>
         db.AuditEntries.Add(AuditEntry.Record(

@@ -185,6 +185,7 @@ export interface FolderAccessTargetRequest {
   role: string | null
   location: string | null
   subfolder: string | null
+  path?: string | null
 }
 
 export interface FolderAccessTestDto {

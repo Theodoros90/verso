@@ -157,29 +157,36 @@ The API never runs Chromium, and the OpenAPI document isn't served outside Devel
 3. Submit `tests/fixtures/invoice/sample.json` to a published test workflow: **Succeeded** within seconds, and the download matches its SHA-256 (the API checks it).
 4. The Audit trail shows the submission and the download.
 
-### B7. Folder input (approved locations)
+### B7. Folder input
 
-The `folder-input` step ([ADR 0001](adr/0001-folder-input.md)) makes the **Worker** read files from folders and move them afterwards. Only folders approved here can be used. Workflow designers pick them by key and may add a relative subfolder, but never type a server path.
+The `folder-input` step ([ADR 0001](adr/0001-folder-input.md)) makes the **Worker** read files from folders and move them afterwards. **Workflow authors type the folder paths in the step** (source, processed, failed), as the Worker's server sees them. There is no approval step: the safety lies in what the Worker's own account can reach, in the audit trail (each new path is recorded with who typed it, `FolderPathRegistered`), and optionally in `AllowedRoots` (step 2). Named locations (steps 4 and 5) are optional; they remain for older workflows and for folders an administrator wants to manage centrally.
 
-1. **Create the folders** on a local disk or a file server, for example `\fileserver\verso\ap-inbound` (where senders drop files) and `\fileserver\verso\ap-results` (processed and failed files). Never approve a drive or share root.
-2. **Grant the Worker's service account** (for example the gMSA `CORP\svc-verso-worker$`) **Modify** on source folders: Verso moves files into a `.verso-inflight` subfolder, so read-only isn't enough. Grant **Modify** on output folders too: it creates subfolders and files. On a share, grant both share and NTFS permissions. The API's account needs no access. No passwords are stored anywhere in Verso: the Worker uses its own identity. On **Linux**, mount the share with the OS (for example in `/etc/fstab`, with a root-only credentials file) and approve the mount path, for example `/mnt/verso/ap-inbound`.
-3. **Approve the locations** in the Worker's configuration (`appsettings.Production.json` or service environment variables). Keys are 2–64 lower-case letters, digits and `-`:
+1. **Create the folders** on a local disk or a file server, for example `\\fileserver\verso\ap-inbound` (where senders drop files) and `\\fileserver\verso\ap-results` (processed and failed files). Never use a drive or share root.
+2. **Grant the Worker's service account** (for example the gMSA `CORP\svc-verso-worker$`) **Modify** on source folders: Verso moves files into a `.verso-inflight` subfolder, so read-only isn't enough. Grant **Modify** on output folders too: it creates subfolders and files. On a share, grant both share and NTFS permissions. The API's account needs no access. No passwords are stored anywhere in Verso: the Worker uses its own identity. On **Linux**, mount the share with the OS (for example in `/etc/fstab`, with a root-only credentials file) and type the mount path, for example `/mnt/verso/ap-inbound`. Typed paths work for any folder that account can reach, so grant it only the folders Verso should use.
+3. **Recommended: limit where typed paths may point.** Set `FolderInput:AllowedRoots` on every Worker, for example:
+
+   ```json
+   "FolderInput": {
+     "AllowedRoots": [ "\\\\fileserver\\verso", "D:\\Verso" ]
+   }
+   ```
+
+   Typed paths and administrator-managed locations must then lie inside one of those folders; anything else is reported as a scan error ("isn't inside a folder this server allows…"). Locations in the Worker's own configuration (step 4) are not limited by it. Without `AllowedRoots`, any folder the Worker's account can reach can be typed.
+4. **Optional: named locations in the Worker's configuration** (`appsettings.Production.json` or service environment variables). Keys are 2–64 lower-case letters, digits and `-`. Older workflows that chose an approved location keep using them, and they can be selected by `location` in access tests:
 
    ```json
    "FolderInput": {
      "Locations": {
-       "ap-inbound": { "Name": "AP inbound (file server)", "Path": "\\fileserver\verso\ap-inbound", "Input": true },
-       "ap-results": { "Name": "AP results (file server)", "Path": "\\fileserver\verso\ap-results", "Output": true }
+       "ap-inbound": { "Name": "AP inbound (file server)", "Path": "\\\\fileserver\\verso\\ap-inbound", "Input": true },
+       "ap-results": { "Name": "AP results (file server)", "Path": "\\\\fileserver\\verso\\ap-results", "Output": true }
      }
    }
    ```
 
-   Optional: `PollInterval` (default `00:00:15`), `SettleTime` (`00:00:10`), `MaxFileBytes` (1048576). **Every Worker must have the same locations**, because a file may be handled by any Worker.
-
-   **Or add them in the web app.** An Admin can open **Folder locations** in the sidebar (Govern) and add, change, test and remove locations by typing the path, with no configuration file or restart. The path is as the Worker's server sees it. The Worker reads it from the database within about 15 seconds and shows the result in the table's Status column. Every change is audited. To limit what an administrator can approve this way, set `FolderInput:AllowedRoots` on every Worker, for example `"AllowedRoots": ["\\fileserver\verso", "D:\Verso"]`: managed paths must then lie inside one of those folders (locations in the Worker's own configuration are not limited). Without `AllowedRoots`, an Admin can approve any folder the Worker's account can reach, so grant that account only what it needs.
-4. **Restart the Worker.** It reports the locations (key, name, purpose; never the path) at startup and every 5 minutes. A location with an invalid path is listed as unavailable with the reason, and the Worker log shows it. Locations removed from the configuration are disabled, not deleted.
-5. In the workflow designer, choose the locations on the Folder input step and press **Test access**. The Worker checks each folder as its own account and shows the account it used.
-6. **Tell senders the handoff rule:** write the file under a temporary name (for example `inv-1.json.tmp`) and rename it when complete. Leave `.verso-inflight` alone.
+   Optional: `PollInterval` (default `00:00:15`), `SettleTime` (`00:00:10`), `MaxFileBytes` (1048576). **Every Worker must have the same configuration**, because a file may be handled by any Worker. Restart the Worker after changing it.
+5. **Optional: manage named locations in the web app.** An Admin can open **Folder locations** (Govern) and add, change, test and remove locations by typing the path, with no configuration file or restart. The Worker reads them within about 15 seconds. Every change is audited.
+6. **In the workflow designer**, type the three paths on the Folder input step and press **Test access**. The Worker checks each folder as its own account and shows the account it used. Publishing records the typed paths so the Worker can resolve them (also after restarts and newer workflow versions); each new path is audited.
+7. **Tell senders the handoff rule:** write the file under a temporary name (for example `inv-1.json.tmp`) and rename it when complete. Leave `.verso-inflight` alone.
 
 ---
 

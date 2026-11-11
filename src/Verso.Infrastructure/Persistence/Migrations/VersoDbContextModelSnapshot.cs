@@ -725,6 +725,37 @@ namespace Verso.Infrastructure.Persistence.Migrations
                     b.ToTable("ManagedFolderLocations", "ingestion");
                 });
 
+            modelBuilder.Entity("Verso.Domain.Ingestion.TypedFolderPath", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<bool>("AllowInput")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("AllowOutput")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("FirstRegisteredAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("FirstRegisteredBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("TypedFolderPaths", "ingestion");
+                });
+
             modelBuilder.Entity("Verso.Domain.Templates.PdfPreview", b =>
                 {
                     b.Property<Guid>("Id")

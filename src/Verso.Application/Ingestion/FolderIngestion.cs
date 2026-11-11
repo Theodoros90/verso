@@ -80,6 +80,7 @@ public sealed partial class FolderIngestion(
         var now = clock.GetUtcNow();
         var managed = await db.ManagedFolderLocations.AsNoTracking().ToListAsync(ct);
         folders.SetManagedLocations([.. managed.Where(m => !m.Removed).Select(m => new ManagedFolderPath(m.Key, m.Name, m.Path, m.AllowInput, m.AllowOutput))]);
+        await FolderPathRegistry.LoadIntoAsync(db, folders, ct); // paths typed into steps
         var removed = managed.Where(m => m.Removed).Select(m => m.Key).ToHashSet(StringComparer.Ordinal);
 
         var configured = folders.Locations.ToDictionary(l => l.Key, StringComparer.Ordinal);

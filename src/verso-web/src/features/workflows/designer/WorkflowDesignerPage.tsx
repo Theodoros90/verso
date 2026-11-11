@@ -21,8 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/form'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/lib/api/client'
-import { folderInputApi } from '@/lib/api/folderInput'
-import type { FolderLocationDto, NodeTypeDto, WorkflowDto, WorkflowIssueDto, WorkflowVersionDto } from '@/lib/api/generated'
+import type { NodeTypeDto, WorkflowDto, WorkflowIssueDto, WorkflowVersionDto } from '@/lib/api/generated'
 import { templatesApi } from '@/lib/api/templates'
 import { workflowsApi } from '@/lib/api/workflows'
 import { inferSchema, scalarPaths, schemaFields } from '@/features/templates/model/schema'
@@ -135,7 +134,6 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
   const [banner, setBanner] = useState<Banner>(flash ? { tone: 'ok', message: flash } : null)
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({})
   const [templates, setTemplates] = useState<TemplateOption[]>([])
-  const [folderLocations, setFolderLocations] = useState<FolderLocationDto[] | undefined>(undefined)
   const [templatePaths, setDataPaths] = useState<string[]>([])
   const [templateSampleData, setTemplateSampleData] = useState<unknown>(undefined)
   const dragOrigin = useRef<WorkflowDefinition | null>(null)
@@ -162,15 +160,6 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
       controller.abort()
     }
   }, [def, workflow.id, readOnly])
-
-  // ---------- approved folder locations (folder-input steps), as the Worker reported them ----------
-  const hasFolderInput = def.nodes.some((n) => n.type === 'folder-input')
-  useEffect(() => {
-    if (!hasFolderInput) return
-    const controller = new AbortController()
-    folderInputApi.locations(controller.signal).then(setFolderLocations).catch(() => {})
-    return () => controller.abort()
-  }, [hasFolderInput])
 
   // ---------- templates for the picker, and data paths for field suggestions ----------
   useEffect(() => {
@@ -610,7 +599,6 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
             dataPaths={dataPaths}
             workflowKey={workflow.key}
             templateSample={templateSample}
-            folderLocations={folderLocations}
             workflowId={workflow.id}
             published={workflow.latestPublishedVersion != null}
             canTest={canEdit}
@@ -648,7 +636,6 @@ function NodeSettings({
   dataPaths,
   workflowKey,
   templateSample,
-  folderLocations,
   workflowId,
   published,
   canTest,
@@ -663,7 +650,6 @@ function NodeSettings({
   dataPaths: string[]
   workflowKey: string
   templateSample?: TemplateSample
-  folderLocations?: FolderLocationDto[]
   workflowId: string
   published: boolean
   canTest: boolean
@@ -716,7 +702,6 @@ function NodeSettings({
             errorsFor={fieldErrors}
             readOnly={readOnly}
             canTest={canTest}
-            locations={folderLocations}
             workflowId={workflowId}
             published={published}
           />

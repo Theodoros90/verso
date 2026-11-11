@@ -270,6 +270,10 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
                 Extensions: new Dictionary<string, object?> { ["issues"] = issues });
         }
 
+        // Paths typed into Folder input steps are recorded (and audited) so the Worker can resolve them; same save as the publish.
+        await new Ingestion.FolderPathRegistry(db, user, clock).RegisterAsync(
+            parsed.Nodes.Where(n => n.Type == NodeCatalog.FolderInput).SelectMany(n => Ingestion.FolderInputSettings.TypedPaths(n.Config)), ct);
+
         var now = clock.GetUtcNow();
         var published = workflow.Publish(CanonicalJson.Sha256Hex(draft.Definition), user.Id, now);
         db.SetOriginalRowVersion(draft, expected);

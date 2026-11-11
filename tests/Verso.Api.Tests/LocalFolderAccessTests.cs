@@ -353,6 +353,67 @@ public sealed class LocalFolderAccessTests : IDisposable
     }
 
     [Fact]
+    public void TypedPaths_Resolve_ButAreNotListedAsLocations_AndMessagesShowThePath()
+    {
+        var typed = Path.Combine(_root, "typed");
+        Directory.CreateDirectory(typed);
+        var key = Verso.Application.Ingestion.FolderPaths.KeyForPath(typed);
+        _folders.SetTypedPaths([new ManagedFolderPath(key, typed, typed, Input: true, Output: false)]);
+
+        Assert.DoesNotContain(_folders.Locations, l => l.Key == key); // named locations only
+        Write("typed/a.json");
+        Assert.Equal(["a.json"], _folders.List(new FolderRef(key, ""), "*.json", false, TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow, 10).Select(f => f.FileName));
+
+        Directory.Delete(typed, recursive: true);
+        var ex = Assert.Throws<FolderException>(() => _folders.List(new FolderRef(key, ""), "*.json", false, TimeSpan.Zero, DateTimeOffset.UtcNow, 10));
+        Assert.Equal(FolderErrors.NotFound, ex.Code);
+        Assert.Contains(typed, ex.Message, StringComparison.OrdinalIgnoreCase); // the author typed it, so the message names it, not the key
+        Assert.DoesNotContain("path-", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TypedPaths_AreCheckedLikeAnyLocation()
+    {
+        var wrongPurpose = Path.Combine(_root, "outonly");
+        Directory.CreateDirectory(wrongPurpose);
+        var bad = Verso.Application.Ingestion.FolderPaths.KeyForPath(@"relative\folder");
+        var outOnly = Verso.Application.Ingestion.FolderPaths.KeyForPath(wrongPurpose);
+        _folders.SetTypedPaths(
+        [
+            new ManagedFolderPath(bad, @"relative\folder", @"relative\folder", Input: true, Output: false),
+            new ManagedFolderPath(outOnly, wrongPurpose, wrongPurpose, Input: false, Output: true),
+        ]);
+
+        Assert.Equal(FolderErrors.Misconfigured, Assert.Throws<FolderException>(() =>
+            _folders.List(new FolderRef(bad, ""), "*", false, TimeSpan.Zero, DateTimeOffset.UtcNow, 1)).Code);
+        Assert.Equal(FolderErrors.Misconfigured, Assert.Throws<FolderException>(() =>
+            _folders.List(new FolderRef(outOnly, ""), "*", false, TimeSpan.Zero, DateTimeOffset.UtcNow, 1)).Code);
+        Assert.All(_folders.Test(new FolderRef(outOnly, ""), FolderAccessMode.Output), c => Assert.True(c.Ok, c.Message));
+    }
+
+    [Fact]
+    public void AllowedRoots_AlsoLimitTypedPaths()
+    {
+        var allowed = Path.Combine(_root, "allowed");
+        var elsewhere = Path.Combine(_root, "elsewhere");
+        Directory.CreateDirectory(Path.Combine(allowed, "ap"));
+        Directory.CreateDirectory(elsewhere);
+        var folders = new LocalFolderAccess(Options.Create(new FolderAccessOptions { AllowedRoots = [allowed] }));
+        var inside = Verso.Application.Ingestion.FolderPaths.KeyForPath(Path.Combine(allowed, "ap"));
+        var outside = Verso.Application.Ingestion.FolderPaths.KeyForPath(elsewhere);
+        folders.SetTypedPaths(
+        [
+            new ManagedFolderPath(inside, Path.Combine(allowed, "ap"), Path.Combine(allowed, "ap"), Input: true, Output: false),
+            new ManagedFolderPath(outside, elsewhere, elsewhere, Input: true, Output: false),
+        ]);
+
+        Assert.Empty(folders.List(new FolderRef(inside, ""), "*", false, TimeSpan.Zero, DateTimeOffset.UtcNow, 1));
+        var ex = Assert.Throws<FolderException>(() => folders.List(new FolderRef(outside, ""), "*", false, TimeSpan.Zero, DateTimeOffset.UtcNow, 1));
+        Assert.Equal(FolderErrors.Misconfigured, ex.Code);
+        Assert.Contains("AllowedRoots", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void IsSameOrInside_ComparesResolvedPaths()
     {
         var folders = Create(new()

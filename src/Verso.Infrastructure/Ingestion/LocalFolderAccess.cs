@@ -47,7 +47,7 @@ public sealed class LocalFolderAccess : IFolderAccess
 
     private static readonly StringComparison PathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
-    private sealed record Entry(FolderLocationOptions Options, string? Root, string? Problem, bool Managed);
+    private sealed record Entry(FolderLocationOptions Options, string? Root, string? Problem, bool Managed, bool Typed = false);
 
     /// <summary>The locations in effect: configured ones plus managed ones. Replaced as a whole, so readers never see a half-built set.</summary>
     private sealed record Snapshot(Dictionary<string, Entry> Map, IReadOnlyList<ConfiguredFolderLocation> List);
@@ -55,6 +55,7 @@ public sealed class LocalFolderAccess : IFolderAccess
     private readonly Dictionary<string, Entry> _configured = new(StringComparer.Ordinal);
     private readonly IReadOnlyList<string> _allowedRoots;
     private IReadOnlyCollection<ManagedFolderPath> _managed = [];
+    private IReadOnlyCollection<ManagedFolderPath> _typed = [];
     private volatile Snapshot _snapshot;
 
     public LocalFolderAccess(IOptions<FolderAccessOptions> options)
@@ -90,6 +91,19 @@ public sealed class LocalFolderAccess : IFolderAccess
         _snapshot = Build();
     }
 
+    public void SetTypedPaths(IReadOnlyCollection<ManagedFolderPath> paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        var ordered = paths.OrderBy(l => l.Key, StringComparer.Ordinal).ToList();
+        if (ordered.SequenceEqual(_typed.OrderBy(l => l.Key, StringComparer.Ordinal)))
+        {
+            return; // nothing changed since the last pass
+        }
+
+        _typed = ordered;
+        _snapshot = Build();
+    }
+
     private Snapshot Build()
     {
         var map = new Dictionary<string, Entry>(_configured, StringComparer.Ordinal);
@@ -105,7 +119,20 @@ public sealed class LocalFolderAccess : IFolderAccess
             map[m.Key] = new Entry(options, root, problem, Managed: true);
         }
 
-        var list = map.Where(l => FolderPaths.IsValidLocationKey(l.Key))
+        // Paths typed into steps: resolved like locations, but not listed as named locations.
+        foreach (var t in _typed.Where(t => !map.ContainsKey(t.Key)))
+        {
+            var options = new FolderLocationOptions { Name = t.Path, Path = t.Path, Input = t.Input, Output = t.Output };
+            var (root, problem) = Validate(t.Key, options);
+            if (problem is null && root is not null && _allowedRoots.Count > 0 && !_allowedRoots.Any(a => IsInside(root, a)))
+            {
+                (root, problem) = (null, "The path isn't inside a folder this server allows for paths typed in Verso (FolderInput:AllowedRoots).");
+            }
+
+            map[t.Key] = new Entry(options, root, problem, Managed: true, Typed: true);
+        }
+
+        var list = map.Where(l => !l.Value.Typed && FolderPaths.IsValidLocationKey(l.Key))
             .Select(l => new ConfiguredFolderLocation(
                 l.Key, string.IsNullOrWhiteSpace(l.Value.Options.Name) ? l.Key : l.Value.Options.Name.Trim(),
                 l.Value.Options.Input, l.Value.Options.Output, l.Value.Managed, l.Value.Problem))
@@ -343,7 +370,7 @@ public sealed class LocalFolderAccess : IFolderAccess
         try
         {
             folder = Resolve(target, mode);
-            checks.Add(new("approved", true, $"'{target.Location}' is configured on this Worker for {(mode == FolderAccessMode.Input ? "input" : "output")}."));
+            checks.Add(new("approved", true, $"'{Label(target.Location)}' is configured on this Worker for {(mode == FolderAccessMode.Input ? "input" : "output")}."));
         }
         catch (FolderException ex)
         {
@@ -424,17 +451,17 @@ public sealed class LocalFolderAccess : IFolderAccess
         ArgumentNullException.ThrowIfNull(target);
         if (!Map.TryGetValue(target.Location, out var location))
         {
-            throw new FolderException(FolderErrors.UnknownLocation, $"Location '{target.Location}' isn't configured on this Worker ({Environment.MachineName}).");
+            throw new FolderException(FolderErrors.UnknownLocation, $"Location '{Label(target.Location)}' isn't configured on this Worker ({Environment.MachineName}).");
         }
 
         if (location.Problem is not null)
         {
-            throw new FolderException(FolderErrors.Misconfigured, $"Location '{target.Location}' is misconfigured on this Worker: {location.Problem}");
+            throw new FolderException(FolderErrors.Misconfigured, $"Location '{Label(target.Location)}' is misconfigured on this Worker: {location.Problem}");
         }
 
         if (mode == FolderAccessMode.Input ? !location.Options.Input : !location.Options.Output)
         {
-            throw new FolderException(FolderErrors.Misconfigured, $"Location '{target.Location}' isn't approved for {(mode == FolderAccessMode.Input ? "input" : "output")}.");
+            throw new FolderException(FolderErrors.Misconfigured, $"Location '{Label(target.Location)}' isn't approved for {(mode == FolderAccessMode.Input ? "input" : "output")}.");
         }
 
         return ResolvePath(target);
@@ -444,13 +471,13 @@ public sealed class LocalFolderAccess : IFolderAccess
     {
         if (!Map.TryGetValue(target.Location, out var location) || location.Root is null)
         {
-            throw new FolderException(FolderErrors.UnknownLocation, $"Location '{target.Location}' isn't configured on this Worker.");
+            throw new FolderException(FolderErrors.UnknownLocation, $"Location '{Label(target.Location)}' isn't configured on this Worker.");
         }
 
         var subfolder = FolderPaths.NormalizeSubfolder(target.Subfolder);
         if (FolderPaths.SubfolderProblem(subfolder) is { } problem)
         {
-            throw new FolderException(FolderErrors.OutsideLocation, $"Subfolder of '{target.Location}' isn't valid: {problem}");
+            throw new FolderException(FolderErrors.OutsideLocation, $"Subfolder of '{Label(target.Location)}' isn't valid: {problem}");
         }
 
         return subfolder.Length == 0 ? location.Root : Inside(location.Root, subfolder);
@@ -478,7 +505,7 @@ public sealed class LocalFolderAccess : IFolderAccess
             var info = new DirectoryInfo(current);
             if (info.Exists && (info.LinkTarget is not null || info.Attributes.HasFlag(FileAttributes.ReparsePoint)))
             {
-                throw new FolderException(FolderErrors.OutsideLocation, $"A subfolder of '{target.Location}' is a link (symbolic link or junction); links aren't followed.");
+                throw new FolderException(FolderErrors.OutsideLocation, $"A subfolder of '{Label(target.Location)}' is a link (symbolic link or junction); links aren't followed.");
             }
 
             current = Path.GetDirectoryName(current) ?? root;
@@ -505,13 +532,18 @@ public sealed class LocalFolderAccess : IFolderAccess
     {
         FolderException f => f,
         UnauthorizedAccessException => new FolderException(FolderErrors.AccessDenied,
-            $"Access denied to '{target}' for {Identity} while {action}. Grant the Worker's service account access to the folder.", ex),
+            $"Access denied to '{Label(target)}' for {Identity} while {action}. Grant the Worker's service account access to the folder.", ex),
         DirectoryNotFoundException => new FolderException(FolderErrors.NotFound,
-            $"Folder '{target}' doesn't exist or isn't reachable from {Environment.MachineName}.", ex),
-        FileNotFoundException => new FolderException(FolderErrors.FileMissing, $"A file in '{target}' disappeared while {action}.", ex),
+            $"Folder '{Label(target)}' doesn't exist or isn't reachable from {Environment.MachineName}.", ex),
+        FileNotFoundException => new FolderException(FolderErrors.FileMissing, $"A file in '{Label(target)}' disappeared while {action}.", ex),
         _ => new FolderException(FolderErrors.Unavailable,
-            $"Folder '{target}' is unavailable from {Environment.MachineName} while {action} ({ex.GetType().Name}, HResult 0x{ex.HResult:X8}).", ex),
+            $"Folder '{Label(target)}' is unavailable from {Environment.MachineName} while {action} ({ex.GetType().Name}, HResult 0x{ex.HResult:X8}).", ex),
     };
+
+    /// <summary>What messages call a location: its key, or for a path typed into a step, the path itself.</summary>
+    private string Label(string location) => Map.TryGetValue(location, out var e) && e.Typed ? e.Options.Path : location;
+
+    private string Label(FolderRef target) => target.Subfolder.Length == 0 ? Label(target.Location) : $"{Label(target.Location)}/{target.Subfolder}";
 
     private static string InFlightFolder(string folder) => Path.Combine(folder, FolderPaths.InFlightFolder);
 

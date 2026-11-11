@@ -2,9 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { FolderLocationDto } from '@/lib/api/generated'
-
-import { accessTargets, FolderInputSettings } from './FolderInputSettings'
+import { accessTargets, FolderInputSettings, usesApprovedLocations } from './FolderInputSettings'
 import type { FieldSchema } from './SchemaForm'
 
 const WF = '11111111-1111-1111-1111-111111111111'
@@ -13,31 +11,21 @@ const RUN = '33333333-3333-3333-3333-333333333333'
 const schema: FieldSchema = {
   type: 'object',
   properties: {
-    sourceLocation: { type: 'string', title: 'Source folder', 'x-widget': 'folder-location-input' },
-    sourceSubfolder: { type: 'string', title: 'Source subfolder', 'x-widget': 'mono' },
+    sourcePath: { type: 'string', title: 'Source folder', 'x-widget': 'folder-path' },
     pattern: { type: 'string', title: 'File pattern', 'x-widget': 'mono' },
     includeSubfolders: { type: 'boolean', title: 'Include subfolders' },
     interval: { type: 'string', title: 'Scan interval', enum: ['every-minute', 'hourly'], 'x-enumLabels': ['Every minute', 'Hourly'] },
-    processedLocation: { type: 'string', title: 'Processed files: location', 'x-widget': 'folder-location-output' },
-    processedSubfolder: { type: 'string', title: 'Processed files: subfolder', 'x-widget': 'mono' },
-    failedLocation: { type: 'string', title: 'Failed files: location', 'x-widget': 'folder-location-output' },
-    failedSubfolder: { type: 'string', title: 'Failed files: subfolder', 'x-widget': 'mono' },
+    processedPath: { type: 'string', title: 'Processed files go to', 'x-widget': 'folder-path' },
+    failedPath: { type: 'string', title: 'Failed files go to', 'x-widget': 'folder-path' },
+    sourceLocation: { type: 'string', 'x-widget': 'legacy' },
+    sourceSubfolder: { type: 'string', 'x-widget': 'legacy' },
   },
-  required: ['sourceLocation', 'pattern', 'includeSubfolders', 'interval', 'processedLocation', 'failedLocation'],
+  required: ['pattern', 'includeSubfolders', 'interval'],
 }
 
-const location = (key: string, name: string, input: boolean, output: boolean, enabled = true): FolderLocationDto =>
-  ({ key, name, input, output, enabled, problem: enabled ? null : 'Not configured on the Worker any more.', updatedAt: '' })
-
-const locations = [
-  location('ap-inbound', 'AP inbound share', true, false),
-  location('ap-archive', 'AP archive share', false, true),
-  location('old-share', 'Old share', true, true, false),
-]
-
 const config = {
-  sourceLocation: 'ap-inbound', sourceSubfolder: 'incoming', pattern: '*.json', includeSubfolders: false, interval: 'every-minute',
-  processedLocation: 'ap-archive', processedSubfolder: 'processed', failedLocation: 'ap-archive', failedSubfolder: 'failed',
+  sourcePath: 'D:\\Invoices\\in', pattern: '*.json', includeSubfolders: false, interval: 'every-minute',
+  processedPath: 'D:\\Invoices\\done', failedPath: 'D:\\Invoices\\failed',
 }
 
 function mockApi() {
@@ -54,15 +42,15 @@ function mockApi() {
         return json({
           ...test, status: 'Completed', identity: 'CORP\\svc-verso-worker$', machine: 'VERSO-WRK01',
           results: [
-            { role: 'source', location: 'ap-inbound', subfolder: 'incoming', ok: true, checks: [{ name: 'approved', ok: true, message: 'Configured.' }] },
-            { role: 'processed', location: 'ap-archive', subfolder: 'processed', ok: false,
-              checks: [{ name: 'write', ok: false, message: "Access denied to 'ap-archive/processed' for CORP\\svc-verso-worker$." }] },
+            { role: 'source', location: 'path-1', subfolder: '', ok: true, checks: [{ name: 'approved', ok: true, message: 'Allowed.' }] },
+            { role: 'processed', location: 'path-2', subfolder: '', ok: false,
+              checks: [{ name: 'write', ok: false, message: "Access denied to 'D:\\Invoices\\done' for CORP\\svc-verso-worker$." }] },
           ],
         })
       }
       if (url === `/api/v1/workflows/${WF}/folder-input`) {
         return json({
-          watch: { nodeId: 'trigger', lastScanAt: '2026-11-11T08:00:00Z', lastStatus: 'Unavailable', lastError: "Folder 'ap-inbound/incoming' doesn't exist or isn't reachable from VERSO-WRK01.", lastFilesFound: 0 },
+          watch: { nodeId: 'trigger', lastScanAt: '2026-11-11T08:00:00Z', lastStatus: 'Unavailable', lastError: "Folder 'D:\\Invoices\\in' doesn't exist or isn't reachable from VERSO-WRK01.", lastFilesFound: 0 },
           files: [
             { id: 'f1', fileName: 'inv-1.json', relativePath: 'inv-1.json', sizeBytes: 10, status: 'Completed', outcome: 'Processed', errorCode: null, errorMessage: null,
               executionId: RUN, deliveredName: 'inv-1.json', deliveryError: null, claimedAt: '', completedAt: '' },
@@ -83,7 +71,7 @@ function renderSettings(over: Partial<React.ComponentProps<typeof FolderInputSet
     <MemoryRouter>
       <FolderInputSettings
         schema={schema} value={config} onChange={onChange} errorsFor={() => []} readOnly={false} canTest
-        locations={locations} workflowId={WF} published={false} {...over}
+        workflowId={WF} published={false} {...over}
       />
     </MemoryRouter>,
   )
@@ -91,37 +79,41 @@ function renderSettings(over: Partial<React.ComponentProps<typeof FolderInputSet
 }
 
 describe('Folder input settings', () => {
-  it('offers only approved locations for each purpose, never a path field', () => {
+  it('takes the three folders as typed paths, with no location pickers', () => {
     mockApi()
     const onChange = renderSettings()
 
+    expect(screen.queryByRole('combobox', { name: /location/i })).toBeNull()
     const source = screen.getByLabelText(/^Source folder/)
-    const sourceOptions = within(source).getAllByRole('option').map((o) => o.textContent)
-    expect(sourceOptions).toEqual(['Choose an approved location…', 'AP inbound share (ap-inbound)', 'Old share (old-share), unavailable'])
-    expect(within(source).getByRole('option', { name: /Old share/ })).toBeDisabled()
-    const processed = within(screen.getByLabelText(/^Processed files: location/)).getAllByRole('option').map((o) => o.textContent)
-    expect(processed).toContain('AP archive share (ap-archive)')
-    expect(processed).not.toContain('AP inbound share (ap-inbound)')
+    expect(source).toHaveValue('D:\\Invoices\\in')
+    expect(source).toHaveAttribute('placeholder', expect.stringContaining('\\\\fileserver\\share\\in'))
+    expect(screen.getByLabelText(/^Processed files go to/)).toHaveValue('D:\\Invoices\\done')
+    expect(screen.getByLabelText(/^Failed files go to/)).toHaveValue('D:\\Invoices\\failed')
 
-    fireEvent.change(source, { target: { value: '' } })
-    expect(onChange).toHaveBeenLastCalledWith({ ...config, sourceLocation: '' }, 'sourceLocation')
+    fireEvent.change(source, { target: { value: '\\\\fileserver\\verso\\ap-inbound' } })
+    expect(onChange).toHaveBeenLastCalledWith({ ...config, sourcePath: '\\\\fileserver\\verso\\ap-inbound' }, 'sourcePath')
     fireEvent.click(screen.getByRole('switch', { name: 'Include subfolders' }))
     expect(onChange).toHaveBeenLastCalledWith({ ...config, includeSubfolders: true }, 'includeSubfolders')
   })
 
-  it('shows a saved location that is no longer approved', () => {
+  it('shows server problems next to the path field', () => {
     mockApi()
-    renderSettings({ value: { ...config, sourceLocation: 'c-drive' } })
-    expect(screen.getByLabelText(/^Source folder/)).toHaveDisplayValue('Unknown location (c-drive)')
+    renderSettings({ errorsFor: (f) => (f === 'sourcePath' ? ['Must be absolute: a drive path (D:\\…)'] : []) })
+    expect(screen.getByText(/^Must be absolute/)).toBeInTheDocument()
   })
 
-  it('explains when no folders are approved yet', () => {
+  it('hides settings kept only for older workflows, and says when a step still uses approved locations', () => {
     mockApi()
-    renderSettings({ locations: [] })
-    expect(screen.getByText(/No folders are approved yet/)).toBeInTheDocument()
+    renderSettings({ value: { ...config, sourcePath: '', sourceLocation: 'ap-inbound', sourceSubfolder: 'incoming' } })
+
+    expect(screen.queryByDisplayValue('ap-inbound')).toBeNull()
+    expect(screen.getByText(/still uses folders chosen from approved locations/)).toBeInTheDocument()
+    expect(usesApprovedLocations({ sourceLocation: 'ap-inbound' })).toBe(true)
+    expect(usesApprovedLocations({ sourceLocation: 'ap-inbound', sourcePath: 'D:\\x' })).toBe(false)
+    expect(usesApprovedLocations(config)).toBe(false)
   })
 
-  it('tests access through the Worker and shows each folder with the identity used', async () => {
+  it('tests access of the typed paths through the Worker and shows the identity used', async () => {
     const calls = mockApi()
     renderSettings()
 
@@ -129,13 +121,13 @@ describe('Folder input settings', () => {
 
     expect(await screen.findByText('Processed files: no access', {}, { timeout: 4000 })).toBeInTheDocument()
     expect(screen.getByText('Source folder: access OK')).toBeInTheDocument()
-    expect(screen.getByText(/Access denied to 'ap-archive\/processed'/)).toBeInTheDocument()
+    expect(screen.getByText(/Access denied to 'D:\\Invoices\\done'/)).toBeInTheDocument()
     expect(screen.getByText('CORP\\svc-verso-worker$')).toBeInTheDocument()
     expect(calls.find((c) => c.method === 'POST')!.body).toEqual({
       targets: [
-        { role: 'source', location: 'ap-inbound', subfolder: 'incoming' },
-        { role: 'processed', location: 'ap-archive', subfolder: 'processed' },
-        { role: 'failed', location: 'ap-archive', subfolder: 'failed' },
+        { role: 'source', location: null, subfolder: null, path: 'D:\\Invoices\\in' },
+        { role: 'processed', location: null, subfolder: null, path: 'D:\\Invoices\\done' },
+        { role: 'failed', location: null, subfolder: null, path: 'D:\\Invoices\\failed' },
       ],
     })
   })
@@ -152,17 +144,17 @@ describe('Folder input settings', () => {
 
     const activity = screen.getByRole('region', { name: 'Folder activity' })
     await waitFor(() => expect(activity).toHaveTextContent('Folder unavailable'))
-    expect(activity).toHaveTextContent("doesn't exist or isn't reachable from VERSO-WRK01")
+    expect(activity).toHaveTextContent("Folder 'D:\\Invoices\\in' doesn't exist")
     const files = within(activity).getByRole('list', { name: 'Recent files' })
     expect(files).toHaveTextContent('inv-1.json')
     expect(files).toHaveTextContent("bad.jsonFailedThe file isn't a JSON object.")
     expect(within(files).getByRole('link', { name: 'View run' })).toHaveAttribute('href', `/executions/${RUN}`)
   })
 
-  it('builds access test targets only for chosen locations', () => {
-    expect(accessTargets({ sourceLocation: 'in', sourceSubfolder: 'a', processedLocation: '', failedLocation: 'out' })).toEqual([
-      { role: 'source', location: 'in', subfolder: 'a' },
-      { role: 'failed', location: 'out', subfolder: '' },
+  it('builds access test targets only for typed paths', () => {
+    expect(accessTargets({ sourcePath: ' D:\\in ', processedPath: '', failedPath: 'D:\\out' })).toEqual([
+      { role: 'source', location: null, subfolder: null, path: 'D:\\in' },
+      { role: 'failed', location: null, subfolder: null, path: 'D:\\out' },
     ])
   })
 })

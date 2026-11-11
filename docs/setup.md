@@ -166,19 +166,13 @@ Backend integration tests create uniquely named `Verso_Test_*` databases and dro
 
 ## 6. Folder input (optional)
 
-To try the Folder input step locally, approve two folders in the Worker's user secrets or in `src/Verso.Worker/appsettings.Development.json` (absolute paths; JSON escapes backslashes):
+The Folder input step reads files from folders **you type in the step**, so there is nothing to configure first. Create two folders, for example `C:\VersoDev\inbound` and `C:\VersoDev\results`. The Worker reaches them as the Windows account it runs as, which on a dev machine is you.
 
-```json
-"FolderInput": {
-  "SettleTime": "00:00:02",
-  "Locations": {
-    "dev-inbound": { "Name": "Dev inbound", "Path": "C:\VersoDev\inbound", "Input": true },
-    "dev-results": { "Name": "Dev results", "Path": "C:\VersoDev\results", "Output": true }
-  }
-}
-```
+1. In a workflow, replace the trigger with **Folder input**. Type the source folder (`C:\VersoDev\inbound`) and the folders for processed and failed files (for example `C:\VersoDev\results\processed` and `C:\VersoDev\results\failed`; they are created if missing).
+2. Press **Test access**, then publish. Publishing records the typed paths so the Worker can use them.
+3. Copy `tests/fixtures/invoice/sample.json` into the inbound folder (write it as `inv.json.tmp` and rename it to `inv.json`, so it is never read half-written). Within about 15 seconds the file moves to `results\processed` and the run appears under Executions. Broken data (`broken.json`) ends up in `results\failed` with an `.error.json` file.
 
-Create the folders and restart the Worker. (Alternatively, sign in as `dev.admin` and use **Folder locations** in the sidebar to add them by typing the paths; no restart needed.) Then in a workflow, replace the trigger with **Folder input** and choose the locations. Press **Test access**, publish, and copy `tests/fixtures/invoice/sample.json` into the inbound folder. Within about 15 seconds the file moves to `results\processed` and the run appears under Executions. Broken data (`broken.json`) ends up in `results\failed` with an `.error.json` file. Server setup: [runbook B7](runbook.md#b7-folder-input-approved-locations).
+For quicker tests, lower the settle time in the Worker's user secrets: `dotnet user-secrets set "FolderInput:SettleTime" "00:00:02" --project src/Verso.Worker`, then restart the Worker. Server setup, including `AllowedRoots` to limit where typed paths may point: [runbook B7](runbook.md#b7-folder-input).
 
 ## Troubleshooting
 

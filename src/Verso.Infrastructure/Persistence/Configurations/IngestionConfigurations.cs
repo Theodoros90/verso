@@ -110,3 +110,15 @@ internal sealed class ManagedFolderLocationConfiguration : IEntityTypeConfigurat
         builder.Property(l => l.UpdatedBy).HasMaxLength(200).IsRequired();
     }
 }
+
+internal sealed class TypedFolderPathConfiguration : IEntityTypeConfiguration<TypedFolderPath>
+{
+    public void Configure(EntityTypeBuilder<TypedFolderPath> builder)
+    {
+        builder.ToTable("TypedFolderPaths", Schemas.Ingestion);
+        builder.HasKey(p => p.Key);
+        builder.Property(p => p.Key).HasMaxLength(64).IsUnicode(false);
+        builder.Property(p => p.Path).HasMaxLength(Verso.Application.Ingestion.FolderPaths.MaxPathLength).IsRequired();
+        builder.Property(p => p.FirstRegisteredBy).HasMaxLength(200).IsRequired();
+    }
+}
