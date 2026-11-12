@@ -7,6 +7,9 @@ namespace Verso.Application.Executions;
 /// <summary>Body of a submission: <c>{ "data": { … } }</c>, synthetic data only.</summary>
 public sealed record SubmitExecutionRequest(JsonElement? Data);
 
+/// <summary>Body of an approval decision: <c>approved</c> or <c>declined</c>, an optional comment, and the loop item (0 outside a For each).</summary>
+public sealed record DecideApprovalRequest(string? Decision, string? Comment, int? Iteration);
+
 /// <summary>Response of a submission (202 for a new run, 200 for an idempotent replay).</summary>
 public sealed record SubmissionDto(Guid ExecutionId, string Status, string WorkflowKey, int WorkflowVersion, string CorrelationId);
 

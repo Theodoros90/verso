@@ -40,7 +40,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false)
     {
         var templateId = await PublishInvoiceTemplateAsync();
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -138,6 +138,23 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
                 nodes.Remove(nodes.First(n => (string?)n!["id"] == "archive"));
                 edges.Remove(edges.First(e => (string?)e!["id"] == "e3"));
                 edges.Add(JsonNode.Parse("""{ "id": "e12", "source": "pdf", "sourcePort": "success", "target": "loop", "targetPort": "in" }"""));
+            }
+        }
+
+        if (approvalConfig is not null)
+        {
+            // validate (valid) → approval: approved → whatever validate led to (pdf, or the loop); declined → nothing (rejects the run), or pdf
+            var approval = JsonNode.Parse("""{ "id": "approve", "type": "approval", "title": "Manual review", "position": { "x": 400, "y": 320 }, "config": {} }""")!;
+            approval["config"] = approvalConfig.DeepClone();
+            var edges = definition["edges"]!.AsArray();
+            var after = edges.First(e => (string?)e!["id"] == "e2")!;
+            var target = (string)after["target"]!;
+            after["target"] = "approve";
+            definition["nodes"]!.AsArray().Add(approval);
+            edges.Add(JsonNode.Parse($$"""{ "id": "e13", "source": "approve", "sourcePort": "approved", "target": "{{target}}", "targetPort": "in" }"""));
+            if (approvalDeclinedToPdf)
+            {
+                edges.Add(JsonNode.Parse("""{ "id": "e14", "source": "approve", "sourcePort": "rejected", "target": "pdf", "targetPort": "in" }"""));
             }
         }
 

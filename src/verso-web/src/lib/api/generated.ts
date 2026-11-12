@@ -59,6 +59,12 @@ export interface CreateWorkflowRequest {
   description: string | null
 }
 
+export interface DecideApprovalRequest {
+  decision: string | null
+  comment: string | null
+  iteration: number | null
+}
+
 export interface DevUserDto {
   id: string
   name: string

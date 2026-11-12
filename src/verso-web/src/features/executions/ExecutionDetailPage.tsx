@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, CircleDashed, Loader2, Minus, RotateCw, X } from 'lucide-react'
+import { ArrowLeft, Check, CircleDashed, Loader2, Minus, RotateCw, UserCheck, X } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 
@@ -11,7 +11,7 @@ import type { ExecutionDocumentDto, ExecutionDto, ExecutionEventDto, ExecutionIn
 import { cn } from '@/lib/utils'
 
 import { DownloadButton } from './DownloadButton'
-import { formatBytes, formatDate, formatDateTime, formatDuration, runDuration, shortId, statusTone } from './format'
+import { formatBytes, formatDate, formatDateTime, formatDuration, runDuration, shortId, statusLabel, statusTone } from './format'
 import { useExecutionLive } from './useExecutionLive'
 
 export function ExecutionDetailPage() {
@@ -46,7 +46,7 @@ function Detail({ execution: e, events, onChanged }: { execution: ExecutionDto; 
         <h1 className="text-[17px] font-semibold">
           Run <span className="font-mono">{shortId(e.id)}</span>
         </h1>
-        <StatusPill tone={statusTone(e.status)}>{e.status}</StatusPill>
+        <StatusPill tone={statusTone(e.status)}>{statusLabel(e.status)}</StatusPill>
         {live && <span className="text-xs text-ink-3">Updating live</span>}
         <span className="text-ink-2">
           <span className="font-mono text-[12.5px]">{e.workflow.key}</span> v{e.workflow.version}
@@ -67,7 +67,7 @@ function Detail({ execution: e, events, onChanged }: { execution: ExecutionDto; 
             <h2 id="steps-h" className="mb-2 text-[14px] font-semibold">Steps</h2>
             <ol aria-label="Steps">
               {e.steps.map((s) => (
-                <Step key={`${s.nodeId}:${s.iteration}`} step={s} />
+                <Step key={`${s.nodeId}:${s.iteration}`} step={s} executionId={e.id} onChanged={onChanged} />
               ))}
             </ol>
           </section>
@@ -144,6 +144,92 @@ const STEP_ICON: Record<string, { icon: typeof Check; className: string }> = {
   Running: { icon: Loader2, className: 'animate-spin text-cyan' },
   Pending: { icon: CircleDashed, className: 'text-ink-3' },
   Skipped: { icon: Minus, className: 'text-ink-3' },
+  Waiting: { icon: UserCheck, className: 'text-warn' },
+}
+
+const APPROVER_LABELS: Record<string, string> = {
+  operator: 'operators',
+  'workflow-author': 'workflow authors',
+  'template-author': 'template authors',
+  auditor: 'auditors',
+}
+
+interface ApprovalResult {
+  approver?: string
+  dueAt?: string | null
+  decision?: string
+  decidedByName?: string
+  decidedAt?: string
+  comment?: string
+}
+
+/** Who is asked, until when, and (once decided) what was decided; the buttons only while the run waits. */
+function ApprovalPanel({ step: s, executionId, onChanged }: { step: ExecutionStepDto; executionId: string; onChanged: () => void }) {
+  const result = (s.result ?? {}) as ApprovalResult
+  const [comment, setComment] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (s.status !== 'Waiting') {
+    if (!result.decision) return null
+    return (
+      <p className="mt-1.5 rounded-md bg-surface-2 px-2.5 py-1.5 text-xs text-ink-2">
+        {result.decision === 'approved' ? 'Approved' : 'Declined'} by {result.decidedByName}
+        {result.decidedAt && <> on {formatDateTime(result.decidedAt)}</>}
+        {result.comment && <>: “{result.comment}”</>}
+      </p>
+    )
+  }
+
+  const overdue = result.dueAt != null && new Date(result.dueAt).getTime() < Date.now()
+  const decide = async (decision: 'approved' | 'declined') => {
+    setBusy(true)
+    setError(null)
+    try {
+      await executionsApi.decide(executionId, s.nodeId, decision, comment, s.iteration)
+      onChanged()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the decision.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-2 rounded-md border border-warn/30 bg-warn-soft px-3 py-2.5 text-xs text-ink" data-testid="approval-panel">
+      <p>
+        Waiting for {APPROVER_LABELS[result.approver ?? ''] ?? 'an approver'} (or an administrator).
+        {result.dueAt && (
+          <span className={cn('ml-1', overdue && 'font-semibold text-warn')}>
+            {overdue ? 'Overdue since' : 'Due by'} {formatDateTime(result.dueAt)}.
+          </span>
+        )}
+      </p>
+      <label className="mt-2 block">
+        <span className="text-ink-3">Comment (optional)</span>
+        <textarea
+          value={comment}
+          maxLength={500}
+          rows={2}
+          onChange={(ev) => setComment(ev.target.value)}
+          className="mt-1 block w-full rounded-md border border-line bg-surface px-2 py-1.5 text-[13px]"
+        />
+      </label>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button variant="primary" onClick={() => decide('approved')} disabled={busy}>
+          <Check /> Approve
+        </Button>
+        <Button onClick={() => decide('declined')} disabled={busy}>
+          <X /> Decline
+        </Button>
+        {error && (
+          <span role="alert" className="text-[13px] text-err">
+            {error}
+          </span>
+        )}
+      </div>
+    </div>
+  )
 }
 
 interface ResultIssue {
@@ -153,7 +239,7 @@ interface ResultIssue {
   message?: string | null
 }
 
-function Step({ step: s }: { step: ExecutionStepDto }) {
+function Step({ step: s, executionId, onChanged }: { step: ExecutionStepDto; executionId: string; onChanged: () => void }) {
   const { icon: Icon, className } = STEP_ICON[s.status] ?? { icon: CircleDashed, className: 'text-ink-3' }
   const result = s.result as { issues?: ResultIssue[]; warnings?: string[]; fileName?: string; folderPath?: string } | null
   const issues = result?.issues ?? []
@@ -177,6 +263,7 @@ function Step({ step: s }: { step: ExecutionStepDto }) {
           <span aria-hidden="true"> · {s.status}</span>
         </small>
         {s.error && <p className="mt-1 text-xs text-err">{s.error}</p>}
+        {s.type === 'approval' && <ApprovalPanel step={s} executionId={executionId} onChanged={onChanged} />}
         {issues.length > 0 && (
           <ul aria-label={`Problems found in ${s.title}`} className="mt-1.5 flex flex-col gap-0.5 rounded-md bg-warn-soft px-2.5 py-1.5 text-xs text-ink">
             {issues.map((i, n) => (

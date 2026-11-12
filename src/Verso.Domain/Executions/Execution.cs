@@ -8,6 +8,9 @@ public enum ExecutionStatus
     Succeeded,
     Rejected,
     Failed,
+
+    /// <summary>An Approval step is waiting for a person. Not finished, and no Worker holds it.</summary>
+    AwaitingApproval,
 }
 
 public enum StepStatus
@@ -17,6 +20,9 @@ public enum StepStatus
     Succeeded,
     Failed,
     Skipped,
+
+    /// <summary>An Approval step that has asked for a decision and has not got one yet.</summary>
+    Waiting,
 }
 
 /// <summary>
@@ -145,9 +151,9 @@ public sealed class Execution
     /// </summary>
     public bool TryClaim(DateTimeOffset now, TimeSpan lease)
     {
-        if (IsFinished || LockedUntil > now)
+        if (IsFinished || Status == ExecutionStatus.AwaitingApproval || LockedUntil > now)
         {
-            return false;
+            return false; // finished, waiting for a person (a decision queues it again), or another run holds the lock
         }
 
         Status = ExecutionStatus.Running;
@@ -178,6 +184,33 @@ public sealed class Execution
     {
         EnsureNotFinished();
         DispatchedAt = now;
+    }
+
+    /// <summary>An Approval step asked for a decision: the run stops here (no lock held) until <see cref="Decide"/>.</summary>
+    public void AwaitApproval()
+    {
+        EnsureNotFinished();
+        Status = ExecutionStatus.AwaitingApproval;
+        LockedUntil = null;
+    }
+
+    /// <summary>
+    /// A person decided the waiting Approval step of <paramref name="nodeId"/> (item <paramref name="iteration"/> inside a loop):
+    /// the step leaves by <paramref name="port"/> and the run is queued to continue.
+    /// </summary>
+    public ExecutionStep Decide(string nodeId, int iteration, string port, string resultJson, DateTimeOffset now)
+    {
+        if (Status != ExecutionStatus.AwaitingApproval)
+        {
+            throw new DomainRuleException("approval.not_waiting", $"Execution {Id} is {Status}, not waiting for an approval.");
+        }
+
+        var step = Step(nodeId, iteration);
+        step.Decide(port, resultJson, now);
+        Status = ExecutionStatus.Queued;
+        LockedUntil = null;
+        DispatchedAt = now;
+        return step;
     }
 
     public void Succeed(DateTimeOffset now) => Finish(ExecutionStatus.Succeeded, null, null, now, skipPending: true);
@@ -327,6 +360,27 @@ public sealed class ExecutionStep
         StartedAt = null;
     }
 
+    /// <summary>The step asked a person to decide: it stays unfinished (no completion time) until a decision.</summary>
+    public void Wait(string resultJson)
+    {
+        EnsureRunning();
+        Status = StepStatus.Waiting;
+        Result = resultJson;
+    }
+
+    internal void Decide(string port, string resultJson, DateTimeOffset now)
+    {
+        if (Status != StepStatus.Waiting)
+        {
+            throw new DomainRuleException("approval.not_waiting", $"Step '{NodeId}' is {Status}, not waiting for a decision.");
+        }
+
+        Status = StepStatus.Succeeded;
+        OutputPort = port;
+        Result = resultJson;
+        Complete(now);
+    }
+
     internal void ResetForRetry()
     {
         Status = StepStatus.Pending;
@@ -391,4 +445,6 @@ public static class ExecutionEventTypes
     public const string Failed = "Failed";
     public const string RetryRequested = "RetryRequested";
     public const string Redispatched = "Redispatched";
+    public const string ApprovalRequested = "ApprovalRequested";
+    public const string ApprovalDecided = "ApprovalDecided";
 }

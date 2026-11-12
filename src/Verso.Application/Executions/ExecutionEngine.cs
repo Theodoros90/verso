@@ -152,13 +152,14 @@ public sealed partial class ExecutionEngine(
                     return false;
                 }
 
-                if (Rejects(current.Type, step.Port))
+                var next = step.Port is null ? null : run.Plan.Next(current.Id, step.Port);
+                // A declined approval with a path connected continues down it; every other rejecting output ends the run.
+                if (Rejects(current.Type, step.Port) && (current.Type != NodeCatalog.ApprovalStep || next is null))
                 {
                     await FinishAsync(run, current, step, shutdown);
                     return false;
                 }
 
-                var next = step.Port is null ? null : run.Plan.Next(current.Id, step.Port);
                 if (next is null || next.Id == forEach.Id)
                 {
                     break; // this item is done
@@ -190,8 +191,40 @@ public sealed partial class ExecutionEngine(
             return new StepResult(step.OutputPort, step);
         }
 
+        if (node.Type == NodeCatalog.ApprovalStep)
+        {
+            await RequestApprovalAsync(run, node, step, shutdown);
+            return null; // the run stops until a person decides (the decision queues it again)
+        }
+
         var outcome = await RunStepAsync(run, node, step, timeoutToken, shutdown);
         return outcome is null ? null : new StepResult(outcome.Port, step);
+    }
+
+    /// <summary>
+    /// Parks the run at an Approval step: the step waits, the execution becomes AwaitingApproval and releases its lock.
+    /// Nothing about the data is stored; the request holds who may decide and when it becomes overdue.
+    /// </summary>
+    private async Task RequestApprovalAsync(Run run, Workflows.WorkflowNode node, ExecutionStep step, CancellationToken shutdown)
+    {
+        var execution = run.Execution;
+        if (step.Status == StepStatus.Waiting)
+        {
+            return; // already asked (a re-delivered job); nothing to do
+        }
+
+        var now = clock.GetUtcNow();
+        var (approver, escalation) = Approval.Settings(node.Config);
+        var dueAt = Approval.Escalations.TryGetValue(escalation, out var e) ? now + e.After : (DateTimeOffset?)null;
+        step.Start(now);
+        step.Wait(JsonSerializer.Serialize(new { approver, escalateAfter = escalation, requestedAt = now, dueAt }, Json));
+        execution.AwaitApproval();
+        Event(execution, ExecutionEventTypes.StepStarted, now, node.Id, Data(step, ("attempt", step.Attempt)));
+        Event(execution, ExecutionEventTypes.ApprovalRequested, now, node.Id, Data(step, ("approver", approver), ("dueAt", dueAt)));
+        db.AuditEntries.Add(AuditEntry.Record(
+            ExecutionService.Actions.ApprovalRequested, ExecutionService.EntityType, execution.Id.ToString(), ActorId, ActorName, now,
+            JsonSerializer.Serialize(new { nodeId = node.Id, step = node.Title, approver, iteration = run.Iteration }), execution.CorrelationId));
+        await SaveAsync(execution, shutdown);
     }
 
     private sealed record StepResult(string? Port, ExecutionStep Step);
@@ -216,7 +249,8 @@ public sealed partial class ExecutionEngine(
     /// <summary>Whether a path ending at this step by this output ends the run as Rejected (see <see cref="FinishAsync"/>).</summary>
     private static bool Rejects(string nodeType, string? port) => (nodeType, port) is
         (NodeCatalog.Validate, "invalid") or (NodeCatalog.ParseContent, "failed") or (NodeCatalog.MapFields, "failed")
-        or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf, "failed");
+        or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf, "failed")
+        or (NodeCatalog.ApprovalStep, Approval.Rejected);
 
     private sealed record Outcome(string? Port, object? Result, Func<Task>? AfterSave = null);
 
@@ -589,6 +623,10 @@ public sealed partial class ExecutionEngine(
                 break;
             case (NodeCatalog.MergeData, "failed"):
                 execution.Reject("data.unmergeable", $"The data couldn't be merged in step '{last.Title}' (see its issues).", now);
+                Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
+                break;
+            case (NodeCatalog.ApprovalStep, Approval.Rejected):
+                execution.Reject("approval.declined", $"The approval in step '{last.Title}' was declined.", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;
             case (NodeCatalog.GeneratePdf, "failed"):

@@ -100,16 +100,21 @@ interface Api {
   current: ExecutionDto
   events: ExecutionEventDto[]
   inputStatus: number
+  decisions: { url: string; body: unknown }[]
   requested: string[]
 }
 
 function stubApi(initial: ExecutionDto, events: ExecutionEventDto[]): Api {
-  const api: Api = { current: initial, events, inputStatus: 200, requested: [] }
+  const api: Api = { current: initial, events, inputStatus: 200, decisions: [], requested: [] }
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (url: string) => {
+    vi.fn(async (url: string, init?: RequestInit) => {
       api.requested.push(url)
       if (url === '/api/health') return json({ status: 'Healthy', totalDurationMs: 1, checks: [] })
+      if (url.startsWith('/api/v1/executions/x1/approvals/')) {
+        api.decisions.push({ url, body: JSON.parse(String(init?.body)) })
+        return json(api.current, 202)
+      }
       if (url === '/api/v1/executions/x1') return json(api.current)
       if (url.startsWith('/api/v1/executions/x1/events')) {
         const after = Number(new URL(url, 'http://x').searchParams.get('after'))
@@ -334,6 +339,45 @@ describe('Execution detail', () => {
       expect(screen.queryByLabelText('Submitted JSON')).not.toBeInTheDocument()
       expect(screen.queryByText(/INV-1/)).not.toBeInTheDocument()
     })
+  })
+
+  it('asks for a decision while an approval waits, and sends it with the comment', async () => {
+    const api = stubApi(
+      execution('AwaitingApproval', [
+        step('trigger', 'api-trigger', 'Succeeded', { outputPort: 'out' }),
+        step('approve', 'approval', 'Waiting', { title: 'Manual review', result: { approver: 'operator', dueAt: '2099-01-01T00:00:00Z' } }),
+        step('pdf', 'generate-pdf', 'Pending'),
+      ]),
+      [],
+    )
+    open()
+    const user = userEvent.setup()
+
+    const panel = await screen.findByTestId('approval-panel')
+    expect(panel).toHaveTextContent('Waiting for operators')
+    await user.type(within(panel).getByLabelText(/Comment/), 'Checked the totals')
+    await user.click(within(panel).getByRole('button', { name: 'Approve' }))
+
+    await waitFor(() => expect(api.decisions).toHaveLength(1))
+    expect(api.decisions[0]!.url).toBe('/api/v1/executions/x1/approvals/approve')
+    expect(api.decisions[0]!.body).toEqual({ decision: 'approved', comment: 'Checked the totals', iteration: 0 })
+  })
+
+  it('shows who decided an approval, without buttons', async () => {
+    stubApi(
+      execution('Succeeded', [
+        step('approve', 'approval', 'Succeeded', {
+          title: 'Manual review',
+          outputPort: 'approved',
+          result: { approver: 'operator', decision: 'approved', decidedByName: 'Omar Operator', decidedAt: '2026-11-12T10:00:00Z', comment: 'Fine' },
+        }),
+      ]),
+      [],
+    )
+    open()
+
+    expect(await screen.findByText(/Approved by Omar Operator/)).toHaveTextContent('“Fine”')
+    expect(screen.queryByTestId('approval-panel')).not.toBeInTheDocument()
   })
 
   it('says so when the execution does not exist', async () => {

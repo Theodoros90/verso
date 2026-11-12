@@ -94,6 +94,21 @@ public static class ExecutionEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
+        // Decide a waiting Approval step. Open to every reader at the policy level: the step's approver role is checked in the service.
+        group.MapPost("/{id:guid}/approvals/{nodeId}", async (Guid id, string nodeId, DecideApprovalRequest? request, ExecutionService service, CancellationToken ct) =>
+            {
+                var result = await service.DecideAsync(id, nodeId, request, ct);
+                return result.IsSuccess
+                    ? Results.Accepted($"/api/v1/executions/{id}", result.Value)
+                    : result.Error!.ToProblem();
+            })
+            .WithName("DecideApproval")
+            .Produces<ExecutionDto>(StatusCodes.Status202Accepted)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
         return app;
     }
 }

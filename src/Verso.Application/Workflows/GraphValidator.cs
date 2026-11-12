@@ -248,6 +248,7 @@ public static class GraphValidator
         (NodeCatalog.MapFields, "failed") => "A value that can't be transformed will end the run as Rejected.",
         (NodeCatalog.TransformData, "failed") => "A rule that can't be applied will end the run as Rejected.",
         (NodeCatalog.MergeData, "failed") => "A record that can't be merged will end the run as Rejected.",
+        (NodeCatalog.ApprovalStep, "rejected") => "A declined approval will end the run as Rejected.",
         (NodeCatalog.ForEach, "empty") => "An empty list ends the run here: nothing is repeated.",
         (NodeCatalog.IfElse, "yes") => "Records that meet the condition end the run here.",
         (NodeCatalog.IfElse, "no") => "Records that don't meet the condition end the run here.",

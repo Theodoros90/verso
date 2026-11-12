@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), validate, generate-pdf, archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -40,6 +40,7 @@ public static class NodeCatalog
     public const string IfElse = "if-else";
     public const string SwitchRoute = "switch";
     public const string ForEach = "for-each";
+    public const string ApprovalStep = "approval";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string Archive = "archive";
@@ -452,6 +453,20 @@ public static class NodeCatalog
               "required": ["field", "mode", "item"] }
             """,
             $$"""{ "field": "", "mode": "each", "item": "{{Executions.ForEach.DefaultItemName}}", "eachLabel": "{{Executions.ForEach.DefaultEachLabel}}", "emptyLabel": "{{Executions.ForEach.DefaultEmptyLabel}}" }"""),
+
+        Node(ApprovalStep, "Approval", "logic",
+            "Pauses the run until someone holding the chosen role approves or declines. Approved continues down the Approved path; declined takes the Declined path, or ends the run as Rejected when that isn't connected.",
+            [In], [new PortDto(Executions.Approval.Approved, "Approved", true), new PortDto(Executions.Approval.Rejected, "Declined", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "approver": { "type": "string", "title": "Approver", "enum": {{JsonSerializer.Serialize(Executions.Approval.Approvers.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Executions.Approval.ApproverLabels)}},
+                  "description": "Anyone with this role can decide (administrators always can)." },
+                "escalateAfter": { "type": "string", "title": "Escalate after", "enum": {{JsonSerializer.Serialize(Executions.Approval.Escalations.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Executions.Approval.EscalationLabels)}},
+                  "description": "After this long the request is shown as overdue. Nothing is sent or reassigned automatically." } },
+              "required": ["approver", "escalateAfter"] }
+            """,
+            $$"""{ "approver": "{{Executions.Approval.DefaultApprover}}", "escalateAfter": "{{Executions.Approval.DefaultEscalation}}" }"""),
 
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",

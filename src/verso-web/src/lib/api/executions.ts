@@ -39,6 +39,10 @@ export const executionsApi = {
   input: (id: string, signal?: AbortSignal) => request<ExecutionInputDto>(`/api/v1/executions/${id}/input`, { signal }).then((r) => r.body),
 
   retry: (id: string) => request<ExecutionDto>(`/api/v1/executions/${id}/retry`, { method: 'POST' }).then((r) => r.body),
+
+  /** Approves or declines the Approval step waiting in a run. 403 unless the user holds the step's approver role (or is an administrator). */
+  decide: (id: string, nodeId: string, decision: 'approved' | 'declined', comment: string, iteration = 0) =>
+    request<ExecutionDto>(`/api/v1/executions/${id}/approvals/${encodeURIComponent(nodeId)}`, { method: 'POST', body: { decision, comment: comment.trim() || undefined, iteration } }).then((r) => r.body),
 }
 
 export const documentsApi = {

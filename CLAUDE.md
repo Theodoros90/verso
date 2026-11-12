@@ -18,7 +18,7 @@ Bank-focused document-generation and workflow platform. MVP: maintain an invoice
 **M7: Execution engine** — accepted 2026-11-10.
 **M8: Execution history and live progress** — accepted 2026-11-10.
 **M9: MVP hardening** — accepted 2026-11-10 (full `tools/ci.ps1` run passed). **MVP complete (M1–M9).**
-Post-MVP: **Folder input** (2026-11-11, ADR 0001) implemented; awaiting acceptance. No next milestone agreed yet; post-MVP items are listed under "Not in MVP" in plan §9 and the open decisions in plan §10.
+Post-MVP: **Approval step** (2026-11-12, ADR 0002) implemented; awaiting acceptance. **Folder input** (2026-11-11, ADR 0001) implemented; awaiting acceptance. No next milestone agreed yet; post-MVP items are listed under "Not in MVP" in plan §9 and the open decisions in plan §10.
 Update this line when a milestone is accepted and the next one is agreed.
 
 ## Commands
@@ -64,7 +64,7 @@ Ask before adding a dependency or changing a version not listed here.
 - Rendering lives in `Verso.Rendering` (layout JSON + data → HTML; no dependencies, enforced by RendererPurityTests). Only the Worker uses Playwright/Chromium. The API never runs Chromium. PDFs are printed from the renderer's `Print` parts (body + header/footer templates), not from the preview HTML.
 - Migrations are applied with `dotnet ef database update`, never automatically at app startup.
 - Published template and workflow versions are immutable. Executions run against published versions only and record the exact versions they used.
-- Execution states: `Queued → Running → Succeeded | Rejected | Failed`. Rejected = data failed validation (not retryable). Failed = technical error (retryable).
+- Execution states: `Queued → Running → Succeeded | Rejected | Failed`, plus `AwaitingApproval` while an Approval step waits for a person (ADR 0002). Rejected = data failed validation (not retryable). Failed = technical error (retryable).
 - Progress: the Worker writes `ExecutionEvent` rows, and an API hosted service relays them to SignalR. SignalR messages are notifications; the REST API is the source of truth.
 - Document storage goes through `IDocumentStore` (configurable). The MVP adapter is the local file system.
 - AI features are deferred. No email, print, ERP, SFTP or banking integrations. Folder input (approved 2026-11-11, docs/adr/0001-folder-input.md) is the one real file integration: the Worker reads folders whose paths workflow authors type into the step (recorded and audited when a workflow is published, optionally limited by `FolderInput:AllowedRoots`) or that are named locations, always as its own service identity, and never stores credentials.

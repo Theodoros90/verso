@@ -2,12 +2,16 @@ import type { PillTone } from '@/components/StatusPill'
 
 export const FINISHED_STATUSES = new Set(['Succeeded', 'Rejected', 'Failed'])
 
-export const EXECUTION_STATUSES = ['Queued', 'Running', 'Succeeded', 'Rejected', 'Failed'] as const
+export const EXECUTION_STATUSES = ['Queued', 'Running', 'AwaitingApproval', 'Succeeded', 'Rejected', 'Failed'] as const
+
+/** A status as people read it. */
+export const statusLabel = (status: string) => (status === 'AwaitingApproval' ? 'Awaiting approval' : status)
 
 export function statusTone(status: string): PillTone {
   switch (status) {
     case 'Succeeded':
       return 'ok'
+    case 'AwaitingApproval':
     case 'Rejected':
       return 'warn'
     case 'Failed':

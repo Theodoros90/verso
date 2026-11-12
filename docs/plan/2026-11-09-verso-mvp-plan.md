@@ -134,7 +134,7 @@ MVP node types: `api-trigger`, `validate`, `generate-pdf`, `archive`. Added afte
 
 **Execution**
 - `Id`, `WorkflowVersionId`, `ResolvedTemplateVersionIds` (JSON map nodeId → templateVersionId)
-- `Status`: `Queued` | `Running` | `Succeeded` | `Rejected` | `Failed` (see §6)
+- `Status`: `Queued` | `Running` | `AwaitingApproval` | `Succeeded` | `Rejected` | `Failed` (see §6)
 - `IdempotencyKey` (unique per workflow), `CorrelationId`
 - `InputPayload` (JSON, size-limited), `InputHash`
 - `SubmittedAt/By`, `StartedAt`, `CompletedAt`, `Attempt`
@@ -305,8 +305,10 @@ Execution:  Queued ──► Running ──► Succeeded
                           │   └──► Rejected   (business: data failed validation; not retryable)
                           └──────► Failed     (technical: render/storage/timeout; retryable)
                 Failed ──(retry)──► Queued
+                Running ──(Approval step)──► AwaitingApproval ──(decision)──► Queued   (ADR 0002)
 
 Step:       Pending ──► Running ──► Succeeded(port) | Failed
+            Running ──► Waiting ──(decision)──► Succeeded(approved | rejected)   (Approval step)
             Pending ──► Skipped   (branch not taken / run ended)
 ```
 

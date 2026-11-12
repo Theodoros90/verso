@@ -12,7 +12,7 @@ internal sealed class ExecutionConfiguration : IEntityTypeConfiguration<Executio
         {
             t.HasCheckConstraint("CK_Executions_Completed",
                 "([Status] IN ('Succeeded', 'Rejected', 'Failed') AND [CompletedAt] IS NOT NULL) OR " +
-                "([Status] IN ('Queued', 'Running') AND [CompletedAt] IS NULL)");
+                "([Status] IN ('Queued', 'Running', 'AwaitingApproval') AND [CompletedAt] IS NULL)");
         });
         builder.HasKey(e => e.Id);
         builder.Property(e => e.Id).ValueGeneratedNever();

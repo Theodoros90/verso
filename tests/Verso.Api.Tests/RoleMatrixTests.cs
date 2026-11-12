@@ -68,6 +68,7 @@ public sealed class RoleMatrixTests(MigratedDatabaseFixture fixture)
         { "GET", "/api/v1/executions/{id:guid}/events", $"/api/v1/executions/{Id}/events", AnyRole },
         { "GET", "/api/v1/executions/{id:guid}/input", $"/api/v1/executions/{Id}/input", "AX" },
         { "POST", "/api/v1/executions/{id:guid}/retry", $"/api/v1/executions/{Id}/retry", "OX" },
+        { "POST", "/api/v1/executions/{id:guid}/approvals/{nodeId}", $"/api/v1/executions/{Id}/approvals/approve", AnyRole }, // the step's approver role is checked in the service
 
         { "GET", "/api/v1/documents/", "/api/v1/documents", AnyRole },
         { "GET", "/api/v1/documents/{id:guid}", $"/api/v1/documents/{Id}", AnyRole },

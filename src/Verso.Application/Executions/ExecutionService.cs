@@ -34,6 +34,8 @@ public sealed partial class ExecutionService(IVersoDbContext db, IExecutionJobs 
         public const string RetryRequested = "ExecutionRetryRequested";
         public const string Completed = "ExecutionCompleted";
         public const string InputViewed = "ExecutionInputViewed";
+        public const string ApprovalRequested = "ExecutionApprovalRequested";
+        public const string ApprovalDecided = "ExecutionApprovalDecided";
     }
 
     [GeneratedRegex(@"^[\x21-\x7E]{1,100}$")]
@@ -208,6 +210,86 @@ public sealed partial class ExecutionService(IVersoDbContext db, IExecutionJobs 
         catch (DbUpdateConcurrencyException)
         {
             return AppError.Conflict("execution.changed", "The execution changed while retrying; read it again.");
+        }
+
+        Dispatch(execution.Id);
+        return await GetAsync(id, ct);
+    }
+
+    /// <summary>
+    /// Approves or declines the Approval step that is waiting in an execution, then queues the run to continue. Only a person holding
+    /// the step's approver role (or an administrator) may decide. The decision, who made it and the comment go on the step and the audit log.
+    /// </summary>
+    public async Task<Result<ExecutionDto>> DecideAsync(Guid id, string nodeId, DecideApprovalRequest? request, CancellationToken ct)
+    {
+        var decision = request?.Decision?.Trim().ToLowerInvariant();
+        if (decision is not ("approved" or "declined"))
+        {
+            return Invalid("validation", "decision", "One of: approved, declined.");
+        }
+
+        var comment = request?.Comment?.Trim();
+        if (comment is { Length: > Approval.MaxCommentLength })
+        {
+            return Invalid("validation", "comment", $"At most {Approval.MaxCommentLength} characters.");
+        }
+
+        var execution = await db.Executions.Include(e => e.Steps).SingleOrDefaultAsync(e => e.Id == id, ct);
+        if (execution is null)
+        {
+            return NotFound(id);
+        }
+
+        var iteration = request?.Iteration ?? 0;
+        var step = execution.Steps.SingleOrDefault(s => s.NodeId == nodeId && s.Iteration == iteration && s.NodeType == NodeCatalog.ApprovalStep);
+        if (step is null)
+        {
+            return AppError.NotFound("approval.not_found", $"Execution {id} has no approval step '{nodeId}'.");
+        }
+
+        if (execution.Status != ExecutionStatus.AwaitingApproval || step.Status != StepStatus.Waiting)
+        {
+            return AppError.Conflict("approval.not_waiting", "This approval isn't waiting for a decision (it may already have been decided).");
+        }
+
+        var waiting = System.Text.Json.Nodes.JsonNode.Parse(step.Result ?? "{}")!.AsObject();
+        var approver = waiting["approver"]?.GetValue<string>() ?? Approval.DefaultApprover;
+        if (!Approval.CanDecide(user, approver))
+        {
+            var label = Approval.Approvers.TryGetValue(approver, out var entry) ? entry.Label.ToLowerInvariant() : approver;
+            return new AppError(ErrorKind.Forbidden, "forbidden", $"This approval is for {label} (or an administrator).");
+        }
+
+        var now = clock.GetUtcNow();
+        waiting["decision"] = decision;
+        waiting["decidedBy"] = user.Id;
+        waiting["decidedByName"] = user.Name;
+        waiting["decidedAt"] = now;
+        if (!string.IsNullOrEmpty(comment))
+        {
+            waiting["comment"] = comment;
+        }
+
+        var port = decision == "approved" ? Approval.Approved : Approval.Rejected;
+        try
+        {
+            execution.Decide(nodeId, iteration, port, waiting.ToJsonString(), now);
+        }
+        catch (DomainRuleException ex)
+        {
+            return AppError.Conflict(ex.Code, ex.Message);
+        }
+
+        db.ExecutionEvents.Add(ExecutionEvent.Record(execution.Id, ExecutionEventTypes.ApprovalDecided, now, nodeId,
+            JsonSerializer.Serialize(new { decision, decidedBy = user.Name, iteration = iteration > 0 ? iteration : (int?)null })));
+        Audit(Actions.ApprovalDecided, execution, now, new { nodeId, decision, approver, iteration, hasComment = !string.IsNullOrEmpty(comment) });
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return AppError.Conflict("execution.changed", "The execution changed while deciding; read it again.");
         }
 
         Dispatch(execution.Id);

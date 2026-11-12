@@ -9,7 +9,7 @@ import type { ExecutionSummaryDto, WorkflowSummaryDto } from '@/lib/api/generate
 import { workflowsApi } from '@/lib/api/workflows'
 import { watchExecutions } from '@/lib/realtime'
 
-import { dayEndIso, dayStartIso, EXECUTION_STATUSES, FINISHED_STATUSES, formatDateTime, formatDuration, runDuration, shortId, statusTone } from './format'
+import { dayEndIso, dayStartIso, EXECUTION_STATUSES, FINISHED_STATUSES, formatDateTime, formatDuration, runDuration, shortId, statusLabel, statusTone } from './format'
 
 const PAGE_SIZE = 25
 /** Only used while something on the page is unfinished, in case notifications don't arrive. */
@@ -131,7 +131,7 @@ export function ExecutionListPage() {
             <option value="">Any status</option>
             {EXECUTION_STATUSES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {statusLabel(s)}
               </option>
             ))}
           </Select>
@@ -184,7 +184,7 @@ export function ExecutionListPage() {
                 {state.items.map((e) => (
                   <tr key={e.id} className="border-b border-line last:border-b-0 hover:bg-surface-2">
                     <td className="px-3.5 py-2.5">
-                      <StatusPill tone={statusTone(e.status)}>{e.status}</StatusPill>
+                      <StatusPill tone={statusTone(e.status)}>{statusLabel(e.status)}</StatusPill>
                     </td>
                     <td className="px-3.5 py-2.5">
                       <Link to={`/executions/${e.id}`} className="font-mono text-cyan-strong" aria-label={`Open run ${shortId(e.id)}`}>

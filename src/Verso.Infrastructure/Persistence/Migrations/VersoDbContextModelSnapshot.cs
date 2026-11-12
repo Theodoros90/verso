@@ -304,7 +304,7 @@ namespace Verso.Infrastructure.Persistence.Migrations
 
                     b.ToTable("Executions", "executions", t =>
                         {
-                            t.HasCheckConstraint("CK_Executions_Completed", "([Status] IN ('Succeeded', 'Rejected', 'Failed') AND [CompletedAt] IS NOT NULL) OR ([Status] IN ('Queued', 'Running') AND [CompletedAt] IS NULL)");
+                            t.HasCheckConstraint("CK_Executions_Completed", "([Status] IN ('Succeeded', 'Rejected', 'Failed') AND [CompletedAt] IS NOT NULL) OR ([Status] IN ('Queued', 'Running', 'AwaitingApproval') AND [CompletedAt] IS NULL)");
                         });
                 });
 
