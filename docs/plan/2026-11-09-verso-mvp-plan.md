@@ -465,7 +465,7 @@ Decisions made while implementing M5 (2026-11-09):
 **Acceptance:** build the "Invoice standard" workflow (trigger → validate → generate PDF → archive) in the UI; disconnected/invalid graphs show per-node issues and cannot be published; reload round-trips node positions and config; draft referencing a template draft (not published) is rejected on publish.
 
 Decisions made while implementing M6 (2026-11-09):
-- Workflows module (schema `workflows`): `Workflow` and `WorkflowVersion`, with the template lifecycle (one draft, published versions frozen, gap-free numbers, ETag/`If-Match`, audited). `Retired` is not implemented yet. The definition is stored exactly as saved, and its content hash is set on publish.
+- Workflows module (schema `workflows`): `Workflow` and `WorkflowVersion`, with the template lifecycle (one draft, published versions frozen, gap-free numbers, ETag/`If-Match`, audited). `Retired` as a version status is not implemented; instead a workflow can be deactivated (no new runs, out of the main list, still editable, never deleted) and activated again, see ADR 0008. The definition is stored exactly as saved, and its content hash is set on publish.
 - Node catalog in code, served by `GET /node-types`. Settings follow the prototype:
   - `validate`: required fields plus type checks (text, number, date, email, EU VAT, IBAN).
   - `generate-pdf`: template, version (`latest-published` or a specific published version), filename pattern.

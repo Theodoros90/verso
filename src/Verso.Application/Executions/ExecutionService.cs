@@ -90,6 +90,11 @@ public sealed partial class ExecutionService(IVersoDbContext db, IExecutionJobs 
             return replay;
         }
 
+        if (!workflow.IsActive)
+        {
+            return AppError.Conflict("workflow.inactive", $"Workflow '{workflowKey}' is inactive and does not accept new runs. Activate it first.");
+        }
+
         if (workflow.LatestPublished is not { } version)
         {
             return AppError.Conflict("workflow.not_published", $"Workflow '{workflowKey}' has no published version. Publish it before submitting data.");

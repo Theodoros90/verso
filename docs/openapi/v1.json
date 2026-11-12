@@ -1130,6 +1130,14 @@
               "format": "int32",
               "default": 25
             }
+          },
+          {
+            "name": "inactive",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
           }
         ],
         "responses": {
@@ -1669,6 +1677,88 @@
           },
           "428": {
             "description": "Precondition Required",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/{id}/activate": {
+      "post": {
+        "tags": [
+          "Workflows"
+        ],
+        "operationId": "ActivateWorkflow",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/{id}/deactivate": {
+      "post": {
+        "tags": [
+          "Workflows"
+        ],
+        "operationId": "DeactivateWorkflow",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -4636,7 +4726,8 @@
           "createdAt",
           "createdBy",
           "latestPublishedVersion",
-          "draftVersionId"
+          "draftVersionId",
+          "isActive"
         ],
         "type": "object",
         "properties": {
@@ -4678,6 +4769,9 @@
               "string"
             ],
             "format": "uuid"
+          },
+          "isActive": {
+            "type": "boolean"
           }
         }
       },
@@ -4731,7 +4825,8 @@
           "name",
           "latestPublishedVersion",
           "hasDraft",
-          "updatedAt"
+          "updatedAt",
+          "isActive"
         ],
         "type": "object",
         "properties": {
@@ -4760,6 +4855,9 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "isActive": {
+            "type": "boolean"
           }
         }
       },

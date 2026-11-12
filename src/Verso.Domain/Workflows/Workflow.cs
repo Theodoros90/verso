@@ -26,6 +26,13 @@ public sealed class Workflow
     public DateTimeOffset CreatedAt { get; private set; }
     public string CreatedBy { get; private set; } = "";
 
+    /// <summary>
+    /// Whether the workflow accepts new runs (submissions) and, for a Folder input trigger, scans its folder. An inactive
+    /// workflow is hidden from the default list but never deleted (its versions, runs, archive and audit stay); it can
+    /// still be edited and published, and runs already started carry on.
+    /// </summary>
+    public bool IsActive { get; private set; } = true;
+
     public IReadOnlyList<WorkflowVersion> Versions => _versions;
 
     public WorkflowVersion? Draft => _versions.SingleOrDefault(v => v.Status == WorkflowVersionStatus.Draft);
@@ -76,6 +83,22 @@ public sealed class Workflow
         var next = (LatestPublished?.VersionNumber ?? 0) + 1;
         draft.MarkPublished(next, contentHash, actor, now);
         return draft;
+    }
+
+    /// <summary>Stops new runs. Returns false when it was already inactive.</summary>
+    public bool Deactivate()
+    {
+        var changed = IsActive;
+        IsActive = false;
+        return changed;
+    }
+
+    /// <summary>Allows new runs again. Returns false when it was already active.</summary>
+    public bool Activate()
+    {
+        var changed = !IsActive;
+        IsActive = true;
+        return changed;
     }
 
     private static DomainRuleException NoDraft() =>

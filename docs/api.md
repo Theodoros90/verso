@@ -44,6 +44,7 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | 404 | `execution.not_found` | Unknown execution id |
 | 409 | `execution.idempotency_conflict` | `Idempotency-Key` already used for this workflow with **different** data; `executionId` names the original |
 | 409 | `workflow.not_published` | Submission to a workflow with no published version |
+| 409 | `workflow.inactive` | Submission to a workflow that is deactivated |
 | 409 | `execution.not_retryable` | Retry of an execution that isn't `Failed` (Rejected runs need corrected data, not a retry) |
 | 404 | `folder_access_test.not_found` | Unknown access test id (or deleted after 24 hours) |
 
@@ -253,7 +254,7 @@ A workflow is a graph of steps: a trigger, then steps connected output → input
 | Method | Path | Success | Purpose |
 |---|---|---|---|
 | GET | `/api/v1/node-types` | 200 `NodeType[]` | Node catalog: type, category, ports, settings schema, defaults |
-| GET | `/api/v1/workflows` | 200 page of `WorkflowSummary` | List, ordered by key |
+| GET | `/api/v1/workflows` | 200 page of `WorkflowSummary` | List of the active workflows, ordered by key. `?inactive=true` lists the deactivated ones instead |
 | POST | `/api/v1/workflows` | 201 `Workflow`, `Location` | Create `{ key, name, description? }` |
 | GET | `/api/v1/workflows/{id}` | 200 `Workflow` | Metadata |
 | GET | `/api/v1/workflows/{id}/versions` | 200 `WorkflowVersionSummary[]` | History: draft first, then published newest first |
@@ -263,9 +264,12 @@ A workflow is a graph of steps: a trigger, then steps connected output → input
 | PUT | `/api/v1/workflows/{id}/draft` | 200 `WorkflowVersion` + new `ETag` | Save `{ definition }` (`If-Match`) |
 | POST | `/api/v1/workflows/{id}/draft/validate` | 200 `WorkflowValidation` | Validate `{ definition }` (unsaved edits) or, without a body, the saved draft |
 | POST | `/api/v1/workflows/{id}/draft/publish` | 200 `WorkflowVersion` (published) | Validate and freeze (`If-Match`) |
+| POST | `/api/v1/workflows/{id}/deactivate` | 200 `Workflow` | Stop accepting new runs and the folder trigger's scanning, and move it to the deactivated list. Nothing is deleted; the key stays reserved; still editable |
+| POST | `/api/v1/workflows/{id}/activate` | 200 `Workflow` | Accept runs again and return to the main list |
 
 - `key`: 2–48 characters, lower-case letters, digits and single hyphens, starting with a letter (`invoice-standard`). Unique; never changes; used in the submission URL `POST /api/v1/workflows/{key}/executions` ([Executions](#executions)).
-- Errors: 404 `workflow.not_found` / `workflow.version_not_found`, 409 `workflow.key_taken` / `workflow.no_draft` / `workflow.draft_exists` / `workflow.nothing_published` / `workflow.invalid`, 412 / 428 as for templates.
+- Errors: 404 `workflow.not_found` / `workflow.version_not_found`, 409 `workflow.key_taken` / `workflow.no_draft` / `workflow.draft_exists` / `workflow.nothing_published` / `workflow.invalid`, 412 / 428 as for templates. Submitting to a deactivated workflow is 409 `workflow.inactive` ([Executions](#executions)).
+- `WorkflowSummary` and `Workflow` carry `isActive`. Both state endpoints need the WorkflowAuthoring role, are audited (`WorkflowDeactivated`, `WorkflowActivated`) and are idempotent (repeating one changes nothing and writes no second entry). Runs already started carry on. See [ADR 0008](adr/0008-deactivate-workflows.md).
 
 ### Definition
 
@@ -392,7 +396,7 @@ Content-Type: application/json
 - `data`: a JSON object, **synthetic data only**, at most 1,000,000 characters and 32 levels deep (request body cap about 1.1 MB). The payload is stored with the execution and never logged.
 - `X-Correlation-Id` (optional, 1–64 of `A–Z a–z 0–9 . _ : -`) is stored and returned; without it one is generated.
 - `generate-pdf` and `generate-docx` steps (an HTML email step has no template) set to `latest-published` are pinned to the template's latest published version **now**; later publishes don't change a submitted run.
-- Errors: 400 `execution.idempotency_key_required` / `validation`, 404 `workflow.not_found`, 409 `workflow.not_published` / `execution.idempotency_conflict`.
+- Errors: 400 `execution.idempotency_key_required` / `validation`, 404 `workflow.not_found`, 409 `workflow.not_published` / `workflow.inactive` / `execution.idempotency_conflict`.
 
 The execution row, its steps, the `Submitted` event and the audit entry are saved in one transaction, then the job is queued for the Worker. If queueing fails, the submission still succeeds: the Worker's dispatcher queues every execution that is still waiting after 2 minutes (checked every minute).
 

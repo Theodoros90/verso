@@ -16,6 +16,7 @@ internal sealed class WorkflowConfiguration : IEntityTypeConfiguration<Workflow>
         builder.Property(w => w.Name).HasMaxLength(200).IsRequired();
         builder.Property(w => w.Description).HasMaxLength(1000);
         builder.Property(w => w.CreatedBy).HasMaxLength(200).IsRequired();
+        builder.Property(w => w.IsActive).HasDefaultValue(true);
 
         builder.HasMany(w => w.Versions).WithOne().HasForeignKey(v => v.WorkflowId).OnDelete(DeleteBehavior.Restrict);
         builder.Navigation(w => w.Versions).HasField("_versions").UsePropertyAccessMode(PropertyAccessMode.Field);

@@ -15,8 +15,14 @@ const base = '/api/v1/workflows'
 export const workflowsApi = {
   nodeTypes: (signal?: AbortSignal) => request<NodeTypeDto[]>('/api/v1/node-types', { signal }).then((r) => r.body),
 
-  list: (page = 1, pageSize = 100, signal?: AbortSignal) =>
-    request<PageResultOfWorkflowSummaryDto>(`${base}?page=${page}&pageSize=${pageSize}`, { signal }).then((r) => r.body),
+  /** `inactive: true` lists the deactivated workflows (so one can be activated again) instead of the active ones. */
+  list: (page = 1, pageSize = 100, signal?: AbortSignal, inactive = false) =>
+    request<PageResultOfWorkflowSummaryDto>(`${base}?page=${page}&pageSize=${pageSize}${inactive ? '&inactive=true' : ''}`, { signal }).then((r) => r.body),
+
+  /** Stops new runs and the folder trigger's scanning, and moves the workflow to the deactivated list. Nothing is deleted. */
+  deactivate: (id: string) => request<WorkflowDto>(`${base}/${id}/deactivate`, { method: 'POST' }).then((r) => r.body),
+
+  activate: (id: string) => request<WorkflowDto>(`${base}/${id}/activate`, { method: 'POST' }).then((r) => r.body),
 
   create: (body: CreateWorkflowRequest) => request<WorkflowDto>(base, { method: 'POST', body }).then((r) => r.body),
 

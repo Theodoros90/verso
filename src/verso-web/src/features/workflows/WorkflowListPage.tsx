@@ -1,5 +1,6 @@
-import { Plus, Workflow } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { MoreHorizontal, Plus, Workflow } from 'lucide-react'
+import { DropdownMenu } from 'radix-ui'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 
 import { usePermissions } from '@/app/AuthGate'
@@ -11,6 +12,8 @@ import { ApiError } from '@/lib/api/client'
 import type { WorkflowSummaryDto } from '@/lib/api/generated'
 import { workflowsApi } from '@/lib/api/workflows'
 
+import { DeactivateWorkflowDialog } from './DeactivateWorkflowDialog'
+
 type ListState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; items: WorkflowSummaryDto[] }
 
 const dateFormat = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -18,30 +21,63 @@ const dateFormat = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'sh
 export function WorkflowListPage() {
   const [state, setState] = useState<ListState>({ kind: 'loading' })
   const [creating, setCreating] = useState(false)
+  const [showInactive, setShowInactive] = useState(false)
+  const [reloads, setReloads] = useState(0)
+  const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; message: string } | null>(null)
+  const [deactivating, setDeactivating] = useState<WorkflowSummaryDto | null>(null)
   const canCreate = usePermissions().workflowAuthoring
 
   useEffect(() => {
     const controller = new AbortController()
     workflowsApi
-      .list(1, 100, controller.signal)
+      .list(1, 100, controller.signal, showInactive)
       .then((page) => setState({ kind: 'ready', items: page.items }))
       .catch((e: unknown) => {
         if (e instanceof DOMException && e.name === 'AbortError') return
         setState({ kind: 'error', message: e instanceof Error ? e.message : 'Could not load workflows.' })
       })
     return () => controller.abort()
+  }, [showInactive, reloads])
+
+  /** Runs one state change, then shows its result and reloads the list. */
+  const change = useCallback(async (run: () => Promise<unknown>, message: string) => {
+    try {
+      await run()
+      setNotice({ tone: 'ok', message })
+      setReloads((n) => n + 1)
+    } catch (e) {
+      setNotice({ tone: 'err', message: e instanceof Error ? e.message : 'The change failed.' })
+    }
   }, [])
 
   return (
     <div className="max-w-[1440px] px-4 pt-6 pb-10 md:px-7">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <p className="max-w-prose text-ink-2">Workflows turn submitted invoice data into archived documents. Open one to edit its draft, or create a new one.</p>
-        {canCreate && (
-          <Button variant="primary" className="ml-auto" onClick={() => setCreating(true)}>
-            <Plus /> New workflow
+        <p className="max-w-prose text-ink-2">
+          {showInactive
+            ? 'Deactivated workflows don’t accept runs and are kept out of the main list. Activate one to bring it back.'
+            : 'Workflows turn submitted invoice data into archived documents. Open one to edit its draft, or create a new one.'}
+        </p>
+        <div className="ml-auto flex items-center gap-2">
+          <Button aria-pressed={showInactive} onClick={() => setShowInactive((v) => !v)}>
+            {showInactive ? 'Show active list' : 'Show deactivated'}
           </Button>
-        )}
+          {canCreate && !showInactive && (
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              <Plus /> New workflow
+            </Button>
+          )}
+        </div>
       </div>
+
+      {notice && (
+        <p
+          role={notice.tone === 'err' ? 'alert' : 'status'}
+          className={`mb-4 rounded-lg border px-4 py-2.5 text-[13px] ${notice.tone === 'err' ? 'border-err/30 bg-err-soft text-err' : 'border-ok/30 bg-ok-soft text-ok'}`}
+        >
+          {notice.message}
+        </p>
+      )}
 
       {state.kind === 'loading' && <p className="text-ink-3">Loading workflows…</p>}
       {state.kind === 'error' && (
@@ -51,35 +87,84 @@ export function WorkflowListPage() {
       )}
       {state.kind === 'ready' && state.items.length === 0 && (
         <section className="max-w-xl rounded-lg border border-dashed border-line-strong bg-surface p-6">
-          <h2 className="mb-1 text-[14.5px] font-semibold">No workflows yet</h2>
-          <p className="text-ink-2">Create the first workflow, for example "Invoice standard".</p>
+          <h2 className="mb-1 text-[14.5px] font-semibold">{showInactive ? 'No deactivated workflows' : 'No workflows yet'}</h2>
+          <p className="text-ink-2">{showInactive ? 'Workflows you deactivate appear here, so they can be activated again.' : 'Create the first workflow, for example "Invoice standard".'}</p>
         </section>
       )}
       {state.kind === 'ready' && state.items.length > 0 && (
         <ul aria-label="Workflows" className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3.5">
           {state.items.map((w) => (
-            <li key={w.id}>
-              <Link to={`/workflows/${w.id}`} className="flex gap-3 rounded-[10px] border border-line bg-surface p-3.5 text-ink no-underline hover:border-line-strong">
+            <li key={w.id} className="relative">
+              <Link
+                to={`/workflows/${w.id}`}
+                className={`flex gap-3 rounded-[10px] border border-line bg-surface p-3.5 text-ink no-underline hover:border-line-strong ${w.isActive ? '' : 'opacity-75'}`}
+              >
                 <span className="grid size-9 flex-none place-items-center rounded-lg bg-cyan-soft text-cyan" aria-hidden="true">
                   <Workflow className="size-4" />
                 </span>
-                <span className="min-w-0 flex-1">
+                <span className="min-w-0 flex-1 pr-7">
                   <span className="block truncate text-[13.5px] font-semibold">{w.name}</span>
                   <span className="block font-mono text-[11.5px] text-ink-3">{w.key}</span>
                   <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {w.latestPublishedVersion != null && <StatusPill tone="ok">v{w.latestPublishedVersion}</StatusPill>}
                     {w.hasDraft && <StatusPill tone="warn">Draft</StatusPill>}
+                    {!w.isActive && <StatusPill tone="neutral">Inactive</StatusPill>}
                   </span>
                   <span className="mt-1 block text-[12px] text-ink-3">Edited {dateFormat.format(new Date(w.updatedAt))}</span>
                 </span>
               </Link>
+              {canCreate && (
+                <WorkflowMenu
+                  workflow={w}
+                  onDeactivate={() => setDeactivating(w)}
+                  onActivate={() => void change(() => workflowsApi.activate(w.id), `“${w.name}” is active again and is back in the list.`)}
+                />
+              )}
             </li>
           ))}
         </ul>
       )}
 
       <NewWorkflowDialog open={creating} onOpenChange={setCreating} />
+      {deactivating && (
+        <DeactivateWorkflowDialog
+          workflow={deactivating}
+          open
+          onOpenChange={(open) => !open && setDeactivating(null)}
+          onDone={() => {
+            setNotice({ tone: 'ok', message: `“${deactivating.name}” is deactivated. Find it under “Show deactivated” to activate it again.` })
+            setReloads((n) => n + 1)
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+/** The “⋯” menu of a card: Deactivate (asks first) for an active workflow, Activate for a deactivated one. */
+function WorkflowMenu({ workflow, onDeactivate, onActivate }: { workflow: WorkflowSummaryDto; onDeactivate: () => void; onActivate: () => void }) {
+  const item = 'cursor-pointer rounded px-2.5 py-1.5 text-[13px] text-ink outline-none data-[highlighted]:bg-surface-2'
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <Button variant="ghost" size="icon" aria-label={`Actions for ${workflow.name}`} className="absolute top-2 right-2 size-7">
+          <MoreHorizontal />
+        </Button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content align="end" sideOffset={4} className="z-50 min-w-44 rounded-lg border border-line bg-surface p-1 shadow-lg">
+          {workflow.isActive ? (
+            <DropdownMenu.Item className={item} onSelect={onDeactivate}>
+              Deactivate…
+            </DropdownMenu.Item>
+          ) : (
+            <DropdownMenu.Item className={item} onSelect={onActivate}>
+              Activate
+            </DropdownMenu.Item>
+          )}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   )
 }
 

@@ -162,6 +162,30 @@ public sealed class FolderInputTests : IDisposable
     }
 
     [Fact]
+    public async Task InactiveWorkflow_IsNotScanned_UntilItIsActivatedAgain()
+    {
+        var key = await PublishAsync();
+        var id = await WithDb(db => db.Workflows.Where(w => w.Key == key).Select(w => w.Id).SingleAsync());
+        using (var off = await _client.PostAsync(new Uri($"/api/v1/workflows/{id}/deactivate", UriKind.Relative), null))
+        {
+            Assert.Equal(HttpStatusCode.OK, off.StatusCode);
+        }
+
+        Drop("inv-001.json", ExecutionTestKit.Fixture("invoice/sample.json"));
+        await PassAsync();
+        Assert.Empty(await RowsAsync(key));
+        Assert.Equal(["inv-001.json"], FilesIn("in")); // left where it was
+
+        using (var on = await _client.PostAsync(new Uri($"/api/v1/workflows/{id}/activate", UriKind.Relative), null))
+        {
+            Assert.Equal(HttpStatusCode.OK, on.StatusCode);
+        }
+
+        await PassAsync();
+        Assert.Equal(FolderFileStatus.Submitted, Assert.Single(await RowsAsync(key)).Status);
+    }
+
+    [Fact]
     public async Task RejectedRun_MovesToFailed_WithAnErrorFile()
     {
         var key = await PublishAsync();

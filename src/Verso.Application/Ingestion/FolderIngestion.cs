@@ -464,7 +464,7 @@ public sealed partial class FolderIngestion(
         }
     }
 
-    /// <summary>Workflows whose latest published version starts with a folder-input trigger, with that trigger's settings.</summary>
+    /// <summary>Active workflows whose latest published version starts with a folder-input trigger, with that trigger's settings. An inactive workflow's folder is not scanned.</summary>
     private async Task<List<(Guid WorkflowId, string WorkflowKey, WorkflowNode Node, FolderInputSettings Settings)>> FolderWorkflowsAsync(CancellationToken ct)
     {
         var marker = $"\"{NodeCatalog.FolderInput}\"";
@@ -472,7 +472,7 @@ public sealed partial class FolderIngestion(
             .Where(v => v.Status == WorkflowVersionStatus.Published
                         && v.VersionNumber == db.WorkflowVersions.Where(o => o.WorkflowId == v.WorkflowId && o.Status == WorkflowVersionStatus.Published).Max(o => o.VersionNumber)
                         && v.Definition.Contains(marker))
-            .Join(db.Workflows.AsNoTracking(), v => v.WorkflowId, w => w.Id, (v, w) => new { v.WorkflowId, w.Key, v.Definition })
+            .Join(db.Workflows.AsNoTracking().Where(w => w.IsActive), v => v.WorkflowId, w => w.Id, (v, w) => new { v.WorkflowId, w.Key, v.Definition })
             .ToListAsync(ct);
 
         var result = new List<(Guid, string, WorkflowNode, FolderInputSettings)>();

@@ -11,9 +11,9 @@ import {
   type EdgeChange,
   type NodeChange,
 } from '@xyflow/react'
-import { ChevronDown, CircleAlert, CircleCheck, FilePlus2, Redo2, Save, Search, Trash2, Undo2, UploadCloud } from 'lucide-react'
+import { ChevronDown, CircleAlert, CircleCheck, FilePlus2, Pause, Play, Redo2, Save, Search, Trash2, Undo2, UploadCloud } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useBlocker, useParams } from 'react-router'
+import { Link, useBlocker, useNavigate, useParams } from 'react-router'
 
 import { usePermissions } from '@/app/AuthGate'
 import { StatusPill } from '@/components/StatusPill'
@@ -38,6 +38,7 @@ import { FolderInputSettings } from './FolderInputSettings'
 import { IfElseSettings } from './IfElseSettings'
 import { SwitchSettings } from './SwitchSettings'
 import { ForEachSettings } from './ForEachSettings'
+import { DeactivateWorkflowDialog } from '../DeactivateWorkflowDialog'
 import { MapFieldsSettings } from './MapFieldsSettings'
 import { SchemaForm, type FieldSchema, type TemplateOption } from './SchemaForm'
 import { useWorkflowState } from './workflowState'
@@ -140,7 +141,9 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
 
   const [issues, setIssues] = useState<WorkflowIssueDto[]>([])
   const [validating, setValidating] = useState(false)
-  const [busy, setBusy] = useState<'save' | 'publish' | 'draft' | null>(null)
+  const [busy, setBusy] = useState<'save' | 'publish' | 'draft' | 'state' | null>(null)
+  const [deactivating, setDeactivating] = useState(false)
+  const navigate = useNavigate()
   const [banner, setBanner] = useState<Banner>(flash ? { tone: 'ok', message: flash } : null)
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({})
   const [templates, setTemplates] = useState<TemplateOption[]>([])
@@ -402,6 +405,19 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
     }
   }
 
+  /** Activates the workflow: it reloads with its new state (unsaved edits are saved first). Deactivating goes through its confirm dialog instead. */
+  const changeState = async (run: () => Promise<unknown>, message: string) => {
+    if (dirty && !(await save())) return
+    setBusy('state')
+    try {
+      await run()
+      onReload(message)
+    } catch (e) {
+      setBanner({ tone: 'err', message: e instanceof Error ? e.message : 'The change failed.' })
+      setBusy(null)
+    }
+  }
+
   // ---------- keyboard and leave guard ----------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -620,6 +636,7 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
           </Link>
           <span className="mr-1.5 text-sm font-semibold">{workflow.name}</span>
           {readOnly ? <StatusPill tone="ok">Published v{version.versionNumber}</StatusPill> : <StatusPill tone="warn">Draft</StatusPill>}
+          {!workflow.isActive && <StatusPill tone="neutral">Inactive</StatusPill>}
           {dirty && <span className="text-xs text-ink-3">Unsaved changes</span>}
           <span aria-hidden="true" className="mx-1 h-5 w-px bg-line" />
           <Button variant="ghost" size="icon" aria-label="Undo" disabled={readOnly || state.history.past.length === 0} onClick={actions.undo}>
@@ -629,6 +646,21 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
             <Redo2 />
           </Button>
           <div className="flex-1" />
+          {canEdit &&
+            (workflow.isActive ? (
+              <Button size="sm" disabled={busy !== null} title="Stop new runs and move this workflow out of the list. Nothing is deleted." onClick={() => setDeactivating(true)}>
+                <Pause /> Deactivate
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                disabled={busy !== null}
+                title="Accept new runs again and put this workflow back in the list"
+                onClick={() => void changeState(() => workflowsApi.activate(workflow.id), `Activated: '${workflow.key}' accepts runs again.`)}
+              >
+                <Play /> Activate
+              </Button>
+            ))}
           {!canEdit ? (
             <span className="text-[12.5px] text-ink-3">View only: editing needs the WorkflowAuthor role</span>
           ) : readOnly ? (
@@ -652,6 +684,8 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
             </>
           )}
         </div>
+
+        <DeactivateWorkflowDialog workflow={workflow} open={deactivating} onOpenChange={setDeactivating} onDone={() => navigate('/workflows')} />
 
         {banner && (
           <div

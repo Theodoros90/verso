@@ -474,6 +474,7 @@ export interface WorkflowDto {
   createdBy: string
   latestPublishedVersion: number | null
   draftVersionId: string | null
+  isActive: boolean
 }
 
 export interface WorkflowIssueDto {
@@ -493,6 +494,7 @@ export interface WorkflowSummaryDto {
   latestPublishedVersion: number | null
   hasDraft: boolean
   updatedAt: string
+  isActive: boolean
 }
 
 export interface WorkflowValidationDto {

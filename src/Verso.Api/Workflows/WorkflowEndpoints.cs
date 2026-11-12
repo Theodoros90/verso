@@ -19,8 +19,8 @@ public static class WorkflowEndpoints
 
         var group = app.MapGroup("/api/v1/workflows").WithTags("Workflows").RequireAuthorization(Policies.Read);
 
-        group.MapGet("/", async (WorkflowService service, CancellationToken ct, int page = 1, int pageSize = 25) =>
-                Results.Ok(await service.ListAsync(page, pageSize, ct)))
+        group.MapGet("/", async (WorkflowService service, CancellationToken ct, int page = 1, int pageSize = 25, bool inactive = false) =>
+                Results.Ok(await service.ListAsync(page, pageSize, inactive, ct)))
             .WithName("ListWorkflows")
             .Produces<PageResult<WorkflowSummaryDto>>();
 
@@ -103,6 +103,20 @@ public static class WorkflowEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
+
+        group.MapPost("/{id:guid}/activate", async (Guid id, WorkflowService service, CancellationToken ct) =>
+                (await service.SetActiveAsync(id, true, ct)).ToResult())
+            .WithName("ActivateWorkflow")
+            .RequireAuthorization(Policies.WorkflowAuthoring)
+            .Produces<WorkflowDto>()
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{id:guid}/deactivate", async (Guid id, WorkflowService service, CancellationToken ct) =>
+                (await service.SetActiveAsync(id, false, ct)).ToResult())
+            .WithName("DeactivateWorkflow")
+            .RequireAuthorization(Policies.WorkflowAuthoring)
+            .Produces<WorkflowDto>()
+            .ProducesProblem(StatusCodes.Status404NotFound);
 
         return app;
     }

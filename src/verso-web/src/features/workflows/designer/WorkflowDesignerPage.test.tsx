@@ -224,8 +224,9 @@ interface Call {
   ifMatch?: string
 }
 
-function mockApi(opts: { issues?: WorkflowIssueDto[]; publish?: 'ok' | 'invalid' } = {}) {
+function mockApi(opts: { issues?: WorkflowIssueDto[]; publish?: 'ok' | 'invalid'; inactive?: boolean } = {}) {
   const calls: Call[] = []
+  let active = !opts.inactive
   const json = (b: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json', ...headers } })
   const version = { versionId: 'v1', workflowId: WF, versionNumber: null, status: 'Draft', definition, contentHash: null, createdAt: '', createdBy: '', updatedAt: '', updatedBy: '', publishedAt: null, publishedBy: null }
   vi.stubGlobal(
@@ -236,7 +237,15 @@ function mockApi(opts: { issues?: WorkflowIssueDto[]; publish?: 'ok' | 'invalid'
       calls.push({ method, url, body: init.body ? JSON.parse(String(init.body)) : undefined, ifMatch: headers['if-match'] })
       if (url === '/api/health') return json({ status: 'Healthy', totalDurationMs: 1, checks: [] })
       if (url === '/api/v1/node-types') return json(nodeTypes)
-      if (url === `/api/v1/workflows/${WF}`) return json({ id: WF, key: 'invoice-standard', name: 'Invoice standard', description: null, createdAt: '', createdBy: '', latestPublishedVersion: null, draftVersionId: 'v1' })
+      if (url === `/api/v1/workflows/${WF}`) return json({ id: WF, key: 'invoice-standard', name: 'Invoice standard', description: null, createdAt: '', createdBy: '', latestPublishedVersion: null, draftVersionId: 'v1', isActive: active })
+      if (url === `/api/v1/workflows/${WF}/deactivate` && method === 'POST') {
+        active = false
+        return json({ id: WF, isActive: false })
+      }
+      if (url === `/api/v1/workflows/${WF}/activate` && method === 'POST') {
+        active = true
+        return json({ id: WF, isActive: true })
+      }
       if (url === `/api/v1/workflows/${WF}/draft` && method === 'GET') return json(version, 200, { ETag: '"w1"' })
       if (url === `/api/v1/workflows/${WF}/draft` && method === 'PUT') return json(version, 200, { ETag: '"w2"' })
       if (url === `/api/v1/workflows/${WF}/draft/validate`) {
@@ -494,6 +503,39 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent("can't be published")
     expect(within(screen.getByRole('region', { name: 'Issues' })).getByText(/has no published version yet/)).toBeInTheDocument()
+  })
+
+  it('deactivates the workflow only after confirming, then returns to the list', async () => {
+    const calls = mockApi()
+    const router = createMemoryRouter(routes, { initialEntries: [`/workflows/${WF}`] })
+    render(<RouterProvider router={router} />)
+    const toolbar = await screen.findByRole('toolbar', { name: 'Workflow designer' })
+    const user = userEvent.setup()
+    expect(within(toolbar).queryByText('Inactive')).not.toBeInTheDocument()
+
+    await user.click(within(toolbar).getByRole('button', { name: /Deactivate/ }))
+    const dialog = await screen.findByRole('dialog', { name: /Deactivate "Invoice standard"/ })
+    expect(calls.some((c) => c.url.endsWith('/deactivate'))).toBe(false) // nothing until confirmed
+
+    await user.click(within(dialog).getByRole('button', { name: 'Deactivate workflow' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/workflows'))
+    expect(calls.some((c) => c.method === 'POST' && c.url === `/api/v1/workflows/${WF}/deactivate`)).toBe(true)
+  })
+
+  it('shows an inactive workflow as Inactive and activates it from the toolbar', async () => {
+    const calls = mockApi({ inactive: true })
+    await open()
+    const user = userEvent.setup()
+    const toolbar = screen.getByRole('toolbar', { name: 'Workflow designer' })
+    expect(within(toolbar).getByText('Inactive')).toBeInTheDocument()
+    expect(within(toolbar).queryByRole('button', { name: /Deactivate/ })).not.toBeInTheDocument()
+
+    await user.click(within(toolbar).getByRole('button', { name: /Activate/ }))
+
+    await waitFor(() => expect(within(screen.getByRole('toolbar', { name: 'Workflow designer' })).queryByText('Inactive')).not.toBeInTheDocument())
+    expect(calls.some((c) => c.method === 'POST' && c.url === `/api/v1/workflows/${WF}/activate`)).toBe(true)
+    expect(screen.getByRole('status')).toHaveTextContent("'invoice-standard' accepts runs again")
   })
 
   it('edits the API / webhook endpoint, authentication, schema and sample, with live checks', async () => {

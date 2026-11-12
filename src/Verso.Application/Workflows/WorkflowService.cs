@@ -18,10 +18,12 @@ public sealed record SaveWorkflowDraftRequest(JsonElement? Definition);
 /// <summary>Optional body of the validate endpoint: without a definition, the saved draft is validated.</summary>
 public sealed record ValidateWorkflowRequest(JsonElement? Definition);
 
-public sealed record WorkflowSummaryDto(Guid Id, string Key, string Name, int? LatestPublishedVersion, bool HasDraft, DateTimeOffset UpdatedAt);
+public sealed record WorkflowSummaryDto(
+    Guid Id, string Key, string Name, int? LatestPublishedVersion, bool HasDraft, DateTimeOffset UpdatedAt, bool IsActive);
 
 public sealed record WorkflowDto(
-    Guid Id, string Key, string Name, string? Description, DateTimeOffset CreatedAt, string CreatedBy, int? LatestPublishedVersion, Guid? DraftVersionId);
+    Guid Id, string Key, string Name, string? Description, DateTimeOffset CreatedAt, string CreatedBy, int? LatestPublishedVersion, Guid? DraftVersionId,
+    bool IsActive);
 
 public sealed record WorkflowVersionSummaryDto(
     Guid VersionId, int? VersionNumber, string Status, string? ContentHash, DateTimeOffset UpdatedAt, string UpdatedBy, DateTimeOffset? PublishedAt, string? PublishedBy);
@@ -41,6 +43,8 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
         public const string DraftCreated = "WorkflowDraftCreated";
         public const string DraftSaved = "WorkflowDraftSaved";
         public const string Published = "WorkflowPublished";
+        public const string Activated = "WorkflowActivated";
+        public const string Deactivated = "WorkflowDeactivated";
     }
 
     /// <summary>A new workflow starts with just its trigger (plan §5.2), configured with the catalog defaults.</summary>
@@ -90,11 +94,12 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
         return ToDto(workflow);
     }
 
-    public async Task<PageResult<WorkflowSummaryDto>> ListAsync(int page, int pageSize, CancellationToken ct)
+    /// <summary>The active workflows (<paramref name="inactive"/> false) or, to activate one again, the deactivated ones (true).</summary>
+    public async Task<PageResult<WorkflowSummaryDto>> ListAsync(int page, int pageSize, bool inactive, CancellationToken ct)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var query = db.Workflows.AsNoTracking();
+        var query = db.Workflows.AsNoTracking().Where(w => w.IsActive != inactive);
         var total = await query.CountAsync(ct);
         var rows = await query
             .OrderBy(w => w.Key)
@@ -108,9 +113,32 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
                 LatestPublished = w.Versions.Where(v => v.Status == WorkflowVersionStatus.Published).Max(v => v.VersionNumber),
                 HasDraft = w.Versions.Any(v => v.Status == WorkflowVersionStatus.Draft),
                 UpdatedAt = w.Versions.Max(v => v.UpdatedAt),
+                w.IsActive,
             })
             .ToListAsync(ct);
-        return new PageResult<WorkflowSummaryDto>([.. rows.Select(r => new WorkflowSummaryDto(r.Id, r.Key, r.Name, r.LatestPublished, r.HasDraft, r.UpdatedAt))], page, pageSize, total);
+        return new PageResult<WorkflowSummaryDto>(
+            [.. rows.Select(r => new WorkflowSummaryDto(r.Id, r.Key, r.Name, r.LatestPublished, r.HasDraft, r.UpdatedAt, r.IsActive))], page, pageSize, total);
+    }
+
+    /// <summary>
+    /// Deactivates (stops new runs and Folder input scanning, and moves the workflow to the deactivated list) or activates it
+    /// again. Nothing is deleted: versions, runs, documents and audit entries stay, and the key stays taken. Editing and
+    /// publishing stay possible. Repeating a change is a no-op.
+    /// </summary>
+    public async Task<Result<WorkflowDto>> SetActiveAsync(Guid id, bool active, CancellationToken ct)
+    {
+        if (await LoadAsync(id, ct) is not { } workflow)
+        {
+            return NotFound(id);
+        }
+
+        if (active ? workflow.Activate() : workflow.Deactivate())
+        {
+            Audit(active ? Actions.Activated : Actions.Deactivated, workflow.Id, clock.GetUtcNow(), new { key = workflow.Key });
+            await db.SaveChangesAsync(ct);
+        }
+
+        return ToDto(workflow);
     }
 
     public async Task<Result<WorkflowDto>> GetAsync(Guid id, CancellationToken ct) =>
@@ -344,7 +372,7 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
         "This workflow has no draft. Published versions cannot be changed; start a new draft with POST …/draft.");
 
     private static WorkflowDto ToDto(Workflow w) =>
-        new(w.Id, w.Key, w.Name, w.Description, w.CreatedAt, w.CreatedBy, w.LatestPublished?.VersionNumber, w.Draft?.Id);
+        new(w.Id, w.Key, w.Name, w.Description, w.CreatedAt, w.CreatedBy, w.LatestPublished?.VersionNumber, w.Draft?.Id, w.IsActive);
 
     private static Versioned<WorkflowVersionDto> ToVersioned(WorkflowVersion v)
     {
