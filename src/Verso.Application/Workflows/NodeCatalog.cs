@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), validate, generate-pdf, archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -37,6 +37,7 @@ public static class NodeCatalog
     public const string MapFields = "map-fields";
     public const string TransformData = "transform";
     public const string MergeData = "merge-data";
+    public const string IfElse = "if-else";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string Archive = "archive";
@@ -385,6 +386,28 @@ public static class NodeCatalog
               "required": ["key", "lookupKey", "lookup", "strategy"] }
             """,
             """{ "key": "", "lookupKey": "", "lookup": "[]", "source": "", "into": "", "overwrite": false, "strategy": "keep" }"""),
+
+        Node(IfElse, "If / else", "logic",
+            "Sends the run down the Yes path when its conditions are met, otherwise the No path. The data is not changed.",
+            [In], [new PortDto("yes", "Yes", false), new PortDto("no", "No", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "conditions": { "type": "array", "title": "Conditions", "maxItems": {{Executions.IfElse.MaxConditions}}, "x-widget": "conditions",
+                  "description": "Rows are joined by AND or OR; AND is applied first. Text ignores case; number comparisons need numbers.",
+                  "items": { "type": "object", "required": ["field", "op"],
+                    "properties": {
+                      "join": { "type": "string", "title": "Joined to the row above by", "enum": {{JsonSerializer.Serialize(Executions.IfElse.Joins.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Executions.IfElse.Joins.Values)}} },
+                      "field": { "type": "string", "title": "Field", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DataPathPattern)}}", "x-widget": "data-path" },
+                      "op": { "type": "string", "title": "Operator", "enum": {{JsonSerializer.Serialize(Executions.IfElse.Operators.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Executions.IfElse.Operators.Values)}} },
+                      "compare": { "type": "string", "title": "Compare with", "enum": {{JsonSerializer.Serialize(Executions.IfElse.Compares.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Executions.IfElse.Compares.Values)}} },
+                      "value": { "type": "string", "title": "Value or field", "maxLength": 200,
+                        "description": "A value such as 10000, or (when comparing with a field) a field path such as totals.net." } } } },
+                "yesLabel": { "type": "string", "title": "Name of the Yes path", "maxLength": 40, "description": "Shown on the step. Optional." },
+                "noLabel": { "type": "string", "title": "Name of the No path", "maxLength": 40, "description": "Shown on the step. Optional." } },
+              "required": ["conditions"] }
+            """,
+            """{ "conditions": [ { "join": "and", "field": "", "op": "equals", "compare": "value", "value": "" } ], "yesLabel": "Yes", "noLabel": "No" }"""),
 
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",

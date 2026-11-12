@@ -1,5 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { Archive, ArrowLeftRight, CalendarClock, Circle, Database, FileCode, FileText, FolderInput, FolderSync, Merge, MousePointerClick, Shuffle, ShieldCheck, Upload, Webhook, type LucideIcon } from 'lucide-react'
+import { Archive, ArrowLeftRight, CalendarClock, Circle, Database, FileCode, FileText, FolderInput, FolderSync, GitBranch, Merge, MousePointerClick, Shuffle, ShieldCheck, Upload, Webhook, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NodeTypeDto, WorkflowIssueDto } from '@/lib/api/generated'
@@ -36,9 +36,19 @@ export const NODE_ICONS: Record<string, LucideIcon> = {
   'map-fields': ArrowLeftRight,
   transform: Shuffle,
   'merge-data': Merge,
+  'if-else': GitBranch,
   validate: ShieldCheck,
   'generate-pdf': FileText,
   archive: Archive,
+}
+
+/** An output's name on the card and on its connection. An If / else step lets its author rename the Yes and No paths. */
+export function portLabel(node: DefNode, portId: string, fallback: string): string {
+  if (node.type === 'if-else') {
+    const custom = node.config[`${portId}Label`]
+    if (typeof custom === 'string' && custom.trim()) return custom.trim()
+  }
+  return fallback
 }
 
 export type NodeStatus = 'configured' | 'warning' | 'error'
@@ -107,7 +117,7 @@ export function NodeCard({ data, selected }: NodeProps<VersoFlowNode>) {
             const connected = outgoing.some((e) => e.sourcePort === p.id)
             return (
               <div key={p.id} className="relative flex h-6 items-center justify-end pr-3.5 text-[11px] text-ink-2">
-                <span className={cn(!connected && p.required && 'text-err')}>{p.label}</span>
+                <span className={cn(!connected && p.required && 'text-err')}>{portLabel(node, p.id, p.label)}</span>
                 <Handle
                   type="source"
                   position={Position.Right}

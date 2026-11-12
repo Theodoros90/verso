@@ -27,10 +27,11 @@ import { workflowsApi } from '@/lib/api/workflows'
 import { inferSchema, modelFields, scalarPaths, schemaFields } from '@/features/templates/model/schema'
 
 import { addNode, asDefinition, connect, moveNode, nextPosition, removeEdges, removeNodes, updateNode, type WorkflowDefinition } from '../model/definition'
-import { CATEGORY_COLORS, CATEGORY_LABELS, NODE_ICONS, NodeCard, type VersoFlowNode } from './NodeCard'
+import { CATEGORY_COLORS, CATEGORY_LABELS, NODE_ICONS, NodeCard, portLabel, type VersoFlowNode } from './NodeCard'
 import { parseJsonObject } from '../model/payloadSchema'
 import { ApiTriggerSettings, type TemplateSample } from './ApiTriggerSettings'
 import { FolderInputSettings } from './FolderInputSettings'
+import { IfElseSettings } from './IfElseSettings'
 import { MapFieldsSettings } from './MapFieldsSettings'
 import { SchemaForm, type FieldSchema, type TemplateOption } from './SchemaForm'
 import { useWorkflowState } from './workflowState'
@@ -250,18 +251,27 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
   )
   const edgeIssues = useMemo(() => new Set(issues.filter((i) => i.edgeId && i.severity === 'error').map((i) => i.edgeId!)), [issues])
   const edges: Edge[] = useMemo(
-    () =>
-      def.edges.map((e) => ({
+    () => {
+      const sourceNodes = new Map(def.nodes.map((n) => [n.id, n]))
+      return def.edges.map((e) => ({
         id: e.id,
         source: e.source,
         sourceHandle: e.sourcePort,
         target: e.target,
         targetHandle: e.targetPort,
         deletable: !readOnly,
-        label: e.sourcePort === 'out' || e.sourcePort === 'success' || e.sourcePort === 'valid' ? undefined : e.sourcePort,
+        label:
+          e.sourcePort === 'out' || e.sourcePort === 'success' || e.sourcePort === 'valid'
+            ? undefined
+            : sourceNodes.get(e.source) ? portLabel(sourceNodes.get(e.source)!, e.sourcePort, e.sourcePort) : e.sourcePort,
         style: { stroke: edgeIssues.has(e.id) ? 'var(--err)' : 'var(--line-strong)', strokeWidth: 1.75 },
-      })),
-    [def.edges, readOnly, edgeIssues],
+        labelStyle: { fontSize: 11, fill: 'var(--ink-2)' },
+        labelBgStyle: { fill: 'var(--surface)', stroke: 'var(--line)' },
+        labelBgPadding: [6, 3] as [number, number],
+        labelBgBorderRadius: 4,
+      }))
+    },
+    [def.edges, def.nodes, readOnly, edgeIssues],
   )
 
   const onNodesChange = useCallback(
@@ -727,6 +737,13 @@ function NodeSettings({
             schema={nodeType.configSchema as FieldSchema}
             templateFields={templateFields}
             templateName={templateName}
+            value={node.config}
+            onChange={(config, key) => onChange({ config }, key)}
+            ctx={{ templates, dataPaths, errorsFor: fieldErrors, readOnly }}
+          />
+        ) : nodeType && node.type === 'if-else' ? (
+          <IfElseSettings
+            schema={nodeType.configSchema as FieldSchema}
             value={node.config}
             onChange={(config, key) => onChange({ config }, key)}
             ctx={{ templates, dataPaths, errorsFor: fieldErrors, readOnly }}

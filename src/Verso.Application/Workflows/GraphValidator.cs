@@ -204,6 +204,8 @@ public static class GraphValidator
         (NodeCatalog.MapFields, "failed") => "A value that can't be transformed will end the run as Rejected.",
         (NodeCatalog.TransformData, "failed") => "A rule that can't be applied will end the run as Rejected.",
         (NodeCatalog.MergeData, "failed") => "A record that can't be merged will end the run as Rejected.",
+        (NodeCatalog.IfElse, "yes") => "Records that meet the condition end the run here.",
+        (NodeCatalog.IfElse, "no") => "Records that don't meet the condition end the run here.",
         (NodeCatalog.GeneratePdf, "failed") =>"Data that can't make a complete document will end the run as Rejected.",
         _ => $"'{port.Label}' isn't connected; the run ends there.",
     };
@@ -289,6 +291,14 @@ public static class GraphValidator
                 foreach (var problem in Executions.DataMerger.Incomplete(c))
                 {
                     yield return new(Error, "config.invalid", problem, NodeId: node.Id);
+                }
+
+                break;
+
+            case NodeCatalog.IfElse:
+                foreach (var (field, problem) in Executions.IfElse.Incomplete(c))
+                {
+                    yield return new(Error, "config.invalid", problem, NodeId: node.Id, Field: field);
                 }
 
                 break;

@@ -352,6 +352,7 @@ public sealed class GraphValidatorTests
                 NodeCatalog.GeneratePdf => ["templateId"],
                 NodeCatalog.SftpFolder => ["host"],
                 NodeCatalog.MergeData => ["key", "lookupKey"],
+                NodeCatalog.IfElse => ["conditions[0].field"],
                 _ => Array.Empty<string>(),
             };
             Assert.Equal(expected, errors.Select(e => e.Field).ToArray());

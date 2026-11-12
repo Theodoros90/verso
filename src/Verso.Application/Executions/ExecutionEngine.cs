@@ -232,6 +232,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.MapFields => Task.FromResult(Map(run, node)),
         NodeCatalog.TransformData => Task.FromResult(Transform(run, node)),
         NodeCatalog.MergeData => Task.FromResult(Merge(run, node)),
+        NodeCatalog.IfElse => Task.FromResult(Branch(run, node)),
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
         NodeCatalog.GeneratePdf => GeneratePdfAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
@@ -288,6 +289,13 @@ public sealed partial class ExecutionEngine(
 
         run.Data = merged;
         return new Outcome("success", new { matched = result.Matched, unmatched = result.Unmatched, dropped = result.Dropped });
+    }
+
+    /// <summary>Takes the 'yes' or the 'no' path. Nothing can fail here and the data is unchanged, so a resumed run has nothing to rebuild. The result says which way it went, never why (no values).</summary>
+    private static Outcome Branch(Run run, Workflows.WorkflowNode node)
+    {
+        var yes = IfElse.Evaluate(node.Config, run.Data);
+        return new Outcome(yes ? IfElse.Yes : IfElse.No, new { matched = yes });
     }
 
     private static Outcome Validate(Run run, Workflows.WorkflowNode node)

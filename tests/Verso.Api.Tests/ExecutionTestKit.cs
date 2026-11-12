@@ -40,7 +40,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null)
     {
         var templateId = await PublishInvoiceTemplateAsync();
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -101,6 +101,16 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
             definition["nodes"]!.AsArray().Add(merge);
             definition["edges"]!.AsArray().First(e => (string?)e!["target"] == "validate")!["target"] = "merge";
             definition["edges"]!.AsArray().Add(JsonNode.Parse("""{ "id": "e7", "source": "merge", "sourcePort": "success", "target": "validate", "targetPort": "in" }"""));
+        }
+
+        if (ifConfig is not null)
+        {
+            // … → if-else: yes → validate, no → (nothing: the run ends there)
+            var branch = JsonNode.Parse("""{ "id": "branch", "type": "if-else", "title": "If / else", "position": { "x": 130, "y": 480 }, "config": {} }""")!;
+            branch["config"] = ifConfig.DeepClone();
+            definition["nodes"]!.AsArray().Add(branch);
+            definition["edges"]!.AsArray().First(e => (string?)e!["target"] == "validate")!["target"] = "branch";
+            definition["edges"]!.AsArray().Add(JsonNode.Parse("""{ "id": "e9", "source": "branch", "sourcePort": "yes", "target": "validate", "targetPort": "in" }"""));
         }
 
         using var draft = await client.GetAsync(new Uri($"/api/v1/workflows/{workflowId}/draft", UriKind.Relative));
