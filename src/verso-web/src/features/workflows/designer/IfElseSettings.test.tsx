@@ -49,17 +49,21 @@ function Harness({ onValue }: { onValue?: (v: Record<string, unknown>) => void }
 }
 
 describe('IfElseSettings', () => {
-  it('suggests the data fields for the field and for a compared field', async () => {
+  it('picks the field, and a field to compare with, from a dropdown of the available data', async () => {
     const user = userEvent.setup()
-    const { container } = render(<Harness />)
-    const options = [...container.querySelectorAll('datalist option')].map((o) => o.getAttribute('value'))
-    expect(options).toEqual(['totals.gross', 'totals.net'])
-    const listId = screen.getByRole('combobox', { name: 'Condition 1: field' }).getAttribute('list')
-    expect(listId).toBeTruthy()
+    let latest: Record<string, unknown> = {}
+    render(<Harness onValue={(v) => (latest = v)} />)
+    const field = screen.getByRole('combobox', { name: 'Condition 1: field' })
+    expect([...field.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Choose a field…', 'totals.gross', 'totals.net'])
+    await user.selectOptions(field, 'totals.gross')
+    expect((latest.conditions as { field: string }[])[0]!.field).toBe('totals.gross')
 
-    expect(screen.getByRole('textbox', { name: 'Condition 1: value' })).not.toHaveAttribute('list') // a typed value: no suggestions
+    expect(screen.getByRole('textbox', { name: 'Condition 1: value' })).toBeInTheDocument() // a typed value is plain text
     await user.selectOptions(screen.getByRole('combobox', { name: 'Condition 1: compare with' }), 'field')
-    expect(screen.getByRole('combobox', { name: 'Condition 1: field to compare with' })).toHaveAttribute('list', listId)
+    const other = screen.getByRole('combobox', { name: 'Condition 1: field to compare with' })
+    expect([...other.querySelectorAll('option')].map((o) => o.textContent)).toContain('totals.net')
+    await user.selectOptions(other, 'totals.net')
+    expect((latest.conditions as { value: string }[])[0]!.value).toBe('totals.net')
   })
 
   it('adds rows joined by AND or OR, hides the value for emptiness checks, and removes rows', async () => {

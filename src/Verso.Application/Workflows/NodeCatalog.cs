@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), validate, generate-pdf, archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -38,6 +38,7 @@ public static class NodeCatalog
     public const string TransformData = "transform";
     public const string MergeData = "merge-data";
     public const string IfElse = "if-else";
+    public const string SwitchRoute = "switch";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string Archive = "archive";
@@ -409,6 +410,31 @@ public static class NodeCatalog
             """,
             """{ "conditions": [ { "join": "and", "field": "", "op": "equals", "compare": "value", "value": "" } ], "yesLabel": "Yes", "noLabel": "No" }"""),
 
+        Node(SwitchRoute, "Switch", "logic",
+            "Routes the run by the value of one field: the first branch whose value matches decides the path, and 'Other' catches the rest. The outputs are the branches (listed in the settings). The data is not changed.",
+            [In], [],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "field": { "type": "string", "title": "Field", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DataPathPattern)}}", "x-widget": "data-path",
+                  "description": "The field of the data to route by, such as customer.deliveryPreference." },
+                "op": { "type": "string", "title": "Operator", "enum": {{JsonSerializer.Serialize(Executions.Switch.Operators.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Executions.Switch.Operators.Values)}},
+                  "description": "Each branch compares the field with its own value. Text ignores case; number comparisons need numbers." },
+                "branches": { "type": "array", "title": "Branches", "maxItems": {{Executions.Switch.MaxBranches}}, "x-widget": "branches",
+                  "items": { "type": "object", "required": ["id", "label"],
+                    "properties": {
+                      "id": { "type": "string", "title": "Output id", "minLength": 1, "maxLength": 30, "pattern": "{{Escape(Executions.Switch.IdPattern)}}" },
+                      "label": { "type": "string", "title": "Branch name", "minLength": 1, "maxLength": 40 },
+                      "compare": { "type": "string", "title": "Compare with", "enum": {{JsonSerializer.Serialize(Executions.IfElse.Compares.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Executions.IfElse.Compares.Values)}} },
+                      "value": { "type": "string", "title": "Value or field", "maxLength": 200 } } } },
+                "other": { "type": "boolean", "title": "Add an 'Other' path for values that match no branch" } },
+              "required": ["field", "op", "branches"] }
+            """,
+            """
+            { "field": "", "op": "equals", "other": true,
+              "branches": [ { "id": "branch-1", "label": "Branch 1", "compare": "value", "value": "" }, { "id": "branch-2", "label": "Branch 2", "compare": "value", "value": "" } ] }
+            """),
+
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",
             [In], [new PortDto("valid", "Valid", true), new PortDto("invalid", "Invalid", false)],
@@ -464,6 +490,13 @@ public static class NodeCatalog
     ];
 
     public static NodeTypeDto? Find(string type) => All.FirstOrDefault(t => t.Type == type);
+
+    /// <summary>
+    /// The outputs of one node. For most types that is the catalog's list; a Switch has one per branch of its settings
+    /// (its catalog list is empty).
+    /// </summary>
+    public static IReadOnlyList<PortDto> OutputsOf(NodeTypeDto type, System.Text.Json.JsonElement config) =>
+        type.Type == SwitchRoute ? Executions.Switch.Ports(config) : type.Outputs;
 
     private static NodeTypeDto Node(string type, string label, string category, string description,
         IReadOnlyList<PortDto> inputs, IReadOnlyList<PortDto> outputs, string schema, string defaults) =>

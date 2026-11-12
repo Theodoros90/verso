@@ -78,7 +78,7 @@ public static class GraphValidator
                 continue;
             }
 
-            if (types.TryGetValue(edge.Source, out var sourceType) && sourceType.Outputs.All(p => p.Id != edge.SourcePort))
+            if (types.TryGetValue(edge.Source, out var sourceType) && NodeCatalog.OutputsOf(sourceType, nodes[edge.Source].Config).All(p => p.Id != edge.SourcePort))
             {
                 issues.Add(new(Error, "edge.unknown_port", $"'{nodes[edge.Source].Title}' has no output '{edge.SourcePort}'.", NodeId: edge.Source, EdgeId: edge.Id, Port: edge.SourcePort));
                 continue;
@@ -168,7 +168,7 @@ public static class GraphValidator
                 continue;
             }
 
-            foreach (var port in type.Outputs.Where(p => !usedOutputs.Contains((node.Id, p.Id))))
+            foreach (var port in NodeCatalog.OutputsOf(type, node.Config).Where(p => !usedOutputs.Contains((node.Id, p.Id))))
             {
                 issues.Add(port.Required
                     ? new(Error, "port.unconnected", $"Connect '{port.Label}' to the next step.", NodeId: node.Id, Port: port.Id)
@@ -297,6 +297,14 @@ public static class GraphValidator
 
             case NodeCatalog.IfElse:
                 foreach (var (field, problem) in Executions.IfElse.Incomplete(c))
+                {
+                    yield return new(Error, "config.invalid", problem, NodeId: node.Id, Field: field);
+                }
+
+                break;
+
+            case NodeCatalog.SwitchRoute:
+                foreach (var (field, problem) in Executions.Switch.Incomplete(c))
                 {
                     yield return new(Error, "config.invalid", problem, NodeId: node.Id, Field: field);
                 }

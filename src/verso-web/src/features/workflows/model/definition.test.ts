@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { NodeTypeDto } from '@/lib/api/generated'
 
-import { addNode, asDefinition, connect, moveNode, nextPosition, removeEdges, removeNodes, updateNode, type WorkflowDefinition } from './definition'
+import { addNode, asDefinition, connect, moveNode, nextPosition, outputPorts, removeEdges, removeNodes, switchPorts, updateNode, type WorkflowDefinition } from './definition'
 
 const validateType: NodeTypeDto = {
   type: 'validate',
@@ -70,5 +70,54 @@ describe('workflow definition edits', () => {
     expect(nextPosition(d, 'trigger')).toEqual({ x: 280, y: 0 })
     expect(nextPosition(d)).toEqual({ x: 560, y: 40 })
     expect(nextPosition(asDefinition(null))).toEqual({ x: 0, y: 0 })
+  })
+})
+
+describe('Switch outputs', () => {
+  const branch = (id: string, label: string) => ({ id, label, compare: 'value', value: 'x' })
+  const config = { field: 'a', op: 'equals', other: true, branches: [branch('email', 'Email'), branch('print', ' ')] }
+
+  it('are the branches in order, then Other', () => {
+    expect(switchPorts(config)).toEqual([
+      { id: 'email', label: 'Email', required: false },
+      { id: 'print', label: 'Untitled', required: false },
+      { id: 'other', label: 'Other', required: false },
+    ])
+    expect(switchPorts({ ...config, other: false }).map((p) => p.id)).toEqual(['email', 'print'])
+  })
+
+  it('give no output to a blank, repeated or reserved id', () => {
+    expect(switchPorts({ branches: [branch('a', 'A'), branch('a', 'B'), branch('other', 'C'), branch('', 'D')] }).map((p) => p.id)).toEqual(['a'])
+  })
+
+  it('come from the settings for a Switch and from the catalog for other steps', () => {
+    expect(outputPorts(validateType, { type: 'switch', config }).map((p) => p.id)).toEqual(['email', 'print', 'other'])
+    expect(outputPorts(validateType, { type: 'validate', config: {} }).map((p) => p.id)).toEqual(['valid', 'invalid'])
+    expect(outputPorts(undefined, { type: 'unknown', config: {} })).toEqual([])
+  })
+
+  it('take their connections with them when a branch or Other is removed', () => {
+    const def: WorkflowDefinition = {
+      nodes: [
+        { id: 'route', type: 'switch', title: 'Switch', position: { x: 0, y: 0 }, config },
+        { id: 'a', type: 'validate', title: 'A', position: { x: 0, y: 0 }, config: {} },
+      ],
+      edges: [
+        { id: 'e1', source: 'route', sourcePort: 'email', target: 'a', targetPort: 'in' },
+        { id: 'e2', source: 'route', sourcePort: 'other', target: 'a', targetPort: 'in' },
+        { id: 'e3', source: 'a', sourcePort: 'valid', target: 'route', targetPort: 'in' },
+      ],
+    }
+
+    const noEmail = updateNode(def, 'route', { config: { ...config, branches: [branch('print', 'Print')] } })
+    expect(noEmail.edges.map((e) => e.id)).toEqual(['e2', 'e3'])
+
+    const renamed = updateNode(def, 'route', { config: { ...config, branches: [branch('email', 'Mail'), branch('print', 'P')] } })
+    expect(renamed.edges.map((e) => e.id)).toEqual(['e1', 'e2', 'e3']) // a new name keeps the connection
+
+    const noOther = updateNode(def, 'route', { config: { ...config, other: false } })
+    expect(noOther.edges.map((e) => e.id)).toEqual(['e1', 'e3'])
+
+    expect(updateNode(def, 'route', { title: 'Route' }).edges).toEqual(def.edges) // a title change touches nothing
   })
 })

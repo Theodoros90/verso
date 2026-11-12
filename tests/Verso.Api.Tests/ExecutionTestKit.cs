@@ -40,7 +40,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid")
     {
         var templateId = await PublishInvoiceTemplateAsync();
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -111,6 +111,16 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
             definition["nodes"]!.AsArray().Add(branch);
             definition["edges"]!.AsArray().First(e => (string?)e!["target"] == "validate")!["target"] = "branch";
             definition["edges"]!.AsArray().Add(JsonNode.Parse("""{ "id": "e9", "source": "branch", "sourcePort": "yes", "target": "validate", "targetPort": "in" }"""));
+        }
+
+        if (switchConfig is not null)
+        {
+            // … → switch: its <switchPort> output → validate; the other outputs are left open (the run ends there)
+            var route = JsonNode.Parse("""{ "id": "route", "type": "switch", "title": "Switch", "position": { "x": 130, "y": 520 }, "config": {} }""")!;
+            route["config"] = switchConfig.DeepClone();
+            definition["nodes"]!.AsArray().Add(route);
+            definition["edges"]!.AsArray().First(e => (string?)e!["target"] == "validate")!["target"] = "route";
+            definition["edges"]!.AsArray().Add(JsonNode.Parse($$"""{ "id": "e10", "source": "route", "sourcePort": "{{switchPort}}", "target": "validate", "targetPort": "in" }"""));
         }
 
         using var draft = await client.GetAsync(new Uri($"/api/v1/workflows/{workflowId}/draft", UriKind.Relative));

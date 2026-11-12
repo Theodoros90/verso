@@ -1,10 +1,10 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { Archive, ArrowLeftRight, CalendarClock, Circle, Database, FileCode, FileText, FolderInput, FolderSync, GitBranch, Merge, MousePointerClick, Shuffle, ShieldCheck, Upload, Webhook, type LucideIcon } from 'lucide-react'
+import { Archive, ArrowLeftRight, CalendarClock, Circle, Database, FileCode, FileText, FolderInput, FolderSync, GitBranch, Merge, MousePointerClick, Shuffle, ShieldCheck, Split, Upload, Webhook, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NodeTypeDto, WorkflowIssueDto } from '@/lib/api/generated'
 
-import type { DefNode, DefEdge } from '../model/definition'
+import { outputPorts, switchPorts, type DefNode, type DefEdge } from '../model/definition'
 
 export const CATEGORY_COLORS: Record<string, string> = {
   input: 'var(--cat-input)',
@@ -37,6 +37,7 @@ export const NODE_ICONS: Record<string, LucideIcon> = {
   transform: Shuffle,
   'merge-data': Merge,
   'if-else': GitBranch,
+  switch: Split,
   validate: ShieldCheck,
   'generate-pdf': FileText,
   archive: Archive,
@@ -44,6 +45,7 @@ export const NODE_ICONS: Record<string, LucideIcon> = {
 
 /** An output's name on the card and on its connection. An If / else step lets its author rename the Yes and No paths. */
 export function portLabel(node: DefNode, portId: string, fallback: string): string {
+  if (node.type === 'switch') return switchPorts(node.config).find((p) => p.id === portId)?.label ?? fallback
   if (node.type === 'if-else') {
     const custom = node.config[`${portId}Label`]
     if (typeof custom === 'string' && custom.trim()) return custom.trim()
@@ -78,7 +80,7 @@ export function NodeCard({ data, selected }: NodeProps<VersoFlowNode>) {
   const color = CATEGORY_COLORS[nodeType?.category ?? 'logic'] ?? 'var(--cat-logic)'
   const status = nodeType ? nodeStatus(issues) : 'error'
   const errors = issues.filter((i) => i.severity === 'error').length
-  const outputs = nodeType?.outputs ?? []
+  const outputs = outputPorts(nodeType, node)
 
   return (
     <div

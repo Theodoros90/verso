@@ -83,8 +83,42 @@ export function connect(def: WorkflowDefinition, source: string, sourcePort: str
   return { ...def, edges: [...kept, { id, source, sourcePort, target, targetPort }] }
 }
 
+export interface OutputPort {
+  id: string
+  label: string
+  required: boolean
+}
+
+/**
+ * A Switch's outputs are its branches (then "Other" when on), so they come from its settings; the catalog lists none.
+ * Mirrors Switch.Ports on the server: a blank, repeated or reserved ("other") id gives no output.
+ */
+export function switchPorts(config: Record<string, unknown>): OutputPort[] {
+  const ports: OutputPort[] = []
+  const branches = Array.isArray(config.branches) ? (config.branches as Record<string, unknown>[]) : []
+  for (const b of branches) {
+    const id = typeof b?.id === 'string' ? b.id.trim() : ''
+    if (id && id !== 'other' && !ports.some((p) => p.id === id)) {
+      const label = typeof b.label === 'string' ? b.label.trim() : ''
+      ports.push({ id, label: label || 'Untitled', required: false })
+    }
+  }
+  if (config.other === true) ports.push({ id: 'other', label: 'Other', required: false })
+  return ports
+}
+
+/** The outputs of one node: the catalog's, except for a Switch. */
+export function outputPorts(nodeType: NodeTypeDto | undefined, node: Pick<DefNode, 'type' | 'config'>): OutputPort[] {
+  return node.type === 'switch' ? switchPorts(node.config) : (nodeType?.outputs ?? [])
+}
+
+/** Changes a node. Connections from a Switch output that no longer exists (a removed branch, "Other" turned off) go with it. */
 export function updateNode(def: WorkflowDefinition, id: string, patch: Partial<Pick<DefNode, 'title' | 'config'>>): WorkflowDefinition {
-  return { ...def, nodes: def.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) }
+  const nodes = def.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n))
+  const updated = nodes.find((n) => n.id === id)
+  if (!patch.config || updated?.type !== 'switch') return { ...def, nodes }
+  const ports = new Set(switchPorts(updated.config).map((p) => p.id))
+  return { nodes, edges: def.edges.filter((e) => e.source !== id || ports.has(e.sourcePort)) }
 }
 
 /** Position for a new node: right of the selected (or right-most) node, else the origin. */

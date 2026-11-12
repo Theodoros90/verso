@@ -27,11 +27,13 @@ import { workflowsApi } from '@/lib/api/workflows'
 import { inferSchema, modelFields, scalarPaths, schemaFields } from '@/features/templates/model/schema'
 
 import { addNode, asDefinition, connect, moveNode, nextPosition, removeEdges, removeNodes, updateNode, type WorkflowDefinition } from '../model/definition'
+import { sourceFields } from '../model/sourceFields'
 import { CATEGORY_COLORS, CATEGORY_LABELS, NODE_ICONS, NodeCard, portLabel, type VersoFlowNode } from './NodeCard'
 import { parseJsonObject } from '../model/payloadSchema'
 import { ApiTriggerSettings, type TemplateSample } from './ApiTriggerSettings'
 import { FolderInputSettings } from './FolderInputSettings'
 import { IfElseSettings } from './IfElseSettings'
+import { SwitchSettings } from './SwitchSettings'
 import { MapFieldsSettings } from './MapFieldsSettings'
 import { SchemaForm, type FieldSchema, type TemplateOption } from './SchemaForm'
 import { useWorkflowState } from './workflowState'
@@ -224,6 +226,8 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
     const fromSample = sample ? scalarPaths(schemaFields(inferSchema(sample))).map((f) => f.path) : []
     return [...new Set([...templatePaths, ...fromSample])]
   }, [templatePaths, triggerSample])
+  // If / else and Switch suggest only what the data really holds on arrival at the step (not the template's whole data model).
+  const sourcePaths = useMemo(() => (state.selection ? sourceFields(def, state.selection) : []), [def, state.selection])
 
   // ---------- issues ----------
   const issuesByNode = useMemo(() => {
@@ -617,7 +621,7 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
             issues={issuesByNode.get(selected.id) ?? []}
             readOnly={readOnly}
             templates={templates}
-            dataPaths={dataPaths}
+            dataPaths={selected.type === 'if-else' || selected.type === 'switch' ? sourcePaths : dataPaths}
             workflowKey={workflow.key}
             templateSample={templateSample}
             templateFields={templateFields}
@@ -737,6 +741,13 @@ function NodeSettings({
             schema={nodeType.configSchema as FieldSchema}
             templateFields={templateFields}
             templateName={templateName}
+            value={node.config}
+            onChange={(config, key) => onChange({ config }, key)}
+            ctx={{ templates, dataPaths, errorsFor: fieldErrors, readOnly }}
+          />
+        ) : nodeType && node.type === 'switch' ? (
+          <SwitchSettings
+            schema={nodeType.configSchema as FieldSchema}
             value={node.config}
             onChange={(config, key) => onChange({ config }, key)}
             ctx={{ templates, dataPaths, errorsFor: fieldErrors, readOnly }}

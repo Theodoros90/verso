@@ -104,10 +104,13 @@ public static class IfElse
             ? list.EnumerateArray().Where(c => c.ValueKind == JsonValueKind.Object)
             : [];
 
-    private static bool Met(JsonElement condition, JsonElement data)
+    private static bool Met(JsonElement condition, JsonElement data) =>
+        Compare(data, Setting(condition, "field"), Setting(condition, "op"), Setting(condition, "compare"), Setting(condition, "value"));
+
+    /// <summary>One comparison (also used by Switch): the field of the data against a typed value (<paramref name="compare"/> "value") or another field ("field").</summary>
+    internal static bool Compare(JsonElement data, string field, string op, string compare, string typed)
     {
-        var op = Setting(condition, "op");
-        var found = DataPath.TryResolve(data, Setting(condition, "field"), out var value);
+        var found = DataPath.TryResolve(data, field, out var value);
 
         var empty = !found || value.ValueKind switch
         {
@@ -129,9 +132,9 @@ public static class IfElse
         // What to compare with: the typed value, or the other field's value.
         string expected;
         decimal? expectedNumber;
-        if (Setting(condition, "compare") == FromField)
+        if (compare == FromField)
         {
-            if (!DataPath.TryResolve(data, Setting(condition, "value"), out var other))
+            if (!DataPath.TryResolve(data, typed, out var other))
             {
                 return op is NotEquals or NotContains;
             }
@@ -141,7 +144,7 @@ public static class IfElse
         }
         else
         {
-            expected = Setting(condition, "value");
+            expected = typed;
             expectedNumber = Number(expected);
         }
 
@@ -178,32 +181,37 @@ public static class IfElse
 
         for (var i = 0; i < conditions.Count; i++)
         {
-            var op = Setting(conditions[i], "op");
-            if (!Operators.ContainsKey(op) || NeedsNoValue(op))
+            if (ValueProblem(Setting(conditions[i], "op"), Setting(conditions[i], "compare"), Setting(conditions[i], "value")) is { } problem)
             {
-                continue;
-            }
-
-            var value = Setting(conditions[i], "value");
-            if (Setting(conditions[i], "compare") == FromField)
-            {
-                if (!DataPath.IsValid(value))
-                {
-                    problems.Add(($"conditions[{i}].value", $"Condition {i + 1}: choose the field to compare with, such as totals.net."));
-                }
-            }
-            else if (value.Length == 0)
-            {
-                problems.Add(($"conditions[{i}].value", $"Condition {i + 1}: enter the value to compare with."));
-            }
-            else if (IsNumeric(op) && Number(value) is null)
-            {
-                problems.Add(($"conditions[{i}].value", $"Condition {i + 1}: comparing sizes needs a number such as 10000 as the value."));
+                problems.Add(($"conditions[{i}].value", $"Condition {i + 1}: {problem}"));
             }
         }
 
         return problems;
     }
+
+    /// <summary>What is wrong with the value of a comparison (null when fine, or when the operator takes none). Also used by Switch.</summary>
+    internal static string? ValueProblem(string op, string compare, string value)
+    {
+        if (!Operators.ContainsKey(op) || NeedsNoValue(op))
+        {
+            return null;
+        }
+
+        if (compare == FromField)
+        {
+            return DataPath.IsValid(value) ? null : "choose the field to compare with, such as totals.net.";
+        }
+
+        if (value.Length == 0)
+        {
+            return "enter the value to compare with.";
+        }
+
+        return IsNumeric(op) && Number(value) is null ? "comparing sizes needs a number such as 10000 as the value." : null;
+    }
+
+    internal static string SettingText(JsonElement config, string name) => Setting(config, name);
 
     private static string Setting(JsonElement config, string name) =>
         config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()!.Trim() : "";

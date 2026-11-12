@@ -1,10 +1,10 @@
 import { Plus, Trash2 } from 'lucide-react'
-import { useId, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Field, Input, Select } from '@/components/ui/form'
-import { cn } from '@/lib/utils'
 
+import { FieldPicker } from './FieldPicker'
 import type { FieldSchema, FormContext } from './SchemaForm'
 
 type Config = Record<string, unknown>
@@ -28,7 +28,6 @@ export function IfElseSettings({
   onChange: (next: Config, key: string) => void
   ctx: FormContext
 }) {
-  const listId = useId()
   const conditions = Array.isArray(value.conditions) ? (value.conditions as Condition[]) : []
   const item = schema.properties?.conditions?.items?.properties ?? {}
   const max = schema.properties?.conditions?.maxItems
@@ -42,11 +41,6 @@ export function IfElseSettings({
 
   return (
     <div className="flex flex-col gap-3">
-      <datalist id={listId}>
-        {ctx.dataPaths.map((p) => (
-          <option key={p} value={p} />
-        ))}
-      </datalist>
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-[12.5px] font-medium text-ink-2">Conditions</legend>
         <p className="text-xs text-ink-3">{schema.properties?.conditions?.description}</p>
@@ -93,16 +87,13 @@ export function IfElseSettings({
                   )}
                 </div>
                 <Row label="Field" error={fieldErrors[0]}>
-                  <Input
-                    aria-label={`Condition ${n}: field`}
-                    aria-invalid={fieldErrors.length > 0}
-                    list={listId}
-                    placeholder="totals.gross"
-                    className="font-mono text-[12.5px]"
-                    spellCheck={false}
+                  <FieldPicker
+                    ariaLabel={`Condition ${n}: field`}
+                    invalid={fieldErrors.length > 0}
+                    paths={ctx.dataPaths}
                     value={text(c.field)}
                     disabled={ctx.readOnly}
-                    onChange={(e) => setRow(i, { field: e.target.value }, `conditions[${i}].field`)}
+                    onChange={(v) => setRow(i, { field: v }, `conditions[${i}].field`)}
                   />
                 </Row>
                 <Row label="Operator">
@@ -136,17 +127,26 @@ export function IfElseSettings({
                       </Select>
                     </Row>
                     <Row label={byField ? 'Field to compare with' : 'Value'} error={valueErrors[0]}>
-                      <Input
-                        aria-label={`Condition ${n}: ${byField ? 'field to compare with' : 'value'}`}
-                        aria-invalid={valueErrors.length > 0}
-                        list={byField ? listId : undefined}
-                        placeholder={byField ? 'totals.net' : '10000'}
-                        className={cn(byField && 'font-mono text-[12.5px]')}
-                        spellCheck={false}
-                        value={text(c.value)}
-                        disabled={ctx.readOnly}
-                        onChange={(e) => setRow(i, { value: e.target.value }, `conditions[${i}].value`)}
-                      />
+                      {byField ? (
+                        <FieldPicker
+                          ariaLabel={`Condition ${n}: field to compare with`}
+                          invalid={valueErrors.length > 0}
+                          paths={ctx.dataPaths}
+                          value={text(c.value)}
+                          disabled={ctx.readOnly}
+                          onChange={(v) => setRow(i, { value: v }, `conditions[${i}].value`)}
+                        />
+                      ) : (
+                        <Input
+                          aria-label={`Condition ${n}: value`}
+                          aria-invalid={valueErrors.length > 0}
+                          placeholder="10000"
+                          spellCheck={false}
+                          value={text(c.value)}
+                          disabled={ctx.readOnly}
+                          onChange={(e) => setRow(i, { value: e.target.value }, `conditions[${i}].value`)}
+                        />
+                      )}
                     </Row>
                   </>
                 )}

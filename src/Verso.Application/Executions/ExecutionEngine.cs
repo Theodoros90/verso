@@ -233,6 +233,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.TransformData => Task.FromResult(Transform(run, node)),
         NodeCatalog.MergeData => Task.FromResult(Merge(run, node)),
         NodeCatalog.IfElse => Task.FromResult(Branch(run, node)),
+        NodeCatalog.SwitchRoute => Task.FromResult(Route(run, node)),
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
         NodeCatalog.GeneratePdf => GeneratePdfAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
@@ -296,6 +297,13 @@ public sealed partial class ExecutionEngine(
     {
         var yes = IfElse.Evaluate(node.Config, run.Data);
         return new Outcome(yes ? IfElse.Yes : IfElse.No, new { matched = yes });
+    }
+
+    /// <summary>Leaves by the first matching branch's output, by 'other', or (no match and no 'other') nowhere: the run ends there as Succeeded. Nothing can fail and the data is unchanged. The result holds the branch id (a name chosen by the author), never the record's value.</summary>
+    private static Outcome Route(Run run, Workflows.WorkflowNode node)
+    {
+        var port = Switch.Pick(node.Config, run.Data);
+        return new Outcome(port, new { branch = port });
     }
 
     private static Outcome Validate(Run run, Workflows.WorkflowNode node)
