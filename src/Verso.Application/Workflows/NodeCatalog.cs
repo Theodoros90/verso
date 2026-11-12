@@ -43,9 +43,21 @@ public static class NodeCatalog
     public const string ApprovalStep = "approval";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
+    public const string GenerateDocx = "generate-docx";
     public const string Archive = "archive";
 
     public const string LatestPublished = "latest-published";
+
+    /// <summary>The steps that render a template version into a document (PDF or Word).</summary>
+    public static bool IsDocumentStep(string type) => type is GeneratePdf or GenerateDocx;
+
+    /// <summary>Word's editing restriction for a Generate DOCX step (advisory: no password). Keys are stored in the workflow; labels as in the prototype.</summary>
+    public static readonly IReadOnlyDictionary<string, string> DocxEditing = new Dictionary<string, string>
+    {
+        ["allow"] = "Allow edits",
+        ["trackedChanges"] = "Tracked changes only",
+        ["readOnly"] = "Read only",
+    };
 
     /// <summary>Field types the Validate node can check (labels as in the prototype).</summary>
     public static readonly IReadOnlyDictionary<string, string> FieldTypes = new Dictionary<string, string>
@@ -499,6 +511,23 @@ public static class NodeCatalog
               "required": ["templateId", "templateVersion", "fileName"] }
             """,
             """{ "templateId": "", "templateVersion": "latest-published", "fileName": "{{invoice.number}}.pdf" }"""),
+
+        Node(GenerateDocx, "Generate DOCX", "doc",
+            "Renders a published template version as an editable Word document with the run's data.",
+            [In], [new PortDto("success", "Success", true), new PortDto("failed", "Failed", false)],
+            $$$"""
+            { "type": "object",
+              "properties": {
+                "templateId": { "type": "string", "title": "Template", "format": "uuid", "x-widget": "template" },
+                "templateVersion": { "type": "string", "title": "Template version", "pattern": "^({{{LatestPublished}}}|[1-9][0-9]{0,5})$", "x-widget": "template-version",
+                  "description": "'latest-published' is resolved to a specific version when a run is submitted." },
+                "fileName": { "type": "string", "title": "Output filename pattern", "minLength": 1, "maxLength": 200, "x-widget": "pattern",
+                  "description": "Use fields such as {{invoice.number}}." },
+                "protect": { "type": "string", "title": "Editing", "enum": {{{JsonSerializer.Serialize(DocxEditing.Keys)}}}, "x-enumLabels": {{{JsonSerializer.Serialize(DocxEditing.Values)}}},
+                  "description": "Word's editing restriction. It has no password, so a person can lift it in Word." } },
+              "required": ["templateId", "templateVersion", "fileName", "protect"] }
+            """,
+            """{ "templateId": "", "templateVersion": "latest-published", "fileName": "{{invoice.number}}.docx", "protect": "allow" }"""),
 
         Node(Archive, "Archive", "output",
             "Stores the document in the Verso archive with metadata and a retention period.",

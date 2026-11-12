@@ -42,6 +42,27 @@ public sealed class DocumentNamesTests
         Assert.Equal(expected, DocumentNames.FolderPath(PatternText.Resolve(pattern, Data).Text));
     }
 
+    [Theory]
+    [InlineData("{{invoice.number}}.docx", "INV-2026-003901.docx")]
+    [InlineData("{{invoice.number}}", "INV-2026-003901.docx")]
+    [InlineData("{{invoice.number}}.DOCX", "INV-2026-003901.docx")]
+    [InlineData("{{invoice.number}}.pdf", "INV-2026-003901.pdf.docx")]
+    [InlineData("{{missing.value}}", "document.docx")]
+    public void FileName_Docx_AlwaysEndsInDocx(string pattern, string expected)
+    {
+        Assert.Equal(expected, DocumentNames.FileName(PatternText.Resolve(pattern, Data).Text, DocumentNames.Docx));
+    }
+
+    [Fact]
+    public void Keys_FollowTheDocumentType()
+    {
+        var execution = Guid.Parse("0193a6c2-0000-7000-8000-000000000001");
+        Assert.Equal("staging/0193a6c2000070008000000000000001/word.docx", DocumentKeys.Staging(execution, "word", 0, DocumentNames.Docx));
+        Assert.Equal("archive/2026/11/0193a6c2000070008000000000000001.docx",
+            DocumentKeys.Archive(execution, new DateTimeOffset(2026, 11, 2, 9, 0, 0, TimeSpan.Zero), DocumentNames.ExtensionFor(Verso.Domain.Documents.Document.DocxContentType)));
+        Assert.Equal(".pdf", DocumentNames.ExtensionFor(Verso.Domain.Documents.Document.PdfContentType));
+    }
+
     [Fact]
     public void Keys_AreDeterministic()
     {

@@ -27,12 +27,12 @@ public interface IDocumentStore
 public static class DocumentKeys
 {
     /// <summary>Deterministic per execution, node and loop item, so a re-run overwrites instead of leaving a second copy.</summary>
-    public static string Staging(Guid executionId, string nodeId, int iteration = 0) =>
-        iteration == 0 ? $"staging/{executionId:N}/{nodeId}.pdf" : $"staging/{executionId:N}/{iteration}/{nodeId}.pdf";
+    public static string Staging(Guid executionId, string nodeId, int iteration = 0, string extension = DocumentNames.Pdf) =>
+        iteration == 0 ? $"staging/{executionId:N}/{nodeId}{extension}" : $"staging/{executionId:N}/{iteration}/{nodeId}{extension}";
 
     /// <summary>Deterministic per document (dated by its creation, not by when archiving ran).</summary>
-    public static string Archive(Guid documentId, DateTimeOffset createdAt) =>
-        $"archive/{createdAt.UtcDateTime:yyyy}/{createdAt.UtcDateTime:MM}/{documentId:N}.pdf";
+    public static string Archive(Guid documentId, DateTimeOffset createdAt, string extension = DocumentNames.Pdf) =>
+        $"archive/{createdAt.UtcDateTime:yyyy}/{createdAt.UtcDateTime:MM}/{documentId:N}{extension}";
 
     public static string Sha256Hex(byte[] content) => Convert.ToHexStringLower(SHA256.HashData(content));
 }
@@ -49,13 +49,19 @@ public static partial class DocumentNames
     [GeneratedRegex(@"[^A-Za-z0-9 ._\-]")]
     private static partial Regex UnsafeSegmentChars();
 
-    /// <summary>Letters, digits, space, <c>. _ ( ) -</c> only; always ends in <c>.pdf</c>; "document.pdf" when nothing is left.</summary>
-    public static string FileName(string resolved)
+    public const string Pdf = ".pdf";
+    public const string Docx = ".docx";
+
+    /// <summary>The file extension for a document's content type (storage keys are generated from it, never from input).</summary>
+    public static string ExtensionFor(string contentType) => contentType == Verso.Domain.Documents.Document.DocxContentType ? Docx : Pdf;
+
+    /// <summary>Letters, digits, space, <c>. _ ( ) -</c> only; always ends in <paramref name="extension"/> (<c>.pdf</c> or <c>.docx</c>); "document" plus the extension when nothing is left.</summary>
+    public static string FileName(string resolved, string extension = Pdf)
     {
         var name = UnsafeFileNameChars().Replace(resolved.Normalize(NormalizationForm.FormC), "_").TrimEnd(' ', '.');
-        if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+        if (name.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
         {
-            name = name[..^4];
+            name = name[..^extension.Length];
         }
 
         name = name.Trim(' ', '.');
@@ -64,8 +70,8 @@ public static partial class DocumentNames
             name = "document";
         }
 
-        name = name[..Math.Min(name.Length, MaxFileNameLength - 4)];
-        return name + ".pdf";
+        name = name[..Math.Min(name.Length, MaxFileNameLength - extension.Length)];
+        return name + extension;
     }
 
     /// <summary>

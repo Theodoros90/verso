@@ -251,7 +251,7 @@ public sealed class ExecutionApiTests(MigratedDatabaseFixture fixture) : IDispos
         // The Worker shuts down right after the archive copy was written, before the step was recorded.
         using var shutdown = new CancellationTokenSource();
         _store.AfterWrite = k => { if (k.StartsWith("archive/", StringComparison.Ordinal)) { shutdown.Cancel(); } };
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Kit.RunEngineAsync(id, _printer, _store, _jobs, shutdown.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Kit.RunEngineAsync(id, _printer, _store, _jobs, ct: shutdown.Token));
 
         var interrupted = await Kit.GetExecutionAsync(id);
         Assert.Equal("Running", interrupted.GetProperty("status").GetString());
@@ -280,7 +280,7 @@ public sealed class ExecutionApiTests(MigratedDatabaseFixture fixture) : IDispos
         // Stopped right after the staging PDF was written, before the document row existed…
         using var shutdown = new CancellationTokenSource();
         _store.AfterWrite = k => { if (k.StartsWith("staging/", StringComparison.Ordinal)) { shutdown.Cancel(); } };
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Kit.RunEngineAsync(id, _printer, _store, _jobs, shutdown.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Kit.RunEngineAsync(id, _printer, _store, _jobs, ct: shutdown.Token));
         _store.AfterWrite = null;
 
         // …and, unlike a clean stop, a killed process leaves its step Running and its lock in place.

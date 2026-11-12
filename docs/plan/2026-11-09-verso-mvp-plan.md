@@ -558,7 +558,7 @@ Decisions made while implementing M9 (2026-11-10). The user chose the first four
 
 **MVP done = M1–M9 accepted.** ✅ Reached 2026-11-10.
 
-Not in MVP: email/print/SFTP/ERP/API delivery (folder input followed after the MVP, see below), AI nodes and Assistant, map-fields/branching nodes, DOCX/HTML email output, QR/barcode, maker-checker publishing, multi-tenant issuers, production storage adapters, dashboard/overview metrics.
+Not in MVP: email/print/SFTP/ERP/API delivery (folder input followed after the MVP, see below), AI nodes and Assistant, map-fields/branching nodes, HTML email output (DOCX output followed after the MVP, ADR 0003), QR/barcode, maker-checker publishing, multi-tenant issuers, production storage adapters, dashboard/overview metrics.
 
 ## Post-MVP features
 

@@ -237,7 +237,7 @@ public static class GraphValidator
     /// <summary>The template a Map fields step prepares data for: the first one a Generate PDF step uses (the designer shows the same one).</summary>
     private static TemplateRef? MappingTarget(ParsedDefinition definition, IReadOnlyDictionary<Guid, TemplateRef> templates) =>
         definition.Nodes
-            .Where(n => n.Type == NodeCatalog.GeneratePdf && n.Config.TryGetProperty("templateId", out var t) && t.ValueKind == JsonValueKind.String)
+            .Where(n => NodeCatalog.IsDocumentStep(n.Type) && n.Config.TryGetProperty("templateId", out var t) && t.ValueKind == JsonValueKind.String)
             .Select(n => Guid.TryParse(n.Config.GetProperty("templateId").GetString(), out var g) && templates.TryGetValue(g, out var template) ? template : null)
             .FirstOrDefault(t => t is not null);
 
@@ -252,7 +252,7 @@ public static class GraphValidator
         (NodeCatalog.ForEach, "empty") => "An empty list ends the run here: nothing is repeated.",
         (NodeCatalog.IfElse, "yes") => "Records that meet the condition end the run here.",
         (NodeCatalog.IfElse, "no") => "Records that don't meet the condition end the run here.",
-        (NodeCatalog.GeneratePdf, "failed") =>"Data that can't make a complete document will end the run as Rejected.",
+        (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx, "failed") => "Data that can't make a complete document will end the run as Rejected.",
         _ => $"'{port.Label}' isn't connected; the run ends there.",
     };
 
@@ -358,6 +358,7 @@ public static class GraphValidator
                 break;
 
             case NodeCatalog.GeneratePdf:
+            case NodeCatalog.GenerateDocx:
                 if (!c.TryGetProperty("templateId", out var idElement) || idElement.ValueKind != JsonValueKind.String
                     || !Guid.TryParse(idElement.GetString(), out var templateId))
                 {

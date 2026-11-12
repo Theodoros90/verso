@@ -96,7 +96,7 @@ public sealed class ExecutionHistoryApiTests(MigratedDatabaseFixture fixture) : 
         // A client watching a run that is interrupted at the archive step (Worker stopped), then resumed.
         using var shutdown = new CancellationTokenSource();
         _store.AfterWrite = k => { if (k.StartsWith("archive/", StringComparison.Ordinal)) { shutdown.Cancel(); } };
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Kit.RunEngineAsync(id, _printer, _store, _jobs, shutdown.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Kit.RunEngineAsync(id, _printer, _store, _jobs, ct: shutdown.Token));
         _store.AfterWrite = null;
 
         var seen = await EventsAsync(id, 0);
@@ -280,7 +280,7 @@ public sealed class ExecutionHistoryApiTests(MigratedDatabaseFixture fixture) : 
         // The Worker stops during the archive step: the PDF is generated and saved, the archive record isn't.
         using var shutdown = new CancellationTokenSource();
         _store.AfterWrite = k => { if (k.StartsWith("archive/", StringComparison.Ordinal)) { shutdown.Cancel(); } };
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Kit.RunEngineAsync(id, _printer, _store, _jobs, shutdown.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Kit.RunEngineAsync(id, _printer, _store, _jobs, ct: shutdown.Token));
         _store.AfterWrite = null;
         var documentId = await Kit.WithDbAsync(db => db.Documents.Where(d => d.ExecutionId == id).Select(d => d.Id).SingleAsync());
         Assert.Equal("Generated", (await Kit.GetExecutionAsync(id)).GetProperty("documents")[0].GetProperty("status").GetString());

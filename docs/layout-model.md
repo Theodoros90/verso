@@ -78,3 +78,7 @@ An empty list is not an issue: the table shows `emptyText` (if set) or no rows.
 ## Not in v1
 
 QR codes, barcodes, conditional blocks, page numbers ("Page X of Y" is supported by Chromium templates and planned as a follow-up), fonts in the screen preview (they're embedded only in PDFs), side-by-side columns in the body, and per-template locale/currency.
+
+## Word (DOCX) output
+
+The Generate DOCX step (ADR 0003) uses the same layout and bindings. `Verso.Rendering.Docx.DocumentResolver` applies the data (same rules and the same issue codes as `HtmlRenderer` in Final mode) and `Verso.Rendering.Docx` (Worker only) writes the result with the Open XML SDK. Mapping: `text`/`field` → paragraphs (size, bold, italic, colour, alignment; fonts Arial / Times New Roman / Courier New); `table` → a Word table whose heading row repeats on each page; `divider` → a bordered paragraph; `image` → an inline picture (header/footer: the element's size; body: its own size up to the content width); `signature` → a line with the label under it; `box` → omitted. Header and footer elements become paragraphs in reading order (Word can't position them absolutely). Page size, orientation and margins come from the page settings.

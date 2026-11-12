@@ -44,6 +44,7 @@ public sealed class ExecutionWorkerFixture : IAsyncLifetime
         builder.Services.AddVersoPersistence(builder.Configuration);
         builder.Services.AddVersoWorkerUseCases();
         builder.Services.AddSingleton<IPdfPrinter, FakePdfPrinter>();
+        builder.Services.AddSingleton<Verso.Rendering.Docx.IDocxWriter, FakeDocxWriter>();
         builder.Services.AddVersoDocumentStore(builder.Configuration);
         builder.Services.AddVersoJobServer(builder.Configuration);
         _worker = builder.Build();

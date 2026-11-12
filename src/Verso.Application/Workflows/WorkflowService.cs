@@ -285,7 +285,7 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
     {
         // Load only the templates the graph refers to: their names and published version numbers.
         var ids = definition.Nodes
-            .Where(n => n.Type == NodeCatalog.GeneratePdf && n.Config.TryGetProperty("templateId", out var t) && t.ValueKind == JsonValueKind.String)
+            .Where(n => NodeCatalog.IsDocumentStep(n.Type) && n.Config.TryGetProperty("templateId", out var t) && t.ValueKind == JsonValueKind.String)
             .Select(n => Guid.TryParse(n.Config.GetProperty("templateId").GetString(), out var g) ? g : Guid.Empty)
             .Where(g => g != Guid.Empty)
             .Distinct()

@@ -4,6 +4,7 @@ using Verso.Infrastructure;
 using Verso.Infrastructure.Documents;
 using Verso.Infrastructure.Jobs;
 using Verso.Rendering;
+using Verso.Rendering.Docx;
 using Verso.Rendering.Pdf;
 using Verso.Worker;
 
@@ -21,6 +22,9 @@ builder.Services.Configure<PdfPrinterOptions>(builder.Configuration.GetSection(P
 builder.Services.AddSingleton<ChromiumPdfPrinter>();
 builder.Services.AddSingleton<IPdfPrinter>(sp => sp.GetRequiredService<ChromiumPdfPrinter>());
 builder.Services.AddHostedService<PdfPrinterWarmUp>();
+
+// Word output: plain text blocks → .docx (Open XML SDK; no browser, no scripting).
+builder.Services.AddSingleton<IDocxWriter, DocxWriter>();
 
 // Archived documents (local file system in the MVP; Documents:RootPath). Only the Worker writes.
 builder.Services.AddVersoDocumentStore(builder.Configuration);

@@ -9,6 +9,7 @@ using Verso.Domain.Documents;
 using Verso.Domain.Executions;
 using Verso.Rendering;
 using Verso.Rendering.Binding;
+using Verso.Rendering.Docx;
 using Verso.Rendering.Html;
 using Verso.Rendering.Layout;
 
@@ -29,7 +30,7 @@ public sealed class StepException(string code, string message, bool retryable) :
 /// Hangfire's own retry is off for this job); data problems end the run as Rejected.
 /// </summary>
 public sealed partial class ExecutionEngine(
-    IVersoDbContext db, IPdfPrinter printer, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
+    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
 {
     /// <summary>Attempts per step (plan §6.3), within one execution attempt.</summary>
     public const int MaxStepAttempts = 3;
@@ -249,7 +250,7 @@ public sealed partial class ExecutionEngine(
     /// <summary>Whether a path ending at this step by this output ends the run as Rejected (see <see cref="FinishAsync"/>).</summary>
     private static bool Rejects(string nodeType, string? port) => (nodeType, port) is
         (NodeCatalog.Validate, "invalid") or (NodeCatalog.ParseContent, "failed") or (NodeCatalog.MapFields, "failed")
-        or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf, "failed")
+        or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx, "failed")
         or (NodeCatalog.ApprovalStep, Approval.Rejected);
 
     private sealed record Outcome(string? Port, object? Result, Func<Task>? AfterSave = null);
@@ -364,7 +365,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.SwitchRoute => Task.FromResult(Route(run, node)),
         NodeCatalog.ForEach => Task.FromResult(Repeat(run, node)),
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
-        NodeCatalog.GeneratePdf => GeneratePdfAsync(run, node, ct),
+        NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx => GenerateDocumentAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
         _ => throw new StepException("node.unsupported", $"Node type '{node.Type}' can't run in this version of Verso.", retryable: false),
     };
@@ -456,9 +457,11 @@ public sealed partial class ExecutionEngine(
         return new Outcome(issues.Count == 0 ? "valid" : "invalid", new { issues });
     }
 
-    private async Task<Outcome> GeneratePdfAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    /// <summary>Generate PDF (Chromium prints the renderer's parts) or Generate DOCX (the resolved layout written as Word). Same pinning, issues, storage and idempotency.</summary>
+    private async Task<Outcome> GenerateDocumentAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
     {
         var execution = run.Execution;
+        var isDocx = node.Type == NodeCatalog.GenerateDocx;
 
         // Idempotent: a document from an earlier, interrupted attempt of this step is reused.
         if (await FindDocumentAsync(execution.Id, node.Id, run.Iteration, ct) is { } existing)
@@ -480,32 +483,61 @@ public sealed partial class ExecutionEngine(
             throw new StepException("template.layout_invalid", "The pinned template version has an invalid layout.", retryable: false);
         }
 
-        var rendered = HtmlRenderer.Render(layout, TemplatePreview.ToPageSetup(version.Content.PageSettings), run.Data, RenderMode.Final, templateName);
-        var errors = rendered.Issues.Where(i => i.Severity == IssueSeverity.Error).ToList();
+        var page = TemplatePreview.ToPageSetup(version.Content.PageSettings);
+        ResolvedDocument? resolved = null;
+        RenderResult? rendered = null;
+        if (isDocx)
+        {
+            resolved = DocumentResolver.Resolve(layout, page, run.Data, templateName);
+        }
+        else
+        {
+            rendered = HtmlRenderer.Render(layout, page, run.Data, RenderMode.Final, templateName);
+        }
+
+        var issues = resolved?.Issues ?? rendered!.Issues;
+        var errors = issues.Where(i => i.Severity == IssueSeverity.Error).ToList();
         if (errors.Count > 0)
         {
             // The data can't make a complete document (e.g. a bound value is missing): a data problem, not technical.
             return new Outcome("failed", new { issues = errors.Select(i => new { i.Code, i.Path, i.ElementId, i.Message }) });
         }
 
-        var output = await printer.PrintAsync(rendered.Print, ct);
-        var key = DocumentKeys.Staging(execution.Id, node.Id, run.Iteration);
-        await store.WriteAsync(key, output.Content, ct);
+        byte[] content;
+        if (isDocx)
+        {
+            var protect = node.Config.TryGetProperty("protect", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : "allow";
+            content = docx.Write(resolved!, protect switch
+            {
+                "readOnly" => DocxProtection.ReadOnly,
+                "trackedChanges" => DocxProtection.TrackedChangesOnly,
+                _ => DocxProtection.AllowEdits,
+            });
+        }
+        else
+        {
+            content = (await printer.PrintAsync(rendered!.Print, ct)).Content;
+        }
+
+        var extension = isDocx ? DocumentNames.Docx : DocumentNames.Pdf;
+        var key = DocumentKeys.Staging(execution.Id, node.Id, run.Iteration, extension);
+        await store.WriteAsync(key, content, ct);
 
         var pattern = PatternText.Resolve(node.Config.GetProperty("fileName").GetString()!, run.Data);
         var document = Document.Generate(
-            execution.Id, node.Id, templateVersionId, DocumentNames.FileName(pattern.Text), output.Content.LongLength,
-            DocumentKeys.Sha256Hex(output.Content), store.Provider, key, clock.GetUtcNow(), iteration: run.Iteration);
+            execution.Id, node.Id, templateVersionId, DocumentNames.FileName(pattern.Text, extension), content.LongLength,
+            DocumentKeys.Sha256Hex(content), store.Provider, key, clock.GetUtcNow(), iteration: run.Iteration,
+            contentType: isDocx ? Document.DocxContentType : Document.PdfContentType);
         db.Documents.Add(document);
         run.Document = document;
-        var warnings = rendered.Issues.Where(i => i.Severity == IssueSeverity.Warning).Select(i => new { i.Code, i.Path });
+        var warnings = issues.Where(i => i.Severity == IssueSeverity.Warning).Select(i => new { i.Code, i.Path });
         return new Outcome("success", DocumentResult(document, [.. pattern.Missing.Select(p => $"fileName: no value for '{p}'")], warnings));
     }
 
     private async Task<Outcome> ArchiveAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
     {
         var document = run.Document
-            ?? throw new StepException("archive.no_document", "There is no generated document to archive: put a Generate PDF step before Archive on this path.", retryable: false);
+            ?? throw new StepException("archive.no_document", "There is no generated document to archive: put a Generate PDF or Generate DOCX step before Archive on this path.", retryable: false);
 
         if (document.Status == DocumentStatus.Archived)
         {
@@ -533,7 +565,7 @@ public sealed partial class ExecutionEngine(
             throw new StepException("storage.integrity", "The stored document doesn't match its recorded SHA-256.", retryable: true);
         }
 
-        var archiveKey = DocumentKeys.Archive(document.Id, document.CreatedAt);
+        var archiveKey = DocumentKeys.Archive(document.Id, document.CreatedAt, DocumentNames.ExtensionFor(document.ContentType));
         await store.WriteAsync(archiveKey, content, ct);
         var written = await store.ReadAsync(archiveKey, ct);
         if (written is null || DocumentKeys.Sha256Hex(written) != document.Sha256)
@@ -563,7 +595,7 @@ public sealed partial class ExecutionEngine(
     /// <summary>Re-establishes what a step that already succeeded produced (the parsed data or the document, for later steps).</summary>
     private async Task RestoreAsync(Run run, Workflows.WorkflowNode node, ExecutionStep step, CancellationToken ct)
     {
-        if (node.Type == NodeCatalog.GeneratePdf)
+        if (NodeCatalog.IsDocumentStep(node.Type))
         {
             run.Document = await FindDocumentAsync(run.Execution.Id, node.Id, run.Iteration, ct);
         }
@@ -629,7 +661,7 @@ public sealed partial class ExecutionEngine(
                 execution.Reject("approval.declined", $"The approval in step '{last.Title}' was declined.", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;
-            case (NodeCatalog.GeneratePdf, "failed"):
+            case (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx, "failed"):
                 execution.Reject("document.data_incomplete", $"The data can't produce a complete document in step '{last.Title}' (see its issues).", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;

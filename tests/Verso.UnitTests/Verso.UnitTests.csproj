@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\src\Verso.Domain\Verso.Domain.csproj" />
     <ProjectReference Include="..\..\src\Verso.Application\Verso.Application.csproj" />
     <ProjectReference Include="..\..\src\Verso.Rendering\Verso.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\Verso.Rendering.Docx\Verso.Rendering.Docx.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Shared synthetic fixtures, copied next to the test assembly. -->

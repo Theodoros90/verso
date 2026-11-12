@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    ResolvedDocument → .docx with the Open XML SDK (approved 2026-11-12). Referenced only by Verso.Worker, like Verso.Rendering.Pdf.
+    No templates, data or bindings reach this project: it only turns plain text blocks into Word parts.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Verso.Rendering\Verso.Rendering.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="DocumentFormat.OpenXml" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Verso.UnitTests" />
+  </ItemGroup>
+</Project>

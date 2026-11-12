@@ -123,6 +123,22 @@ const nodeTypes: NodeTypeDto[] = [
     },
     defaults: { templateId: '', templateVersion: 'latest-published', fileName: '{{invoice.number}}.pdf' },
   },
+  {
+    type: 'generate-docx', label: 'Generate DOCX', category: 'doc', description: 'Renders an editable Word document.',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'success', label: 'Success', required: true }, { id: 'failed', label: 'Failed', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        templateId: { type: 'string', title: 'Template', 'x-widget': 'template' },
+        templateVersion: { type: 'string', title: 'Template version', 'x-widget': 'template-version' },
+        fileName: { type: 'string', title: 'Output filename pattern', 'x-widget': 'pattern' },
+        protect: { type: 'string', title: 'Editing', enum: ['allow', 'trackedChanges', 'readOnly'], 'x-enumLabels': ['Allow edits', 'Tracked changes only', 'Read only'] },
+      },
+      required: ['templateId', 'templateVersion', 'fileName', 'protect'],
+    },
+    defaults: { templateId: '', templateVersion: 'latest-published', fileName: '{{invoice.number}}.docx', protect: 'allow' },
+  },
 ]
 
 const definition = {
@@ -296,6 +312,23 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.map((n) => n.id)).toEqual(['trigger', 'validate', 'pdf', 'validate-2'])
     expect(saved.nodes[3]).toMatchObject({ type: 'validate', title: 'Validate data', config: { required: [], types: [] } })
+  })
+
+  it('adds a Generate DOCX step with its Word defaults and an Editing choice', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Generate DOCX' }))
+
+    expect(await screen.findByRole('heading', { name: 'Generate DOCX', level: 3 })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Editing/)).toHaveDisplayValue('Allow edits')
+    expect(screen.getByRole('option', { name: 'Read only' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'generate-docx', config: { fileName: '{{invoice.number}}.docx', protect: 'allow' } })
   })
 
   it('shows the server issues when publishing is refused', async () => {

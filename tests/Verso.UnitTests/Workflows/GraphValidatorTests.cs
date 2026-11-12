@@ -345,11 +345,11 @@ public sealed class GraphValidatorTests
         foreach (var type in NodeCatalog.All)
         {
             var errors = ConfigSchemaValidator.Validate(type.ConfigSchema, type.Defaults);
-            // These need user input: generate-pdf a template, sftp-folder a host, merge-data its two key fields. (Folder input needs its paths typed; that is checked by the graph rules.)
+            // These need user input: generate-pdf and generate-docx a template, sftp-folder a host, merge-data its two key fields. (Folder input needs its paths typed; that is checked by the graph rules.)
             // Everything else is valid out of the box.
             var expected = type.Type switch
             {
-                NodeCatalog.GeneratePdf => ["templateId"],
+                NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx => ["templateId"],
                 NodeCatalog.SftpFolder => ["host"],
                 NodeCatalog.MergeData => ["key", "lookupKey"],
                 NodeCatalog.IfElse => ["conditions[0].field"],

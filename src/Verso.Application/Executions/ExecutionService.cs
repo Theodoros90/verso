@@ -336,7 +336,7 @@ public sealed partial class ExecutionService(IVersoDbContext db, IExecutionJobs 
     private async Task<(Dictionary<string, Guid> Value, AppError? Error)> ResolveTemplatesAsync(ExecutionPlan plan, CancellationToken ct)
     {
         var resolved = new Dictionary<string, Guid>(StringComparer.Ordinal);
-        foreach (var node in plan.Ordered.Where(n => n.Type == NodeCatalog.GeneratePdf))
+        foreach (var node in plan.Ordered.Where(n => NodeCatalog.IsDocumentStep(n.Type)))
         {
             var templateId = Guid.Parse(node.Config.GetProperty("templateId").GetString()!);
             var requested = node.Config.GetProperty("templateVersion").GetString();

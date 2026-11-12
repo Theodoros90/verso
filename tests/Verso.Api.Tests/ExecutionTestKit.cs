@@ -12,6 +12,7 @@ using Verso.Application.Executions;
 using Verso.Infrastructure.Documents;
 using Verso.Infrastructure.Persistence;
 using Verso.Rendering;
+using Verso.Rendering.Docx;
 
 namespace Verso.Api.Tests;
 
@@ -40,7 +41,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null)
     {
         var templateId = await PublishInvoiceTemplateAsync();
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -62,6 +63,15 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
                 { "id": "e2", "source": "validate", "sourcePort": "valid", "target": "pdf", "targetPort": "in" },
                 { "id": "e3", "source": "pdf", "sourcePort": "success", "target": "archive", "targetPort": "in" } ] }
             """)!;
+        if (docxEditing is not null)
+        {
+            // The document step is a Word step instead of a PDF step.
+            var document = definition["nodes"]!.AsArray().Single(n => (string?)n!["id"] == "pdf")!;
+            document["type"] = "generate-docx";
+            document["config"]!["fileName"] = "{{invoice.number}}.docx";
+            document["config"]!["protect"] = docxEditing;
+        }
+
         definition["nodes"]![1]!["config"] = (rules ?? StandardRules).DeepClone();
         if (trigger is not null) definition["nodes"]![0] = trigger.DeepClone();
         if (parseConfig is not null)
@@ -217,11 +227,11 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     }
 
     /// <summary>One job run of the execution, as the Worker's Hangfire job would do it.</summary>
-    public async Task RunEngineAsync(Guid executionId, IPdfPrinter printer, IDocumentStore store, RecordingExecutionJobs jobs, CancellationToken ct = default)
+    public async Task RunEngineAsync(Guid executionId, IPdfPrinter printer, IDocumentStore store, RecordingExecutionJobs jobs, IDocxWriter? docx = null, CancellationToken ct = default)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VersoDbContext>();
-        await new ExecutionEngine(db, printer, store, jobs, TimeProvider.System, NullLogger<ExecutionEngine>.Instance).RunAsync(executionId, ct);
+        await new ExecutionEngine(db, printer, docx ?? new FakeDocxWriter(), store, jobs, TimeProvider.System, NullLogger<ExecutionEngine>.Instance).RunAsync(executionId, ct);
     }
 
     public async Task<T> WithDbAsync<T>(Func<VersoDbContext, Task<T>> action)
@@ -317,4 +327,18 @@ internal sealed class RecordingExecutionJobs : IExecutionJobs
     public void Enqueue(Guid executionId) => Enqueued.Enqueue(executionId);
 
     public void Schedule(Guid executionId, TimeSpan delay) => Scheduled.Enqueue((executionId, delay));
+}
+
+/// <summary>Stands in for the Word writer: returns small unique bytes per call, and remembers what it was asked to write.</summary>
+internal sealed class FakeDocxWriter : IDocxWriter
+{
+    private int _calls;
+
+    public int Calls => _calls;
+
+    public byte[] Write(ResolvedDocument document, DocxProtection protection)
+    {
+        var call = Interlocked.Increment(ref _calls);
+        return Encoding.ASCII.GetBytes($"PK fake docx {call} {protection} {Guid.NewGuid():N}");
+    }
 }

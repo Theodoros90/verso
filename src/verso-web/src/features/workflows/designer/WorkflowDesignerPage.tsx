@@ -194,7 +194,7 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
     return () => controller.abort()
   }, [])
 
-  const referencedTemplate = def.nodes.find((n) => n.type === 'generate-pdf' && typeof n.config.templateId === 'string' && n.config.templateId)?.config.templateId as string | undefined
+  const referencedTemplate = def.nodes.find((n) => (n.type === 'generate-pdf' || n.type === 'generate-docx') && typeof n.config.templateId === 'string' && n.config.templateId)?.config.templateId as string | undefined
   useEffect(() => {
     if (!referencedTemplate) {
       setDataPaths([])
