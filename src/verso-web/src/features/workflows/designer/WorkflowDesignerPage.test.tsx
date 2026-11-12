@@ -316,6 +316,23 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     expect(screen.queryByRole('button', { name: 'Add Generate PDF' })).not.toBeInTheDocument()
   })
 
+  it('lists the AI assistance steps as disabled previews that cannot be added', async () => {
+    mockApi()
+    await open()
+    const user = userEvent.setup()
+
+    expect(screen.queryByRole('button', { name: /Extract fields/ })).not.toBeInTheDocument() // starts collapsed
+    await user.click(screen.getByRole('button', { name: /^AI assistance/ }))
+    for (const label of ['Extract fields', 'Suggest mappings', 'Classify document', 'Draft text', 'Human review']) {
+      expect(screen.getByRole('button', { name: `${label} (coming soon)` })).toBeDisabled()
+    }
+    expect(screen.queryByRole('button', { name: /^Add (Extract fields|Human review)/ })).not.toBeInTheDocument()
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search steps' }), 'classify')
+    expect(screen.getByRole('button', { name: 'Classify document (coming soon)' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Draft text/ })).not.toBeInTheDocument()
+  })
+
   it('adds steps from the palette, and allows only one trigger', async () => {
     const calls = mockApi()
     await open()

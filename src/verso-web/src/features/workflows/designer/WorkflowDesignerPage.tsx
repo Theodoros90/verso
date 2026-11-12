@@ -30,6 +30,7 @@ import { inferSchema, modelFields, scalarPaths, schemaFields } from '@/features/
 import { addNode, asDefinition, connect, moveNode, nextPosition, removeEdges, removeNodes, updateNode, type WorkflowDefinition } from '../model/definition'
 import { backEdges, canConnect } from '../model/loops'
 import { sampleLists, sampleValue, sourceFields } from '../model/sourceFields'
+import { AI_PREVIEW_CATEGORY, AI_PREVIEW_STEPS } from './aiPreviewSteps'
 import { CATEGORY_COLORS, CATEGORY_LABELS, NODE_ICONS, NodeCard, portLabel, type VersoFlowNode } from './NodeCard'
 import { parseJsonObject } from '../model/payloadSchema'
 import { ApiTriggerSettings, type TemplateSample } from './ApiTriggerSettings'
@@ -460,6 +461,10 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
       return next
     })
   const allCollapsed = expanded.size === 0
+  const aiSteps = useMemo(() => {
+    const q = stepSearch.trim().toLowerCase()
+    return q ? AI_PREVIEW_STEPS.filter((s) => `${s.label} ${s.description}`.toLowerCase().includes(q)) : AI_PREVIEW_STEPS
+  }, [stepSearch])
 
   return (
     <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)_300px] xl:grid-cols-[240px_minmax(0,1fr)_320px]">
@@ -482,13 +487,13 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
           <div className="mb-2 flex justify-end">
             <button
               type="button"
-              onClick={() => setExpanded(allCollapsed ? new Set(byCategory.map(([c]) => c)) : new Set())}
+              onClick={() => setExpanded(allCollapsed ? new Set([...byCategory.map(([c]) => c), AI_PREVIEW_CATEGORY]) : new Set())}
               className="text-xs text-ink-3 hover:text-cyan-strong"
             >
               {allCollapsed ? 'Expand all' : 'Collapse all'}
             </button>
           </div>
-          {searching && visibleGroups.length === 0 && <p className="text-[12.5px] text-ink-3">No steps match “{stepSearch.trim()}”.</p>}
+          {searching && visibleGroups.length === 0 && aiSteps.length === 0 && <p className="text-[12.5px] text-ink-3">No steps match “{stepSearch.trim()}”.</p>}
           {visibleGroups.map(([category, types]) => (
             <div key={category} className="mb-3">
               <button
@@ -541,6 +546,42 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
               </div>
             </div>
           ))}
+          {aiSteps.length > 0 && (
+            <div className="mb-3" data-testid="ai-preview-group">
+              <button
+                type="button"
+                onClick={() => toggleCategory(AI_PREVIEW_CATEGORY)}
+                aria-expanded={searching || expanded.has(AI_PREVIEW_CATEGORY)}
+                disabled={searching}
+                className="mb-1.5 flex w-full items-center gap-1.5 text-xs text-ink-3 hover:text-ink disabled:cursor-default disabled:hover:text-ink-3"
+              >
+                <span className="size-2 rounded-full" style={{ background: CATEGORY_COLORS.ai }} aria-hidden="true" />
+                {CATEGORY_LABELS.ai}
+                <span className="text-ink-3/70">({aiSteps.length})</span>
+                <span className="rounded bg-surface-2 px-1.5 py-px text-[10.5px]">Coming soon</span>
+                <ChevronDown className={cn('ml-auto size-3.5 transition-transform', !searching && !expanded.has(AI_PREVIEW_CATEGORY) && '-rotate-90')} aria-hidden="true" />
+              </button>
+              <div className="flex flex-col gap-1.5">
+                {(searching || expanded.has(AI_PREVIEW_CATEGORY)) && aiSteps.map((s) => (
+                  <Tooltip
+                    key={s.type}
+                    title={s.label}
+                    content={<>{s.description}<span className="mt-1.5 block border-t border-line pt-1.5 text-ink-3">AI assistance is not available yet.</span></>}
+                  >
+                    <button
+                      type="button"
+                      disabled
+                      aria-label={`${s.label} (coming soon)`}
+                      className="flex w-full cursor-not-allowed items-center gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-2 text-left text-[12.5px] font-medium opacity-50"
+                    >
+                      <s.icon className="size-4 flex-none" style={{ color: CATEGORY_COLORS.ai }} strokeWidth={1.75} aria-hidden="true" />
+                      <span className="min-w-0">{s.label}</span>
+                    </button>
+                  </Tooltip>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
         <section aria-label="Issues" className="px-3.5 pt-3.5 pb-4">
           <h3 className="mb-2 text-[13px] font-semibold">Issues</h3>

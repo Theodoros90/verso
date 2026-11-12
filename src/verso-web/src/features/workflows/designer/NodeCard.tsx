@@ -20,7 +20,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   process: 'Processing',
   logic: 'Logic',
   doc: 'Document',
-  ai: 'AI',
+  ai: 'AI assistance',
   output: 'Output',
 }
 
