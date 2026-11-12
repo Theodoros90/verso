@@ -61,6 +61,7 @@ const step = (nodeId: string, type: string, status: string, extra: Partial<Execu
   durationMs: null,
   error: null,
   result: null,
+  iteration: 0,
   ...extra,
 })
 
@@ -219,6 +220,23 @@ describe('Execution detail', () => {
     expect(screen.queryByRole('button', { name: /Retry/ })).not.toBeInTheDocument()
   })
 
+  it('lists a step once per loop item, each marked with its item', async () => {
+    stubApi(
+      execution('Succeeded', [
+        step('loop', 'for-each', 'Succeeded', { outputPort: 'each' }),
+        step('pdf', 'generate-pdf', 'Succeeded', { iteration: 1 }),
+        step('pdf', 'generate-pdf', 'Succeeded', { iteration: 2 }),
+      ]),
+      [],
+    )
+    open()
+
+    const items = await screen.findAllByText(/Generate invoice PDF/)
+    expect(items).toHaveLength(2)
+    expect(screen.getByText(/· item 1/)).toBeInTheDocument()
+    expect(screen.getByText(/· item 2/)).toBeInTheDocument()
+  })
+
   it('offers a retry for a Failed run and reads again afterwards', async () => {
     const api = stubApi(execution('Failed', [step('pdf', 'generate-pdf', 'Failed', { error: 'IOException: disk full', attempt: 3 })], { failureCode: 'step.technical_error', failureMessage: 'Step failed' }), [])
     const fetchMock = vi.mocked(fetch)
@@ -255,6 +273,7 @@ describe('Execution detail', () => {
             sha256: 'b'.repeat(64),
             status: 'Archived',
             createdAt: '2026-11-10T09:00:03Z',
+            iteration: 0,
             archive: { archivedAt: '2026-11-10T09:00:04Z', folderPath: 'invoices/2026/11', retention: '7y', retentionUntil: '2033-11-10T09:00:04Z', metadata: { Customer: 'Kestrel Logistics Ltd' } },
           },
         ],

@@ -40,7 +40,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid")
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false)
     {
         var templateId = await PublishInvoiceTemplateAsync();
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -121,6 +121,24 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
             definition["nodes"]!.AsArray().Add(route);
             definition["edges"]!.AsArray().First(e => (string?)e!["target"] == "validate")!["target"] = "route";
             definition["edges"]!.AsArray().Add(JsonNode.Parse($$"""{ "id": "e10", "source": "route", "sourcePort": "{{switchPort}}", "target": "validate", "targetPort": "in" }"""));
+        }
+
+        if (forEachConfig is not null)
+        {
+            // validate (valid) → for-each: its 'each' output → pdf → archive. With a back edge the pdf step returns to the for-each instead of archiving.
+            var loop = JsonNode.Parse("""{ "id": "loop", "type": "for-each", "title": "For each line", "position": { "x": 400, "y": 200 }, "config": {} }""")!;
+            loop["config"] = forEachConfig.DeepClone();
+            var nodes = definition["nodes"]!.AsArray();
+            var edges = definition["edges"]!.AsArray();
+            nodes.Add(loop);
+            edges.First(e => (string?)e!["id"] == "e2")!["target"] = "loop";
+            edges.Add(JsonNode.Parse("""{ "id": "e11", "source": "loop", "sourcePort": "each", "target": "pdf", "targetPort": "in" }"""));
+            if (forEachBackEdge)
+            {
+                nodes.Remove(nodes.First(n => (string?)n!["id"] == "archive"));
+                edges.Remove(edges.First(e => (string?)e!["id"] == "e3"));
+                edges.Add(JsonNode.Parse("""{ "id": "e12", "source": "pdf", "sourcePort": "success", "target": "loop", "targetPort": "in" }"""));
+            }
         }
 
         using var draft = await client.GetAsync(new Uri($"/api/v1/workflows/{workflowId}/draft", UriKind.Relative));

@@ -4,6 +4,8 @@
  */
 import type { NodeTypeDto } from '@/lib/api/generated'
 
+import { canConnect } from './loops'
+
 export interface DefNode {
   id: string
   type: string
@@ -75,9 +77,12 @@ export function removeEdges(def: WorkflowDefinition, ids: string[]): WorkflowDef
   return { ...def, edges: def.edges.filter((e) => !set.has(e.id)) }
 }
 
-/** Connects an output to an input. An output leads to one next step, so an existing edge from it is replaced. */
+/**
+ * Connects an output to an input. An output leads to one next step, so an existing edge from it is replaced. A connection that
+ * breaks the loop rules (see loops.ts) is refused: the definition comes back unchanged.
+ */
 export function connect(def: WorkflowDefinition, source: string, sourcePort: string, target: string, targetPort: string): WorkflowDefinition {
-  if (source === target) return def
+  if (source === target || !canConnect(def, source, sourcePort, target, targetPort).ok) return def
   const kept = def.edges.filter((e) => !(e.source === source && e.sourcePort === sourcePort))
   const id = uniqueId(new Set(kept.map((e) => e.id)), `${source}-${sourcePort}`)
   return { ...def, edges: [...kept, { id, source, sourcePort, target, targetPort }] }

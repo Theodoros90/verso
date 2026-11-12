@@ -2624,7 +2624,8 @@
           "sha256",
           "status",
           "createdAt",
-          "archive"
+          "archive",
+          "iteration"
         ],
         "type": "object",
         "properties": {
@@ -2672,6 +2673,14 @@
                 "$ref": "#/components/schemas/ArchiveDto"
               }
             ]
+          },
+          "iteration": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -2858,7 +2867,8 @@
           "completedAt",
           "durationMs",
           "error",
-          "result"
+          "result",
+          "iteration"
         ],
         "type": "object",
         "properties": {
@@ -2934,6 +2944,14 @@
                 "$ref": "#/components/schemas/JsonElement"
               }
             ]
+          },
+          "iteration": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },

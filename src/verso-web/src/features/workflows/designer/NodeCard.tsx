@@ -1,5 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { Archive, ArrowLeftRight, CalendarClock, Circle, Database, FileCode, FileText, FolderInput, FolderSync, GitBranch, Merge, MousePointerClick, Shuffle, ShieldCheck, Split, Upload, Webhook, type LucideIcon } from 'lucide-react'
+import { Archive, ArrowLeftRight, CalendarClock, Circle, Database, FileCode, FileText, FolderInput, FolderSync, GitBranch, Merge, MousePointerClick, Repeat, Shuffle, ShieldCheck, Split, Upload, Webhook, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NodeTypeDto, WorkflowIssueDto } from '@/lib/api/generated'
@@ -38,15 +38,16 @@ export const NODE_ICONS: Record<string, LucideIcon> = {
   'merge-data': Merge,
   'if-else': GitBranch,
   switch: Split,
+  'for-each': Repeat,
   validate: ShieldCheck,
   'generate-pdf': FileText,
   archive: Archive,
 }
 
-/** An output's name on the card and on its connection. An If / else step lets its author rename the Yes and No paths. */
+/** An output's name on the card and on its connection. An If / else step lets its author rename the Yes and No paths, a For each its loop and empty paths. */
 export function portLabel(node: DefNode, portId: string, fallback: string): string {
   if (node.type === 'switch') return switchPorts(node.config).find((p) => p.id === portId)?.label ?? fallback
-  if (node.type === 'if-else') {
+  if (node.type === 'if-else' || node.type === 'for-each') {
     const custom = node.config[`${portId}Label`]
     if (typeof custom === 'string' && custom.trim()) return custom.trim()
   }

@@ -73,3 +73,35 @@ describe('sourceFields', () => {
     expect(sourceFields(meet, 'j')).toEqual(['invoice.number', 'left', 'right', 'totals.gross'])
   })
 })
+
+describe('sourceFields inside a For each', () => {
+  const sample = node('t', 'api-trigger', {
+    samplePayload: '{ "invoice": { "number": "A-1" }, "lines": [ { "description": "Fee", "amount": 5 }, { "description": "Tax", "amount": 1 } ], "tags": [ "a", "b" ] }',
+  })
+  const graph = (config: Record<string, unknown>): WorkflowDefinition => ({
+    nodes: [sample, node('loop', 'for-each', config), node('body', 'if-else'), node('after', 'archive')],
+    edges: [
+      { id: 'e0', source: 't', sourcePort: 'out', target: 'loop', targetPort: 'in' },
+      { id: 'e1', source: 'loop', sourcePort: 'each', target: 'body', targetPort: 'in' },
+      { id: 'e2', source: 'loop', sourcePort: 'empty', target: 'after', targetPort: 'in' },
+      { id: 'e3', source: 'body', sourcePort: 'yes', target: 'loop', targetPort: 'in' }, // repeat
+    ],
+  })
+
+  it('adds the item fields to the record (each), only inside the loop', () => {
+    const d = graph({ field: 'lines', mode: 'each', item: 'line' })
+    expect(sourceFields(d, 'body')).toEqual(['invoice.number', 'line.amount', 'line.description'])
+    expect(sourceFields(d, 'after')).toEqual(['invoice.number']) // the empty path has no item
+    expect(sourceFields(d, 'loop')).toEqual(['invoice.number']) // the repeat connection adds nothing
+  })
+
+  it('replaces the record with the item (split), and names a plain value', () => {
+    expect(sourceFields(graph({ field: 'lines', mode: 'split', item: 'line' }), 'body')).toEqual(['amount', 'description'])
+    expect(sourceFields(graph({ field: 'tags', mode: 'split', item: 'tag' }), 'body')).toEqual(['tag'])
+    expect(sourceFields(graph({ field: 'tags', mode: 'each' }), 'body')).toEqual(['invoice.number', 'item']) // item name defaults to "item"
+  })
+
+  it('adds nothing when the list is not in the sample', () => {
+    expect(sourceFields(graph({ field: 'nothing.here', mode: 'each', item: 'x' }), 'body')).toEqual(['invoice.number'])
+  })
+})

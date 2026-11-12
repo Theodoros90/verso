@@ -52,7 +52,7 @@ internal sealed class ExecutionStepConfiguration : IEntityTypeConfiguration<Exec
         builder.Property(s => s.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
         builder.Property(s => s.OutputPort).HasMaxLength(32);
         builder.Property(s => s.Error).HasMaxLength(ExecutionStep.MaxErrorLength);
-        builder.HasIndex(s => new { s.ExecutionId, s.NodeId }).IsUnique().HasDatabaseName("UX_ExecutionSteps_Node");
+        builder.HasIndex(s => new { s.ExecutionId, s.NodeId, s.Iteration }).IsUnique().HasDatabaseName("UX_ExecutionSteps_Node");
     }
 }
 

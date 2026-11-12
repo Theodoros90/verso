@@ -67,7 +67,7 @@ function Detail({ execution: e, events, onChanged }: { execution: ExecutionDto; 
             <h2 id="steps-h" className="mb-2 text-[14px] font-semibold">Steps</h2>
             <ol aria-label="Steps">
               {e.steps.map((s) => (
-                <Step key={s.nodeId} step={s} />
+                <Step key={`${s.nodeId}:${s.iteration}`} step={s} />
               ))}
             </ol>
           </section>
@@ -166,7 +166,9 @@ function Step({ step: s }: { step: ExecutionStepDto }) {
       </span>
       <div className="min-w-0">
         <div className="font-medium">
-          {s.title} <span className="sr-only">: {s.status}</span>
+          {s.title}
+          {s.iteration > 0 && <span className="font-normal text-ink-3"> · item {s.iteration}</span>}
+          <span className="sr-only">: {s.status}</span>
         </div>
         <small className="block text-xs text-ink-3">
           {s.type}
@@ -197,6 +199,7 @@ function DocumentRow({ document: d }: { document: ExecutionDocumentDto }) {
     <li className="rounded-lg border border-line bg-surface-2 p-3 text-[13px]">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{d.fileName}</span>
+        {d.iteration > 0 && <span className="text-ink-3">item {d.iteration}</span>}
         <StatusPill tone={d.status === 'Archived' ? 'ok' : 'neutral'}>{d.status}</StatusPill>
         <span className="text-ink-3">{formatBytes(d.sizeBytes)}</span>
         {d.status === 'Archived' && <DownloadButton documentId={d.id} fileName={d.fileName} className="ml-auto" />}

@@ -26,8 +26,9 @@ public interface IDocumentStore
 
 public static class DocumentKeys
 {
-    /// <summary>Deterministic per execution and node, so a re-run overwrites instead of leaving a second copy.</summary>
-    public static string Staging(Guid executionId, string nodeId) => $"staging/{executionId:N}/{nodeId}.pdf";
+    /// <summary>Deterministic per execution, node and loop item, so a re-run overwrites instead of leaving a second copy.</summary>
+    public static string Staging(Guid executionId, string nodeId, int iteration = 0) =>
+        iteration == 0 ? $"staging/{executionId:N}/{nodeId}.pdf" : $"staging/{executionId:N}/{iteration}/{nodeId}.pdf";
 
     /// <summary>Deterministic per document (dated by its creation, not by when archiving ran).</summary>
     public static string Archive(Guid documentId, DateTimeOffset createdAt) =>

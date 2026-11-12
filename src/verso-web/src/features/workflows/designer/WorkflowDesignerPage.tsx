@@ -28,13 +28,15 @@ import { workflowsApi } from '@/lib/api/workflows'
 import { inferSchema, modelFields, scalarPaths, schemaFields } from '@/features/templates/model/schema'
 
 import { addNode, asDefinition, connect, moveNode, nextPosition, removeEdges, removeNodes, updateNode, type WorkflowDefinition } from '../model/definition'
-import { sourceFields } from '../model/sourceFields'
+import { backEdges, canConnect } from '../model/loops'
+import { sampleLists, sampleValue, sourceFields } from '../model/sourceFields'
 import { CATEGORY_COLORS, CATEGORY_LABELS, NODE_ICONS, NodeCard, portLabel, type VersoFlowNode } from './NodeCard'
 import { parseJsonObject } from '../model/payloadSchema'
 import { ApiTriggerSettings, type TemplateSample } from './ApiTriggerSettings'
 import { FolderInputSettings } from './FolderInputSettings'
 import { IfElseSettings } from './IfElseSettings'
 import { SwitchSettings } from './SwitchSettings'
+import { ForEachSettings } from './ForEachSettings'
 import { MapFieldsSettings } from './MapFieldsSettings'
 import { SchemaForm, type FieldSchema, type TemplateOption } from './SchemaForm'
 import { useWorkflowState } from './workflowState'
@@ -229,6 +231,14 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
   // If / else and Switch suggest only what the data really holds on arrival at the step (not the template's whole data model).
   const sourcePaths = useMemo(() => (state.selection ? sourceFields(def, state.selection) : []), [def, state.selection])
 
+  // For each goes through a list of the trigger's sample payload; with no sample it offers what the step can see.
+  const selectedNode = def.nodes.find((n) => n.id === state.selection)
+  const listPaths = useMemo(() => {
+    const lists = sampleLists(def)
+    return lists.length > 0 ? lists : sourcePaths
+  }, [def, sourcePaths])
+  const selectedList = selectedNode?.type === 'for-each' ? sampleValue(def, String(selectedNode.config.field ?? '').trim()) : undefined
+
   // ---------- issues ----------
   const issuesByNode = useMemo(() => {
     const m = new Map<string, WorkflowIssueDto[]>()
@@ -253,6 +263,7 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
       })),
     [def, state.selection, readOnly, measured, typeOf, issuesByNode],
   )
+  const loopBackIds = useMemo(() => new Set(backEdges(def).map((e) => e.id)), [def])
   const edgeIssues = useMemo(() => new Set(issues.filter((i) => i.edgeId && i.severity === 'error').map((i) => i.edgeId!)), [issues])
   const edges: Edge[] = useMemo(
     () => {
@@ -264,18 +275,23 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
         target: e.target,
         targetHandle: e.targetPort,
         deletable: !readOnly,
-        label:
-          e.sourcePort === 'out' || e.sourcePort === 'success' || e.sourcePort === 'valid'
+        label: loopBackIds.has(e.id)
+          ? 'repeat'
+          : e.sourcePort === 'out' || e.sourcePort === 'success' || e.sourcePort === 'valid'
             ? undefined
             : sourceNodes.get(e.source) ? portLabel(sourceNodes.get(e.source)!, e.sourcePort, e.sourcePort) : e.sourcePort,
-        style: { stroke: edgeIssues.has(e.id) ? 'var(--err)' : 'var(--line-strong)', strokeWidth: 1.75 },
+        style: {
+          stroke: edgeIssues.has(e.id) ? 'var(--err)' : 'var(--line-strong)',
+          strokeWidth: 1.75,
+          ...(loopBackIds.has(e.id) ? { strokeDasharray: '6 4' } : {}),
+        },
         labelStyle: { fontSize: 11, fill: 'var(--ink-2)' },
         labelBgStyle: { fill: 'var(--surface)', stroke: 'var(--line)' },
         labelBgPadding: [6, 3] as [number, number],
         labelBgBorderRadius: 4,
       }))
     },
-    [def.edges, def.nodes, readOnly, edgeIssues],
+    [def.edges, def.nodes, readOnly, edgeIssues, loopBackIds],
   )
 
   const onNodesChange = useCallback(
@@ -321,9 +337,14 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
   const onConnect = useCallback(
     (c: Connection) => {
       if (readOnly || !c.source || !c.target || !c.sourceHandle || !c.targetHandle) return
+      const check = canConnect(def, c.source, c.sourceHandle, c.target, c.targetHandle)
+      if (!check.ok) {
+        setBanner({ tone: 'warn', message: check.reason })
+        return
+      }
       actions.edit((d) => connect(d, c.source, c.sourceHandle!, c.target, c.targetHandle!))
     },
-    [actions, readOnly],
+    [actions, def, readOnly],
   )
 
   const addType = (type: NodeTypeDto, position?: { x: number; y: number }) => {
@@ -675,7 +696,8 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
             issues={issuesByNode.get(selected.id) ?? []}
             readOnly={readOnly}
             templates={templates}
-            dataPaths={selected.type === 'if-else' || selected.type === 'switch' ? sourcePaths : dataPaths}
+            dataPaths={selected.type === 'for-each' ? listPaths : selected.type === 'if-else' || selected.type === 'switch' ? sourcePaths : dataPaths}
+            sampleList={selectedList}
             workflowKey={workflow.key}
             templateSample={templateSample}
             templateFields={templateFields}
@@ -715,6 +737,7 @@ function NodeSettings({
   readOnly,
   templates,
   dataPaths,
+  sampleList,
   workflowKey,
   templateSample,
   templateFields,
@@ -731,6 +754,8 @@ function NodeSettings({
   readOnly: boolean
   templates: TemplateOption[]
   dataPaths: string[]
+  /** For a For each: the trigger sample's value at its list field. */
+  sampleList?: unknown
   workflowKey: string
   templateSample?: TemplateSample
   templateFields?: string[]
@@ -798,6 +823,14 @@ function NodeSettings({
             value={node.config}
             onChange={(config, key) => onChange({ config }, key)}
             ctx={{ templates, dataPaths, errorsFor: fieldErrors, readOnly }}
+          />
+        ) : nodeType && node.type === 'for-each' ? (
+          <ForEachSettings
+            schema={nodeType.configSchema as FieldSchema}
+            value={node.config}
+            onChange={(config, key) => onChange({ config }, key)}
+            ctx={{ templates, dataPaths, errorsFor: fieldErrors, readOnly }}
+            sampleList={sampleList}
           />
         ) : nodeType && node.type === 'switch' ? (
           <SwitchSettings

@@ -105,6 +105,50 @@ public static class GraphValidator
             list.Add(edge);
         }
 
+        // Loops: a For each may be returned to by one step of its own loop. Those connections are not cycles; everything else that loops is.
+        var loops = LoopAnalysis.Find(definition);
+        var loopEdges = loops.SelectMany(l => l.BackEdgeCandidates).Select(e => e.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var list in outgoing.Values)
+        {
+            list.RemoveAll(e => loopEdges.Contains(e.Id));
+        }
+
+        foreach (var loop in loops)
+        {
+            var forEachTitle = loop.ForEach.Title;
+            foreach (var edge in loop.BackEdgeCandidates)
+            {
+                if (!LoopAnalysis.CanLoopBack(nodes[edge.Source]))
+                {
+                    issues.Add(new(Error, "loop.back_edge_source", $"'{nodes[edge.Source].Title}' can't connect back into '{forEachTitle}': only a plain step can end an item (not a For each, If / else or Switch). Connect the last plain step of the loop instead, or leave the path unconnected.", NodeId: edge.Source, EdgeId: edge.Id));
+                }
+                else if (edge.Id != loop.BackEdge?.Id)
+                {
+                    issues.Add(new(Error, "loop.multiple_back_edges", $"'{forEachTitle}' already has a step connected back into it; a loop has one.", NodeId: edge.Source, EdgeId: edge.Id));
+                }
+            }
+
+            foreach (var inner in loops.Where(o => o != loop && loop.Body.Contains(o.ForEach.Id)))
+            {
+                issues.Add(new(Error, "loop.nested", $"'{inner.ForEach.Title}' is inside the loop of '{forEachTitle}'; a For each can't be inside another For each.", NodeId: inner.ForEach.Id));
+            }
+        }
+
+        // A step must be inside one loop or outside all of them: reaching it from both would run it with and without an item.
+        if (loops.Count > 0 && triggers.Count == 1)
+        {
+            var allEdges = definition.Edges.ToList();
+            foreach (var loop in loops)
+            {
+                var outside = LoopAnalysis.Reach(
+                    triggers[0].Id, [.. allEdges.Where(e => !loopEdges.Contains(e.Id) && !(e.Source == loop.ForEach.Id && e.SourcePort == Executions.ForEach.Each))], _ => false, includeStart: true);
+                foreach (var shared in loop.Body.Where(outside.Contains))
+                {
+                    issues.Add(new(Error, "loop.shared_step", $"'{nodes[shared].Title}' can be reached both inside and outside the loop of '{loop.ForEach.Title}'; keep the loop's steps separate from the rest of the workflow.", NodeId: shared));
+                }
+            }
+        }
+
         // Cycles (depth-first search, three colours)
         var state = new Dictionary<string, int>(StringComparer.Ordinal);
         var reportedCycle = false;
@@ -204,6 +248,7 @@ public static class GraphValidator
         (NodeCatalog.MapFields, "failed") => "A value that can't be transformed will end the run as Rejected.",
         (NodeCatalog.TransformData, "failed") => "A rule that can't be applied will end the run as Rejected.",
         (NodeCatalog.MergeData, "failed") => "A record that can't be merged will end the run as Rejected.",
+        (NodeCatalog.ForEach, "empty") => "An empty list ends the run here: nothing is repeated.",
         (NodeCatalog.IfElse, "yes") => "Records that meet the condition end the run here.",
         (NodeCatalog.IfElse, "no") => "Records that don't meet the condition end the run here.",
         (NodeCatalog.GeneratePdf, "failed") =>"Data that can't make a complete document will end the run as Rejected.",

@@ -354,6 +354,7 @@ public sealed class GraphValidatorTests
                 NodeCatalog.MergeData => ["key", "lookupKey"],
                 NodeCatalog.IfElse => ["conditions[0].field"],
                 NodeCatalog.SwitchRoute => ["field"],
+                NodeCatalog.ForEach => ["field"],
                 _ => Array.Empty<string>(),
             };
             Assert.Equal(expected, errors.Select(e => e.Field).ToArray());

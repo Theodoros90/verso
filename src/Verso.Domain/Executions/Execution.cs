@@ -19,8 +19,11 @@ public enum StepStatus
     Skipped,
 }
 
-/// <summary>A step to create when a run is submitted: one per workflow node, in run order.</summary>
-public sealed record PlannedStep(string NodeId, string NodeType, string Title);
+/// <summary>
+/// A step to create: one per workflow node when a run is submitted, in run order. <paramref name="Iteration"/> is 0 for a step outside
+/// a For each loop; inside a loop it is the 1-based item the step runs for (the submitted rows are item 1; later items add rows as they run).
+/// </summary>
+public sealed record PlannedStep(string NodeId, string NodeType, string Title, int Iteration = 0);
 
 /// <summary>
 /// One run of a published workflow version with one submitted payload. Records the exact workflow and template
@@ -113,9 +116,28 @@ public sealed class Execution
         return execution;
     }
 
-    public ExecutionStep Step(string nodeId) =>
-        _steps.SingleOrDefault(s => s.NodeId == nodeId)
-        ?? throw new DomainRuleException("execution.unknown_step", $"Execution {Id} has no step for node '{nodeId}'.");
+    public ExecutionStep Step(string nodeId, int iteration = 0) =>
+        _steps.SingleOrDefault(s => s.NodeId == nodeId && s.Iteration == iteration)
+        ?? throw new DomainRuleException("execution.unknown_step", $"Execution {Id} has no step for node '{nodeId}' (item {iteration}).");
+
+    /// <summary>
+    /// The row of a node for one item of a For each loop. Items after the first add their rows as the run reaches them (appended in run
+    /// order); a resumed run finds the rows it already wrote.
+    /// </summary>
+    public ExecutionStep StepFor(PlannedStep planned, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(planned);
+        var existing = _steps.SingleOrDefault(s => s.NodeId == planned.NodeId && s.Iteration == planned.Iteration);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        EnsureNotFinished();
+        var step = new ExecutionStep(Id, planned, _steps.Max(s => s.Sequence) + 1, now);
+        _steps.Add(step);
+        return step;
+    }
 
     /// <summary>
     /// Takes the lock for a Worker run. False when the execution is finished or another run holds a live lock.
@@ -230,6 +252,7 @@ public sealed class ExecutionStep
         NodeId = planned.NodeId;
         NodeType = planned.NodeType;
         Title = planned.Title;
+        Iteration = planned.Iteration;
         Sequence = sequence;
         Status = StepStatus.Pending;
     }
@@ -239,6 +262,10 @@ public sealed class ExecutionStep
     public string NodeId { get; private set; } = "";
     public string NodeType { get; private set; } = "";
     public string Title { get; private set; } = "";
+
+    /// <summary>0 outside a For each loop; inside one, the 1-based item this row belongs to.</summary>
+    public int Iteration { get; private set; }
+
     public int Sequence { get; private set; }
     public StepStatus Status { get; private set; }
 

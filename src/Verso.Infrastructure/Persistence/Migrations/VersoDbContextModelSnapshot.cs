@@ -150,6 +150,9 @@ namespace Verso.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<int>("Iteration")
+                        .HasColumnType("int");
+
                     b.Property<string>("NodeId")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -187,7 +190,7 @@ namespace Verso.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ExecutionId", "NodeId")
+                    b.HasIndex("ExecutionId", "NodeId", "Iteration")
                         .IsUnique()
                         .HasDatabaseName("UX_Documents_ExecutionNode");
 
@@ -362,6 +365,9 @@ namespace Verso.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("ExecutionId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("Iteration")
+                        .HasColumnType("int");
+
                     b.Property<string>("NodeId")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -397,7 +403,7 @@ namespace Verso.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ExecutionId", "NodeId")
+                    b.HasIndex("ExecutionId", "NodeId", "Iteration")
                         .IsUnique()
                         .HasDatabaseName("UX_ExecutionSteps_Node");
 

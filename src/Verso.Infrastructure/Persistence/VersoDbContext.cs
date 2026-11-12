@@ -22,6 +22,7 @@ public sealed class VersoDbContext(DbContextOptions<VersoDbContext> options) : D
     public DbSet<Workflow> Workflows => Set<Workflow>();
     public DbSet<WorkflowVersion> WorkflowVersions => Set<WorkflowVersion>();
     public DbSet<Execution> Executions => Set<Execution>();
+    public DbSet<ExecutionStep> ExecutionSteps => Set<ExecutionStep>();
     public DbSet<ExecutionEvent> ExecutionEvents => Set<ExecutionEvent>();
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<ArchiveRecord> ArchiveRecords => Set<ArchiveRecord>();

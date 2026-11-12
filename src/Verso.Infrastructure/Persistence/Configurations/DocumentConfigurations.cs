@@ -25,8 +25,8 @@ internal sealed class DocumentConfiguration : IEntityTypeConfiguration<Document>
         builder.Property(d => d.StorageKey).HasMaxLength(300).IsUnicode(false).IsRequired();
         builder.Property(d => d.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
 
-        // One document per generate-pdf step: a re-run reuses it, and the database refuses a duplicate.
-        builder.HasIndex(d => new { d.ExecutionId, d.NodeId }).IsUnique().HasDatabaseName("UX_Documents_ExecutionNode");
+        // One document per generate-pdf step and loop item: a re-run reuses it, and the database refuses a duplicate.
+        builder.HasIndex(d => new { d.ExecutionId, d.NodeId, d.Iteration }).IsUnique().HasDatabaseName("UX_Documents_ExecutionNode");
     }
 }
 

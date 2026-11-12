@@ -11,11 +11,12 @@ public sealed class ExecutionPlan
 {
     private readonly Dictionary<(string Node, string Port), string> _next;
 
-    private ExecutionPlan(ParsedDefinition definition, WorkflowNode trigger, IReadOnlyList<WorkflowNode> ordered)
+    private ExecutionPlan(ParsedDefinition definition, WorkflowNode trigger, IReadOnlyList<WorkflowNode> ordered, IReadOnlyList<LoopInfo> loops)
     {
         Definition = definition;
         Trigger = trigger;
         Ordered = ordered;
+        Loops = loops;
         _next = definition.Edges
             .GroupBy(e => (e.Source, e.SourcePort))
             .ToDictionary(g => g.Key, g => g.First().Target);
@@ -27,7 +28,10 @@ public sealed class ExecutionPlan
     /// <summary>All nodes, topologically sorted (ties keep definition order). Used as the step sequence.</summary>
     public IReadOnlyList<WorkflowNode> Ordered { get; }
 
-    public IReadOnlyList<PlannedStep> Steps => [.. Ordered.Select(n => new PlannedStep(n.Id, n.Type, n.Title))];
+    /// <summary>The For each loops. A step in a loop is created for item 1; the other items add their rows as they run.</summary>
+    public IReadOnlyList<LoopInfo> Loops { get; }
+
+    public IReadOnlyList<PlannedStep> Steps => [.. Ordered.Select(n => new PlannedStep(n.Id, n.Type, n.Title, Loops.Any(l => l.Body.Contains(n.Id)) ? 1 : 0))];
 
     public WorkflowNode Node(string id) => Ordered.Single(n => n.Id == id);
 
@@ -44,7 +48,10 @@ public sealed class ExecutionPlan
         // Kahn's algorithm; the queue is kept in definition order so the result is stable.
         var index = definition.Nodes.Select((n, i) => (n.Id, i)).ToDictionary(x => x.Id, x => x.i, StringComparer.Ordinal);
         var incoming = definition.Nodes.ToDictionary(n => n.Id, _ => 0, StringComparer.Ordinal);
-        foreach (var edge in definition.Edges.Where(e => incoming.ContainsKey(e.Target) && incoming.ContainsKey(e.Source)))
+        var loops = LoopAnalysis.Find(definition);
+        var loopEdges = loops.SelectMany(l => l.BackEdgeCandidates).Select(e => e.Id).ToHashSet(StringComparer.Ordinal); // returns to a For each aren't ordering constraints
+        var forward = definition.Edges.Where(e => incoming.ContainsKey(e.Target) && incoming.ContainsKey(e.Source) && !loopEdges.Contains(e.Id)).ToList();
+        foreach (var edge in forward)
         {
             incoming[edge.Target]++;
         }
@@ -56,7 +63,7 @@ public sealed class ExecutionPlan
             var node = definition.Nodes[ready.Min];
             ready.Remove(ready.Min);
             ordered.Add(node);
-            foreach (var edge in definition.Edges.Where(e => e.Source == node.Id && incoming.ContainsKey(e.Target)))
+            foreach (var edge in forward.Where(e => e.Source == node.Id))
             {
                 if (--incoming[edge.Target] == 0)
                 {
@@ -70,6 +77,6 @@ public sealed class ExecutionPlan
             throw new InvalidOperationException("The workflow definition has a cycle; published versions never do.");
         }
 
-        return new ExecutionPlan(definition, trigger, ordered);
+        return new ExecutionPlan(definition, trigger, ordered, loops);
     }
 }

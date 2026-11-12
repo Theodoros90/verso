@@ -18,6 +18,7 @@ public interface IVersoDbContext
     DbSet<Workflow> Workflows { get; }
     DbSet<WorkflowVersion> WorkflowVersions { get; }
     DbSet<Execution> Executions { get; }
+    DbSet<ExecutionStep> ExecutionSteps { get; }
     DbSet<ExecutionEvent> ExecutionEvents { get; }
     DbSet<Document> Documents { get; }
     DbSet<ArchiveRecord> ArchiveRecords { get; }

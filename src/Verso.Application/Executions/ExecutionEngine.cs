@@ -97,34 +97,126 @@ public sealed partial class ExecutionEngine(
         var node = plan.Trigger;
         while (true)
         {
-            var step = execution.Step(node.Id);
-            string? port;
-            if (step.Status == StepStatus.Succeeded)
+            var step = await StepAsync(run, node, timeout.Token, ct);
+            if (step is null)
             {
-                port = step.OutputPort;
-                await RestoreAsync(run, node, ct);
+                return; // retry scheduled, execution failed, or the lock was lost
             }
-            else
+
+            var port = step.Port;
+            if (node.Type == NodeCatalog.ForEach && port == ForEach.Each)
             {
-                var outcome = await RunStepAsync(run, node, step, timeout.Token, ct);
-                if (outcome is null)
+                // The loop runs the steps after 'each' once per item; when the last item is done the run is over.
+                if (!await RunLoopAsync(run, node, timeout.Token, ct))
                 {
-                    return; // retry scheduled, execution failed, or the lock was lost
+                    return;
                 }
 
-                port = outcome.Port;
+                await FinishAsync(run, node, step, ct);
+                return;
             }
 
             var next = port is null ? null : plan.Next(node.Id, port);
             if (next is null)
             {
-                await FinishAsync(run, node, port, ct);
+                await FinishAsync(run, node, step, ct);
                 return;
             }
 
             node = next;
         }
     }
+
+    /// <summary>
+    /// Runs the steps after a For each's <c>each</c> output once per item. An item ends where its path ends or returns to the For each.
+    /// The first item that is rejected or fails ends the whole run (and no later item runs). False when the run ended or stopped.
+    /// Items already done are found again by their step rows and skipped over, so a retried or redelivered run resumes in the right item.
+    /// </summary>
+    private async Task<bool> RunLoopAsync(Run run, Workflows.WorkflowNode forEach, CancellationToken timeoutToken, CancellationToken shutdown)
+    {
+        var items = ForEach.Items(forEach.Config, run.Data);
+        var baseData = run.Data;
+        var first = run.Plan.Next(forEach.Id, ForEach.Each)
+            ?? throw new StepException("foreach.not_connected", $"Step '{forEach.Title}' has no steps connected to repeat.", retryable: false);
+        for (var i = 1; i <= items.Count; i++)
+        {
+            run.Iteration = i;
+            run.Document = null;
+            run.Data = ForEach.IterationData(forEach.Config, baseData, items[i - 1]);
+            var current = first;
+            while (true)
+            {
+                var step = await StepAsync(run, current, timeoutToken, shutdown);
+                if (step is null)
+                {
+                    return false;
+                }
+
+                if (Rejects(current.Type, step.Port))
+                {
+                    await FinishAsync(run, current, step, shutdown);
+                    return false;
+                }
+
+                var next = step.Port is null ? null : run.Plan.Next(current.Id, step.Port);
+                if (next is null || next.Id == forEach.Id)
+                {
+                    break; // this item is done
+                }
+
+                current = next;
+            }
+        }
+
+        run.Iteration = 0;
+        run.Document = null;
+        run.Data = baseData;
+        return true;
+    }
+
+    /// <summary>The row of this node for the current item, and either its saved result (already succeeded) or the result of running it. Null: the run stopped.</summary>
+    private async Task<StepResult?> StepAsync(Run run, Workflows.WorkflowNode node, CancellationToken timeoutToken, CancellationToken shutdown)
+    {
+        var known = run.Execution.Steps.Count;
+        var step = run.Execution.StepFor(new PlannedStep(node.Id, node.Type, node.Title, run.Iteration), clock.GetUtcNow());
+        if (run.Execution.Steps.Count > known)
+        {
+            db.ExecutionSteps.Add(step); // a row for a later item: its id is already set, so EF must be told it is new
+        }
+
+        if (step.Status == StepStatus.Succeeded)
+        {
+            await RestoreAsync(run, node, step, shutdown);
+            return new StepResult(step.OutputPort, step);
+        }
+
+        var outcome = await RunStepAsync(run, node, step, timeoutToken, shutdown);
+        return outcome is null ? null : new StepResult(outcome.Port, step);
+    }
+
+    private sealed record StepResult(string? Port, ExecutionStep Step);
+
+    /// <summary>Event data: the given values, plus the loop item when the step runs inside a For each.</summary>
+    private static Dictionary<string, object?> Data(ExecutionStep step, params (string Key, object? Value)[] values)
+    {
+        var data = new Dictionary<string, object?>();
+        foreach (var (key, value) in values)
+        {
+            data[key] = value;
+        }
+
+        if (step.Iteration > 0)
+        {
+            data["iteration"] = step.Iteration;
+        }
+
+        return data;
+    }
+
+    /// <summary>Whether a path ending at this step by this output ends the run as Rejected (see <see cref="FinishAsync"/>).</summary>
+    private static bool Rejects(string nodeType, string? port) => (nodeType, port) is
+        (NodeCatalog.Validate, "invalid") or (NodeCatalog.ParseContent, "failed") or (NodeCatalog.MapFields, "failed")
+        or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf, "failed");
 
     private sealed record Outcome(string? Port, object? Result, Func<Task>? AfterSave = null);
 
@@ -137,6 +229,8 @@ public sealed partial class ExecutionEngine(
         public JsonElement Data { get; set; } = data;
         public IReadOnlyDictionary<string, Guid> Templates { get; } = templates;
         public Document? Document { get; set; }
+        /// <summary>0 outside a For each loop; inside one, the 1-based item being run.</summary>
+        public int Iteration { get; set; }
     }
 
     private async Task<Outcome?> RunStepAsync(Run run, Workflows.WorkflowNode node, ExecutionStep step, CancellationToken timeoutToken, CancellationToken shutdown)
@@ -147,7 +241,7 @@ public sealed partial class ExecutionEngine(
         {
             // Only after Worker crashes mid-step (a crash still counts as an attempt).
             execution.Fail("step.attempts_exhausted", $"Step '{node.Title}' was interrupted {step.Attempt} times.", now);
-            Event(execution, ExecutionEventTypes.Failed, now, node.Id, new { code = execution.FailureCode });
+            Event(execution, ExecutionEventTypes.Failed, now, node.Id, Data(step, ("code", execution.FailureCode)));
             Completed(execution, now);
             await SaveAsync(execution, CancellationToken.None);
             return null;
@@ -155,7 +249,7 @@ public sealed partial class ExecutionEngine(
 
         step.Start(now);
         execution.RenewLock(now, Lease);
-        Event(execution, ExecutionEventTypes.StepStarted, now, node.Id, new { attempt = step.Attempt });
+        Event(execution, ExecutionEventTypes.StepStarted, now, node.Id, Data(step, ("attempt", step.Attempt)));
         if (!await SaveAsync(execution, shutdown))
         {
             return null;
@@ -167,7 +261,7 @@ public sealed partial class ExecutionEngine(
             now = clock.GetUtcNow();
             step.Succeed(outcome.Port, outcome.Result is null ? null : JsonSerializer.Serialize(outcome.Result, Json), now);
             execution.RenewLock(now, Lease);
-            Event(execution, ExecutionEventTypes.StepSucceeded, now, node.Id, new { port = outcome.Port });
+            Event(execution, ExecutionEventTypes.StepSucceeded, now, node.Id, Data(step, ("port", outcome.Port)));
             if (!await SaveAsync(execution, CancellationToken.None))
             {
                 return null;
@@ -201,12 +295,12 @@ public sealed partial class ExecutionEngine(
             var (code, message, retryable) = Describe(ex, timeoutToken);
             step.Fail(message, now);
             LogStepFailed(logger, node.Id, execution.Id, step.Attempt, code);
-            Event(execution, ExecutionEventTypes.StepFailed, now, node.Id, new { attempt = step.Attempt, code });
+            Event(execution, ExecutionEventTypes.StepFailed, now, node.Id, Data(step, ("attempt", step.Attempt), ("code", code)));
             if (retryable && step.Attempt < MaxStepAttempts)
             {
                 var delay = RetryDelay(step.Attempt + 1);
                 execution.ScheduleRetry(now + delay);
-                Event(execution, ExecutionEventTypes.RetryScheduled, now, node.Id, new { attempt = step.Attempt + 1, dueAt = now + delay });
+                Event(execution, ExecutionEventTypes.RetryScheduled, now, node.Id, Data(step, ("attempt", step.Attempt + 1), ("dueAt", now + delay)));
                 if (await SaveAsync(execution, CancellationToken.None))
                 {
                     ScheduleRetry(execution.Id, delay);
@@ -216,7 +310,7 @@ public sealed partial class ExecutionEngine(
             }
 
             execution.Fail(code, $"Step '{node.Title}' failed after {step.Attempt} attempt(s): {message}", now);
-            Event(execution, ExecutionEventTypes.Failed, now, node.Id, new { code });
+            Event(execution, ExecutionEventTypes.Failed, now, node.Id, Data(step, ("code", code)));
             Completed(execution, now);
             await SaveAsync(execution, CancellationToken.None);
             return null;
@@ -234,6 +328,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.MergeData => Task.FromResult(Merge(run, node)),
         NodeCatalog.IfElse => Task.FromResult(Branch(run, node)),
         NodeCatalog.SwitchRoute => Task.FromResult(Route(run, node)),
+        NodeCatalog.ForEach => Task.FromResult(Repeat(run, node)),
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
         NodeCatalog.GeneratePdf => GeneratePdfAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
@@ -306,6 +401,21 @@ public sealed partial class ExecutionEngine(
         return new Outcome(port, new { branch = port });
     }
 
+    /// <summary>
+    /// Counts the list: <c>each</c> when there are items (the engine then runs the loop), <c>empty</c> when there are none. The data is
+    /// unchanged, so a resumed run has nothing to rebuild. The result holds the count, never the items.
+    /// </summary>
+    private static Outcome Repeat(Run run, Workflows.WorkflowNode node)
+    {
+        var count = ForEach.Items(node.Config, run.Data).Count;
+        if (count > ForEach.MaxItems)
+        {
+            throw new StepException("foreach.too_many_items", $"The list has {count} items; at most {ForEach.MaxItems} are allowed in a For each.", retryable: false);
+        }
+
+        return new Outcome(count == 0 ? ForEach.Empty : ForEach.Each, new { count });
+    }
+
     private static Outcome Validate(Run run, Workflows.WorkflowNode node)
     {
         var issues = ValidationRules.Check(node.Config, run.Data);
@@ -317,7 +427,7 @@ public sealed partial class ExecutionEngine(
         var execution = run.Execution;
 
         // Idempotent: a document from an earlier, interrupted attempt of this step is reused.
-        if (await FindDocumentAsync(execution.Id, node.Id, ct) is { } existing)
+        if (await FindDocumentAsync(execution.Id, node.Id, run.Iteration, ct) is { } existing)
         {
             run.Document = existing;
             return new Outcome("success", DocumentResult(existing, []));
@@ -345,13 +455,13 @@ public sealed partial class ExecutionEngine(
         }
 
         var output = await printer.PrintAsync(rendered.Print, ct);
-        var key = DocumentKeys.Staging(execution.Id, node.Id);
+        var key = DocumentKeys.Staging(execution.Id, node.Id, run.Iteration);
         await store.WriteAsync(key, output.Content, ct);
 
         var pattern = PatternText.Resolve(node.Config.GetProperty("fileName").GetString()!, run.Data);
         var document = Document.Generate(
             execution.Id, node.Id, templateVersionId, DocumentNames.FileName(pattern.Text), output.Content.LongLength,
-            DocumentKeys.Sha256Hex(output.Content), store.Provider, key, clock.GetUtcNow());
+            DocumentKeys.Sha256Hex(output.Content), store.Provider, key, clock.GetUtcNow(), iteration: run.Iteration);
         db.Documents.Add(document);
         run.Document = document;
         var warnings = rendered.Issues.Where(i => i.Severity == IssueSeverity.Warning).Select(i => new { i.Code, i.Path });
@@ -417,31 +527,31 @@ public sealed partial class ExecutionEngine(
     }
 
     /// <summary>Re-establishes what a step that already succeeded produced (the parsed data or the document, for later steps).</summary>
-    private async Task RestoreAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    private async Task RestoreAsync(Run run, Workflows.WorkflowNode node, ExecutionStep step, CancellationToken ct)
     {
         if (node.Type == NodeCatalog.GeneratePdf)
         {
-            run.Document = await FindDocumentAsync(run.Execution.Id, node.Id, ct);
+            run.Document = await FindDocumentAsync(run.Execution.Id, node.Id, run.Iteration, ct);
         }
-        else if (node.Type == NodeCatalog.MapFields && run.Execution.Step(node.Id).OutputPort == "success")
+        else if (node.Type == NodeCatalog.MapFields && step.OutputPort == "success")
         {
             // Mapping is deterministic, like parsing: the data is rebuilt rather than stored again.
             run.Data = FieldMapper.Apply(node.Config, run.Data).Data
                 ?? throw new StepException("map.restore", $"Step '{node.Title}' succeeded before but its mapping can't be applied again.", retryable: false);
         }
-        else if (node.Type == NodeCatalog.TransformData && run.Execution.Step(node.Id).OutputPort == "success")
+        else if (node.Type == NodeCatalog.TransformData && step.OutputPort == "success")
         {
             // Transforming is deterministic, like mapping: the data is rebuilt rather than stored again.
             run.Data = DataTransformer.Apply(node.Config, run.Data).Data
                 ?? throw new StepException("transform.restore", $"Step '{node.Title}' succeeded before but its rules can't be applied again.", retryable: false);
         }
-        else if (node.Type == NodeCatalog.MergeData && run.Execution.Step(node.Id).OutputPort == "success")
+        else if (node.Type == NodeCatalog.MergeData && step.OutputPort == "success")
         {
             // Merging is deterministic, like transforming: the data is rebuilt rather than stored again.
             run.Data = DataMerger.Apply(node.Config, run.Data).Data
                 ?? throw new StepException("merge.restore", $"Step '{node.Title}' succeeded before but its merge can't be applied again.", retryable: false);
         }
-        else if (node.Type == NodeCatalog.ParseContent && run.Execution.Step(node.Id).OutputPort == "success")
+        else if (node.Type == NodeCatalog.ParseContent && step.OutputPort == "success")
         {
             // Parsing is deterministic, so the data is rebuilt rather than stored a second time.
             run.Data = RecordParser.Parse(node.Config, run.Data).Data
@@ -449,12 +559,12 @@ public sealed partial class ExecutionEngine(
         }
     }
 
-    private async Task FinishAsync(Run run, Workflows.WorkflowNode last, string? port, CancellationToken ct)
+    private async Task FinishAsync(Run run, Workflows.WorkflowNode last, StepResult finished, CancellationToken ct)
     {
         var execution = run.Execution;
-        var step = execution.Step(last.Id);
+        var step = finished.Step;
         var now = clock.GetUtcNow();
-        switch (last.Type, port)
+        switch (last.Type, finished.Port)
         {
             case (NodeCatalog.Validate, "invalid"):
                 using (var result = JsonDocument.Parse(step.Result ?? "{}"))
@@ -495,8 +605,8 @@ public sealed partial class ExecutionEngine(
         await SaveAsync(execution, ct);
     }
 
-    private Task<Document?> FindDocumentAsync(Guid executionId, string nodeId, CancellationToken ct) =>
-        db.Documents.SingleOrDefaultAsync(d => d.ExecutionId == executionId && d.NodeId == nodeId, ct);
+    private Task<Document?> FindDocumentAsync(Guid executionId, string nodeId, int iteration, CancellationToken ct) =>
+        db.Documents.SingleOrDefaultAsync(d => d.ExecutionId == executionId && d.NodeId == nodeId && d.Iteration == iteration, ct);
 
     private static object DocumentResult(Document d, IReadOnlyList<string> warnings, object? renderWarnings = null) =>
         new { documentId = d.Id, d.FileName, d.SizeBytes, d.Sha256, warnings, renderWarnings };

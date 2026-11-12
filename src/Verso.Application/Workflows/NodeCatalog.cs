@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), validate, generate-pdf, archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -39,6 +39,7 @@ public static class NodeCatalog
     public const string MergeData = "merge-data";
     public const string IfElse = "if-else";
     public const string SwitchRoute = "switch";
+    public const string ForEach = "for-each";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string Archive = "archive";
@@ -435,6 +436,23 @@ public static class NodeCatalog
               "branches": [ { "id": "branch-1", "label": "Branch 1", "compare": "value", "value": "" }, { "id": "branch-2", "label": "Branch 2", "compare": "value", "value": "" } ] }
             """),
 
+        Node(ForEach, "For each", "logic",
+            "Repeats the steps after it for every item of a list in the data. Mode 'each' keeps the whole record and adds the current item; mode 'split' makes each item its own record. One step of the loop may connect back into this step to finish an item. An empty list leaves by 'No items'.",
+            [In], [new PortDto(Executions.ForEach.Each, Executions.ForEach.DefaultEachLabel, true), new PortDto(Executions.ForEach.Empty, Executions.ForEach.DefaultEmptyLabel, false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "field": { "type": "string", "title": "List field", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DataPathPattern)}}", "x-widget": "data-path",
+                  "description": "A field that holds a list, such as invoice.lines." },
+                "mode": { "type": "string", "title": "Loop behaviour", "enum": {{JsonSerializer.Serialize(Executions.ForEach.Modes.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Executions.ForEach.Modes.Values)}} },
+                "item": { "type": "string", "title": "Item name", "minLength": 1, "maxLength": 40, "pattern": "{{Escape(Executions.ForEach.ItemNamePattern)}}",
+                  "description": "Later steps refer to each item by this name, such as item.description. A field of the record with the same name is replaced while the item runs." },
+                "eachLabel": { "type": "string", "title": "Name of the loop path", "maxLength": 40, "description": "Shown on the step. Optional." },
+                "emptyLabel": { "type": "string", "title": "Name of the empty-list path", "maxLength": 40, "description": "Shown on the step. Optional." } },
+              "required": ["field", "mode", "item"] }
+            """,
+            $$"""{ "field": "", "mode": "each", "item": "{{Executions.ForEach.DefaultItemName}}", "eachLabel": "{{Executions.ForEach.DefaultEachLabel}}", "emptyLabel": "{{Executions.ForEach.DefaultEmptyLabel}}" }"""),
+
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",
             [In], [new PortDto("valid", "Valid", true), new PortDto("invalid", "Invalid", false)],
@@ -495,8 +513,12 @@ public static class NodeCatalog
     /// The outputs of one node. For most types that is the catalog's list; a Switch has one per branch of its settings
     /// (its catalog list is empty).
     /// </summary>
-    public static IReadOnlyList<PortDto> OutputsOf(NodeTypeDto type, System.Text.Json.JsonElement config) =>
-        type.Type == SwitchRoute ? Executions.Switch.Ports(config) : type.Outputs;
+    public static IReadOnlyList<PortDto> OutputsOf(NodeTypeDto type, System.Text.Json.JsonElement config) => type.Type switch
+    {
+        SwitchRoute => Executions.Switch.Ports(config),
+        ForEach => Executions.ForEach.Ports(config),
+        _ => type.Outputs,
+    };
 
     private static NodeTypeDto Node(string type, string label, string category, string description,
         IReadOnlyList<PortDto> inputs, IReadOnlyList<PortDto> outputs, string schema, string defaults) =>

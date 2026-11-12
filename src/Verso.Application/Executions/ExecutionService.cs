@@ -311,12 +311,13 @@ public sealed partial class ExecutionService(IVersoDbContext db, IExecutionJobs 
         e.FailureMessage,
         [.. e.Steps.OrderBy(s => s.Sequence).Select(s => new ExecutionStepDto(
             s.NodeId, s.NodeType, s.Title, s.Sequence, s.Status.ToString(), s.OutputPort, s.Attempt,
-            s.StartedAt, s.CompletedAt, s.DurationMs, s.Error, ParseResult(s.Result)))],
+            s.StartedAt, s.CompletedAt, s.DurationMs, s.Error, ParseResult(s.Result), s.Iteration))],
         [.. documents.Select(d => new ExecutionDocumentDto(
             d.Id, d.NodeId, d.TemplateVersionId, d.FileName, d.ContentType, d.SizeBytes, d.Sha256, d.Status.ToString(), d.CreatedAt,
             archives.TryGetValue(d.Id, out var a)
                 ? new ArchiveDto(a.ArchivedAt, a.FolderPath, a.Retention, a.RetentionUntil, JsonSerializer.Deserialize<Dictionary<string, string>>(a.Metadata) ?? [])
-                : null))]);
+                : null,
+            d.Iteration))]);
 
     private static JsonElement? ParseResult(string? json)
     {

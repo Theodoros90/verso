@@ -83,6 +83,7 @@ export interface ExecutionDocumentDto {
   status: string
   createdAt: string
   archive: null | ArchiveDto
+  iteration: number
 }
 
 export interface ExecutionDto {
@@ -132,6 +133,7 @@ export interface ExecutionStepDto {
   durationMs: number | null
   error: string | null
   result: null | JsonElement
+  iteration: number
 }
 
 export interface ExecutionSummaryDto {
