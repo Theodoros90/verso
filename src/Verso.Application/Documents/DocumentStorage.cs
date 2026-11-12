@@ -51,11 +51,17 @@ public static partial class DocumentNames
 
     public const string Pdf = ".pdf";
     public const string Docx = ".docx";
+    public const string Html = ".html";
 
     /// <summary>The file extension for a document's content type (storage keys are generated from it, never from input).</summary>
-    public static string ExtensionFor(string contentType) => contentType == Verso.Domain.Documents.Document.DocxContentType ? Docx : Pdf;
+    public static string ExtensionFor(string contentType) => contentType switch
+    {
+        Verso.Domain.Documents.Document.DocxContentType => Docx,
+        Verso.Domain.Documents.Document.HtmlContentType => Html,
+        _ => Pdf,
+    };
 
-    /// <summary>Letters, digits, space, <c>. _ ( ) -</c> only; always ends in <paramref name="extension"/> (<c>.pdf</c> or <c>.docx</c>); "document" plus the extension when nothing is left.</summary>
+    /// <summary>Letters, digits, space, <c>. _ ( ) -</c> only; always ends in <paramref name="extension"/> (<c>.pdf</c>, <c>.docx</c> or <c>.html</c>); "document" plus the extension when nothing is left.</summary>
     public static string FileName(string resolved, string extension = Pdf)
     {
         var name = UnsafeFileNameChars().Replace(resolved.Normalize(NormalizationForm.FormC), "_").TrimEnd(' ', '.');

@@ -18,7 +18,7 @@ Bank-focused document-generation and workflow platform. MVP: maintain an invoice
 **M7: Execution engine** — accepted 2026-11-10.
 **M8: Execution history and live progress** — accepted 2026-11-10.
 **M9: MVP hardening** — accepted 2026-11-10 (full `tools/ci.ps1` run passed). **MVP complete (M1–M9).**
-Post-MVP: **Generate DOCX step** (2026-11-12, ADR 0003) implemented; awaiting acceptance. **Approval step** (2026-11-12, ADR 0002) implemented; awaiting acceptance. **Folder input** (2026-11-11, ADR 0001) implemented; awaiting acceptance. No next milestone agreed yet; post-MVP items are listed under "Not in MVP" in plan §9 and the open decisions in plan §10.
+Post-MVP: **Generate HTML email step** (2026-11-12, ADR 0004) implemented; awaiting acceptance. **Generate DOCX step** (2026-11-12, ADR 0003) implemented; awaiting acceptance. **Approval step** (2026-11-12, ADR 0002) implemented; awaiting acceptance. **Folder input** (2026-11-11, ADR 0001) implemented; awaiting acceptance. No next milestone agreed yet; post-MVP items are listed under "Not in MVP" in plan §9 and the open decisions in plan §10.
 Update this line when a milestone is accepted and the next one is agreed.
 
 ## Commands

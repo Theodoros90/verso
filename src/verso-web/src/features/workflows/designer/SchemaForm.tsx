@@ -17,7 +17,7 @@ export interface FieldSchema {
   items?: FieldSchema
   enum?: string[]
   'x-enumLabels'?: string[]
-  'x-widget'?: 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches'
+  'x-widget'?: 'multiline' | 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches'
   maxItems?: number
 }
 
@@ -196,6 +196,10 @@ function StringInput({
         ))}
       </Select>
     )
+  }
+
+  if (field['x-widget'] === 'multiline') {
+    return <Textarea {...common} value={value} rows={6} onChange={(e) => onChange(e.target.value, path)} />
   }
 
   if (field['x-widget'] === 'json') {

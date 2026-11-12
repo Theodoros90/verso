@@ -139,6 +139,22 @@ const nodeTypes: NodeTypeDto[] = [
     },
     defaults: { templateId: '', templateVersion: 'latest-published', fileName: '{{invoice.number}}.docx', protect: 'allow' },
   },
+  {
+    type: 'generate-email', label: 'Generate HTML email', category: 'doc', description: 'Builds an HTML email body.',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'success', label: 'Success', required: true }, { id: 'failed', label: 'Failed', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        layout: { type: 'string', title: 'Email layout', enum: ['invoice', 'statement', 'reminder'], 'x-enumLabels': ['Invoice email', 'Statement ready', 'Payment reminder'] },
+        subject: { type: 'string', title: 'Subject', 'x-widget': 'pattern' },
+        body: { type: 'string', title: 'Body', 'x-widget': 'multiline' },
+        darkMode: { type: 'boolean', title: 'Support dark mode' },
+      },
+      required: ['layout', 'subject', 'body', 'darkMode'],
+    },
+    defaults: { layout: 'invoice', subject: 'Invoice {{invoice.number}}', body: 'Dear {{customer.name}},', darkMode: true },
+  },
 ]
 
 const definition = {
@@ -329,6 +345,26 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'generate-docx', config: { fileName: '{{invoice.number}}.docx', protect: 'allow' } })
+  })
+
+  it('adds a Generate HTML email step with a layout choice and a multi-line body', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Generate HTML email' }))
+
+    expect(await screen.findByRole('heading', { name: 'Generate HTML email', level: 3 })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Email layout/)).toHaveDisplayValue('Invoice email')
+    const body = screen.getByLabelText(/Body/)
+    expect(body.tagName).toBe('TEXTAREA')
+    await user.clear(body)
+    await user.type(body, 'Line one{Enter}{Enter}Line two')
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'generate-email', config: { layout: 'invoice', body: 'Line one\n\nLine two', darkMode: true } })
   })
 
   it('shows the server issues when publishing is refused', async () => {

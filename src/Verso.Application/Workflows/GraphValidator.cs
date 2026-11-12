@@ -252,7 +252,7 @@ public static class GraphValidator
         (NodeCatalog.ForEach, "empty") => "An empty list ends the run here: nothing is repeated.",
         (NodeCatalog.IfElse, "yes") => "Records that meet the condition end the run here.",
         (NodeCatalog.IfElse, "no") => "Records that don't meet the condition end the run here.",
-        (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx, "failed") => "Data that can't make a complete document will end the run as Rejected.",
+        (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail, "failed") => "Data that can't make a complete document will end the run as Rejected.",
         _ => $"'{port.Label}' isn't connected; the run ends there.",
     };
 
@@ -353,6 +353,22 @@ public static class GraphValidator
                 foreach (var (field, problem) in Executions.Switch.Incomplete(c))
                 {
                     yield return new(Error, "config.invalid", problem, NodeId: node.Id, Field: field);
+                }
+
+                break;
+
+            case NodeCatalog.GenerateEmail:
+                string EmailText(string name) => c.TryGetProperty(name, out var s) && s.ValueKind == JsonValueKind.String ? s.GetString()!.Trim() : "";
+                var buttonLabel = EmailText("buttonLabel");
+                var buttonUrl = EmailText("buttonUrl");
+                if ((buttonLabel.Length == 0) != (buttonUrl.Length == 0))
+                {
+                    yield return new(Error, "config.invalid", "Set both the button label and the button link, or leave both empty.", NodeId: node.Id, Field: buttonLabel.Length == 0 ? "buttonLabel" : "buttonUrl");
+                }
+                else if (buttonUrl.Length > 0 && !buttonUrl.Contains("{{", StringComparison.Ordinal)
+                         && !(Uri.TryCreate(buttonUrl, UriKind.Absolute, out var link) && link.Scheme is "http" or "https" or "mailto"))
+                {
+                    yield return new(Error, "config.invalid", "The button link must be a full http, https or mailto address.", NodeId: node.Id, Field: "buttonUrl");
                 }
 
                 break;

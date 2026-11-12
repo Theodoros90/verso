@@ -71,9 +71,9 @@ async function problemOf(response: Response): Promise<ApiError> {
   return new ApiError(response.status, problem)
 }
 
-/** Binary content (a PDF or Word file), fetched with the user's token. */
+/** Binary content (a PDF, Word or HTML email file), fetched with the user's token. */
 export async function requestBlob(url: string, signal?: AbortSignal): Promise<Blob> {
-  const response = await send(url, { signal }, 'application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/problem+json')
+  const response = await send(url, { signal }, 'application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, text/html, application/problem+json')
   if (!response.ok) throw await problemOf(response)
   return response.blob()
 }

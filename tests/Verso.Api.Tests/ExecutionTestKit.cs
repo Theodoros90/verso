@@ -41,7 +41,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null)
     {
         var templateId = await PublishInvoiceTemplateAsync();
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -70,6 +70,14 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
             document["type"] = "generate-docx";
             document["config"]!["fileName"] = "{{invoice.number}}.docx";
             document["config"]!["protect"] = docxEditing;
+        }
+
+        if (emailConfig is not null)
+        {
+            // The document step is an HTML email step (no template involved).
+            var document = definition["nodes"]!.AsArray().Single(n => (string?)n!["id"] == "pdf")!;
+            document["type"] = "generate-email";
+            document["config"] = emailConfig.DeepClone();
         }
 
         definition["nodes"]![1]!["config"] = (rules ?? StandardRules).DeepClone();

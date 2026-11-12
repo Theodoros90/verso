@@ -10,6 +10,7 @@ using Verso.Domain.Executions;
 using Verso.Rendering;
 using Verso.Rendering.Binding;
 using Verso.Rendering.Docx;
+using Verso.Rendering.Email;
 using Verso.Rendering.Html;
 using Verso.Rendering.Layout;
 
@@ -250,7 +251,7 @@ public sealed partial class ExecutionEngine(
     /// <summary>Whether a path ending at this step by this output ends the run as Rejected (see <see cref="FinishAsync"/>).</summary>
     private static bool Rejects(string nodeType, string? port) => (nodeType, port) is
         (NodeCatalog.Validate, "invalid") or (NodeCatalog.ParseContent, "failed") or (NodeCatalog.MapFields, "failed")
-        or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx, "failed")
+        or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail, "failed")
         or (NodeCatalog.ApprovalStep, Approval.Rejected);
 
     private sealed record Outcome(string? Port, object? Result, Func<Task>? AfterSave = null);
@@ -366,6 +367,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.ForEach => Task.FromResult(Repeat(run, node)),
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
         NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx => GenerateDocumentAsync(run, node, ct),
+        NodeCatalog.GenerateEmail => GenerateEmailAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
         _ => throw new StepException("node.unsupported", $"Node type '{node.Type}' can't run in this version of Verso.", retryable: false),
     };
@@ -534,10 +536,58 @@ public sealed partial class ExecutionEngine(
         return new Outcome("success", DocumentResult(document, [.. pattern.Missing.Select(p => $"fileName: no value for '{p}'")], warnings));
     }
 
+    /// <summary>
+    /// Generate HTML email: the step's own text and the run's data become one HTML file. The renderer also builds a plain-text
+    /// alternative, which is not stored (the step result is history and must not carry customer data); a future Send step rebuilds it.
+    /// No template version is involved. Nothing is sent. Same idempotency, storage and rejection as the other document steps.
+    /// </summary>
+    private async Task<Outcome> GenerateEmailAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    {
+        var execution = run.Execution;
+        if (await FindDocumentAsync(execution.Id, node.Id, run.Iteration, ct) is { } existing)
+        {
+            run.Document = existing;
+            return new Outcome("success", DocumentResult(existing, []));
+        }
+
+        string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        var layout = Text("layout") switch
+        {
+            "statement" => EmailLayout.Statement,
+            "reminder" => EmailLayout.Reminder,
+            _ => EmailLayout.Invoice,
+        };
+        var dark = node.Config.TryGetProperty("darkMode", out var d) && d.ValueKind == JsonValueKind.True;
+        var email = EmailRenderer.Render(
+            new EmailSpec(layout, Text("subject"), Text("preheader"), Text("body"), Text("buttonLabel"), Text("buttonUrl"), Text("footer"), dark), run.Data);
+
+        var errors = email.Issues.Where(i => i.Severity == IssueSeverity.Error).ToList();
+        if (errors.Count > 0)
+        {
+            return new Outcome("failed", new { issues = errors.Select(i => new { i.Code, i.Path, i.ElementId, i.Message }) });
+        }
+
+        var content = System.Text.Encoding.UTF8.GetBytes(email.Html);
+        var key = DocumentKeys.Staging(execution.Id, node.Id, run.Iteration, DocumentNames.Html);
+        await store.WriteAsync(key, content, ct);
+
+        var pattern = PatternText.Resolve(Text("fileName"), run.Data);
+        var document = Document.Generate(
+            execution.Id, node.Id, templateVersionId: null, DocumentNames.FileName(pattern.Text, DocumentNames.Html), content.LongLength,
+            DocumentKeys.Sha256Hex(content), store.Provider, key, clock.GetUtcNow(), iteration: run.Iteration, contentType: Document.HtmlContentType);
+        db.Documents.Add(document);
+        run.Document = document;
+        return new Outcome("success", new
+        {
+            documentId = document.Id, fileName = document.FileName, sizeBytes = document.SizeBytes, sha256 = document.Sha256,
+            warnings = pattern.Missing.Select(p => $"fileName: no value for '{p}'"),
+        });
+    }
+
     private async Task<Outcome> ArchiveAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
     {
         var document = run.Document
-            ?? throw new StepException("archive.no_document", "There is no generated document to archive: put a Generate PDF or Generate DOCX step before Archive on this path.", retryable: false);
+            ?? throw new StepException("archive.no_document", "There is no generated document to archive: put a Generate PDF, Generate DOCX or Generate HTML email step before Archive on this path.", retryable: false);
 
         if (document.Status == DocumentStatus.Archived)
         {
@@ -595,7 +645,7 @@ public sealed partial class ExecutionEngine(
     /// <summary>Re-establishes what a step that already succeeded produced (the parsed data or the document, for later steps).</summary>
     private async Task RestoreAsync(Run run, Workflows.WorkflowNode node, ExecutionStep step, CancellationToken ct)
     {
-        if (NodeCatalog.IsDocumentStep(node.Type))
+        if (NodeCatalog.ProducesDocument(node.Type))
         {
             run.Document = await FindDocumentAsync(run.Execution.Id, node.Id, run.Iteration, ct);
         }
@@ -661,7 +711,7 @@ public sealed partial class ExecutionEngine(
                 execution.Reject("approval.declined", $"The approval in step '{last.Title}' was declined.", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;
-            case (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx, "failed"):
+            case (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail, "failed"):
                 execution.Reject("document.data_incomplete", $"The data can't produce a complete document in step '{last.Title}' (see its issues).", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;

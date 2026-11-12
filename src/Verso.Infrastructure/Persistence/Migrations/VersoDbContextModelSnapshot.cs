@@ -185,7 +185,7 @@ namespace Verso.Infrastructure.Persistence.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(32)");
 
-                    b.Property<Guid>("TemplateVersionId")
+                    b.Property<Guid?>("TemplateVersionId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");

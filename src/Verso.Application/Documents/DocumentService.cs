@@ -8,7 +8,7 @@ using Verso.Domain.Documents;
 namespace Verso.Application.Documents;
 
 public sealed record ArchivedDocumentDto(
-    Guid Id, Guid ExecutionId, string NodeId, Guid TemplateVersionId, string FileName, string ContentType, long SizeBytes, string Sha256,
+    Guid Id, Guid ExecutionId, string NodeId, Guid? TemplateVersionId, string FileName, string ContentType, long SizeBytes, string Sha256,
     string Status, DateTimeOffset CreatedAt, DateTimeOffset ArchivedAt, string FolderPath, string Retention, DateTimeOffset? RetentionUntil,
     IReadOnlyDictionary<string, string> Metadata);
 

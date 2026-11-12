@@ -339,6 +339,39 @@ public sealed class GraphValidatorTests
         Assert.Equal(valid, !result.Issues.Any(i => i.NodeId == "trigger" && i.Severity == GraphValidator.Error));
     }
 
+    private static JsonObject WithEmailStep(string label, string url)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        var step = definition["nodes"]!.AsArray().Single(n => (string?)n!["id"] == "pdf")!;
+        step["type"] = "generate-email";
+        step["config"] = JsonNode.Parse($$"""
+            { "layout": "invoice", "subject": "Invoice", "preheader": "", "body": "Hello", "buttonLabel": "{{label}}", "buttonUrl": "{{url}}", "footer": "", "fileName": "x.html", "darkMode": true }
+            """);
+        return definition;
+    }
+
+    [Fact]
+    public void EmailStep_NeedsNoTemplate_AndAnEmptyButtonIsFine()
+    {
+        var result = Validate(WithEmailStep("", ""), new Dictionary<Guid, TemplateRef>());
+
+        Assert.True(result.Valid);
+        Assert.Empty(Codes(result));
+    }
+
+    [Theory]
+    [InlineData("Pay", "", "pdf:config.invalid")]
+    [InlineData("", "https://pay.example.test", "pdf:config.invalid")]
+    [InlineData("Pay", "javascript:alert(1)", "pdf:config.invalid")]
+    [InlineData("Pay", "https://pay.example.test/{{invoice.number}}", null)] // a link built from data is checked when the run happens
+    [InlineData("Pay", "mailto:billing@example.test", null)]
+    public void EmailStep_ButtonNeedsBothParts_AndALiteralLinkMustBeHttpOrMailto(string label, string url, string? expected)
+    {
+        var result = Validate(WithEmailStep(label, url), new Dictionary<Guid, TemplateRef>());
+
+        Assert.Equal(expected is null ? [] : [expected], Codes(result));
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {

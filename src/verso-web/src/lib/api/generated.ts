@@ -13,7 +13,7 @@ export interface ArchivedDocumentDto {
   id: string
   executionId: string
   nodeId: string
-  templateVersionId: string
+  templateVersionId: string | null
   fileName: string
   contentType: string
   sizeBytes: number
@@ -81,7 +81,7 @@ export interface EntraConfigDto {
 export interface ExecutionDocumentDto {
   id: string
   nodeId: string
-  templateVersionId: string
+  templateVersionId: string | null
   fileName: string
   contentType: string
   sizeBytes: number

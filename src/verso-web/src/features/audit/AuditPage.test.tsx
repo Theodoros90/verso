@@ -70,7 +70,8 @@ describe('Audit trail', () => {
     await user.type(screen.getByLabelText('Actor id'), 'dev.operator')
     await user.type(screen.getByLabelText('From'), '2026-11-01')
 
-    await waitFor(() => expect(calls.filter((u) => u.pathname === '/api/v1/audit').at(-1)!.searchParams.get('actorId')).toBe('dev.operator'))
+    // Wait for the last filter typed (From), not the first: the request for it goes out after the Actor id one.
+    await waitFor(() => expect(calls.filter((u) => u.pathname === '/api/v1/audit').at(-1)!.searchParams.get('from')).not.toBeNull())
     const q = calls.filter((u) => u.pathname === '/api/v1/audit').at(-1)!.searchParams
     expect(q.get('action')).toBe('ExecutionSubmitted')
     expect(q.get('entityType')).toBe('Execution')

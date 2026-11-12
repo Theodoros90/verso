@@ -2417,7 +2417,10 @@
             "type": "string"
           },
           "templateVersionId": {
-            "type": "string",
+            "type": [
+              "null",
+              "string"
+            ],
             "format": "uuid"
           },
           "fileName": {
@@ -2763,7 +2766,10 @@
             "type": "string"
           },
           "templateVersionId": {
-            "type": "string",
+            "type": [
+              "null",
+              "string"
+            ],
             "format": "uuid"
           },
           "fileName": {

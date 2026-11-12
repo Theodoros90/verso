@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -44,12 +44,24 @@ public static class NodeCatalog
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string GenerateDocx = "generate-docx";
+    public const string GenerateEmail = "generate-email";
     public const string Archive = "archive";
 
     public const string LatestPublished = "latest-published";
 
     /// <summary>The steps that render a template version into a document (PDF or Word).</summary>
     public static bool IsDocumentStep(string type) => type is GeneratePdf or GenerateDocx;
+
+    /// <summary>Every step that leaves a document for a later Archive step: the template steps and the HTML email (which needs no template).</summary>
+    public static bool ProducesDocument(string type) => IsDocumentStep(type) || type == GenerateEmail;
+
+    /// <summary>Presets of the Generate HTML email step: stored keys and their labels.</summary>
+    public static readonly IReadOnlyDictionary<string, string> EmailLayouts = new Dictionary<string, string>
+    {
+        ["invoice"] = "Invoice email",
+        ["statement"] = "Statement ready",
+        ["reminder"] = "Payment reminder",
+    };
 
     /// <summary>Word's editing restriction for a Generate DOCX step (advisory: no password). Keys are stored in the workflow; labels as in the prototype.</summary>
     public static readonly IReadOnlyDictionary<string, string> DocxEditing = new Dictionary<string, string>
@@ -528,6 +540,31 @@ public static class NodeCatalog
               "required": ["templateId", "templateVersion", "fileName", "protect"] }
             """,
             """{ "templateId": "", "templateVersion": "latest-published", "fileName": "{{invoice.number}}.docx", "protect": "allow" }"""),
+
+        Node(GenerateEmail, "Generate HTML email", "doc",
+            "Builds a responsive HTML email body from text typed into the step and the run's data. Nothing is sent.",
+            [In], [new PortDto("success", "Success", true), new PortDto("failed", "Failed", false)],
+            $$$"""
+            { "type": "object",
+              "properties": {
+                "layout": { "type": "string", "title": "Email layout", "enum": {{{JsonSerializer.Serialize(EmailLayouts.Keys)}}}, "x-enumLabels": {{{JsonSerializer.Serialize(EmailLayouts.Values)}}},
+                  "description": "Changes the heading label and accent colour, not the content." },
+                "subject": { "type": "string", "title": "Subject", "minLength": 1, "maxLength": 200, "x-widget": "pattern",
+                  "description": "One line. Use fields such as {{invoice.number}}." },
+                "preheader": { "type": "string", "title": "Preview text", "maxLength": 200, "x-widget": "pattern",
+                  "description": "The short line mail apps show next to the subject." },
+                "body": { "type": "string", "title": "Body", "minLength": 1, "maxLength": 5000, "x-widget": "multiline",
+                  "description": "Leave a blank line between paragraphs. Fields are written as {{customer.name}}." },
+                "buttonLabel": { "type": "string", "title": "Button label", "maxLength": 80, "x-widget": "pattern" },
+                "buttonUrl": { "type": "string", "title": "Button link", "maxLength": 500, "x-widget": "pattern",
+                  "description": "A full http, https or mailto address. The button shows only when both the label and the link are set." },
+                "footer": { "type": "string", "title": "Footer", "maxLength": 1000, "x-widget": "multiline" },
+                "fileName": { "type": "string", "title": "Output filename pattern", "minLength": 1, "maxLength": 200, "x-widget": "pattern" },
+                "darkMode": { "type": "boolean", "title": "Support dark mode",
+                  "description": "Adds dark colours for mail apps that use them." } },
+              "required": ["layout", "subject", "body", "fileName", "darkMode"] }
+            """,
+            """{ "layout": "invoice", "subject": "Invoice {{invoice.number}}", "preheader": "", "body": "Dear {{customer.name}},\n\nYour invoice {{invoice.number}} is ready.", "buttonLabel": "", "buttonUrl": "", "footer": "", "fileName": "{{invoice.number}}.html", "darkMode": true }"""),
 
         Node(Archive, "Archive", "output",
             "Stores the document in the Verso archive with metadata and a retention period.",

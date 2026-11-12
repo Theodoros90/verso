@@ -40,7 +40,7 @@ public static class DocumentEndpoints
                 return Results.File(result.Value!.Bytes, result.Value.ContentType, result.Value.FileName);
             })
             .WithName("GetDocumentContent")
-            .Produces(StatusCodes.Status200OK, contentType: "application/pdf", additionalContentTypes: "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            .Produces(StatusCodes.Status200OK, contentType: "application/pdf", additionalContentTypes: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/html"])
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 

@@ -26,7 +26,7 @@ public sealed record ArchiveDto(
     DateTimeOffset ArchivedAt, string FolderPath, string Retention, DateTimeOffset? RetentionUntil, IReadOnlyDictionary<string, string> Metadata);
 
 public sealed record ExecutionDocumentDto(
-    Guid Id, string NodeId, Guid TemplateVersionId, string FileName, string ContentType, long SizeBytes, string Sha256,
+    Guid Id, string NodeId, Guid? TemplateVersionId, string FileName, string ContentType, long SizeBytes, string Sha256,
     string Status, DateTimeOffset CreatedAt, ArchiveDto? Archive, int Iteration);
 
 public sealed record ExecutionDto(
