@@ -2304,12 +2304,12 @@ const WF_TYPES = {
     fields:[F('system','System','select',{ o:['Microsoft Dynamics 365','SAP S/4HANA','Oracle NetSuite'] }), F('entity','Record type','text',{ req:true }), F('mode','Start a run','select',{ o:['When a record is posted','Every 15 minutes','Nightly batch'] })],
     sum:c => `${c.system.replace('Microsoft ','')}, ${c.entity}`, run:['Fetched 1 record', 64] },
   'file-upload':{ cat:'input', icon:'upload', label:'File upload', desc:'Someone uploads a file in Verso or the portal', kw:'upload drop portal user',
-    ins:[], outs:OUT, config:{ accept:'PDF, XML, CSV', maxSize:'25 MB', who:'Signed-in staff' },
-    fields:[F('accept','Accepted file types','text',{ req:true }), F('maxSize','Largest file','select',{ o:['10 MB','25 MB','100 MB'] }), F('who','Who can upload','select',{ o:['Signed-in staff','Portal customers','Anyone with the link'] })],
+    ins:[], outs:OUT, config:{ accept:'PDF, XML, CSV', maxSize:'25 MB', who:'Signed-in staff', batch:'each' },
+    fields:[F('accept','Accepted file types','text',{ req:true }), F('maxSize','Largest file','select',{ o:['10 MB','25 MB','100 MB'] }), F('who','Who can upload','select',{ o:['Signed-in staff','Portal customers','Anyone with the link'] }), F('batch','Batch handling','select',{ o:[['each','Run the workflow separately for each record'],['one','Process as one batch']], hint:'Each record in the file gets its own run, status, retries and audit trail.' })],
     sum:c => `${c.accept}, up to ${c.maxSize}`, run:['1 file received', 30] },
   'sftp-folder':{ cat:'input', icon:'folder-input', label:'SFTP folder', desc:'Picks up files from a watched folder', kw:'sftp ftp file folder poll',
-    ins:[], outs:OUT, config:{ conn:'Print house SFTP', folder:'/inbound', pattern:'*.xml', poll:'Every 5 minutes' },
-    fields:[F('conn','Connection','conn',{ kinds:['SFTP'], req:true }), F('folder','Folder','mono',{ req:true }), F('pattern','File pattern','mono'), F('poll','Check for files','select',{ o:['Every minute','Every 5 minutes','Hourly'] })],
+    ins:[], outs:OUT, config:{ conn:'Print house SFTP', folder:'/inbound', pattern:'*.xml', poll:'Every 5 minutes', batch:'each' },
+    fields:[F('conn','Connection','conn',{ kinds:['SFTP'], req:true }), F('folder','Folder','mono',{ req:true }), F('pattern','File pattern','mono'), F('poll','Check for files','select',{ o:['Every minute','Every 5 minutes','Hourly'] }), F('batch','Batch handling','select',{ o:[['each','Run the workflow separately for each record'],['one','Process as one batch']], hint:'A nightly file with 500 invoices runs this workflow 500 times. One bad record fails alone.' })],
     sum:c => `Via ${c.conn || 'no connection'}, ${c.folder}/${c.pattern}`, run:['Picked up 1 file', 40] },
   'scheduled':{ cat:'input', icon:'calendar-clock', label:'Scheduled trigger', desc:'Runs at fixed times', kw:'cron time schedule nightly',
     ins:[], outs:OUT, config:{ cron:'0 1 * * *', tz:'Europe/Nicosia' },
@@ -2322,8 +2322,8 @@ const WF_TYPES = {
 
   /* Processing */
   'parse':{ cat:'process', icon:'file-code', label:'Parse JSON / XML / CSV', desc:'Turns raw files into structured data', kw:'json xml csv parse read',
-    ins:['in'], outs:SF, config:{ format:'Auto-detect', encoding:'UTF-8', root:'' },
-    fields:[F('format','Format','select',{ o:['Auto-detect','JSON','XML','CSV'] }), F('encoding','Encoding','select',{ o:['UTF-8','Windows-1253 (Greek)','ISO-8859-1'] }), F('root','Record path (optional)','mono',{ ph:'$.invoices[*]' })],
+    ins:['in'], outs:SF, config:{ format:'Auto-detect', encoding:'UTF-8', root:'', batch:'each' },
+    fields:[F('format','Format','select',{ o:['Auto-detect','JSON','XML','CSV'] }), F('encoding','Encoding','select',{ o:['UTF-8','Windows-1253 (Greek)','ISO-8859-1'] }), F('root','Record path (optional)','mono',{ ph:'$.invoices[*]' }), F('batch','Batch handling','select',{ o:[['each','Run the workflow separately for each record'],['one','Process as one batch']], hint:'Fan-out here: every record in the file continues on its own, with its own retries and audit trail.' })],
     sum:c => `${c.format}, ${c.encoding}`, run:['Parsed 1 record', 8] },
   'validate':{ cat:'process', icon:'shield-check', label:'Validate data', desc:'Checks required fields and value types', kw:'check rules required verify type',
     ins:['in'], outs:c => [['valid', (c.validLabel || '').trim() || 'Valid'], ['invalid', (c.invalidLabel || '').trim() || 'Invalid']], editor:true, fields:[],
@@ -2360,6 +2360,16 @@ const WF_TYPES = {
     check:c => [!c.field.trim() && 'Field', !(c.branches || []).length && !c.other && 'At least one branch'].filter(Boolean),
     sum:c => `${c.field.split('.').pop()} ${OPS[c.op]}: ${(c.branches || []).map(b => b.label || 'Untitled').join(', ')}${c.other ? ', Other' : ''}`,
     simulate:(n, sim) => { const r = wfSwitchPick(n, sim.ctx); return { port:r.port, msg:r.port ? `${n.config.field} is “${r.value ?? ''}”, so ${wfOutLabel(n, r.port)}` : `No branch matches “${r.value ?? ''}”, so the run stops here`, ms:1 }; } },
+  'for-each':{ cat:'logic', icon:'repeat', label:'For each', desc:'Repeats the next steps for every item in a list', kw:'loop iterate each repeat item list array',
+    ins:['in'], outs:c => [['each', (c.eachLabel || '').trim() || 'For each item'], ['empty', (c.emptyLabel || '').trim() || 'No items', true]], editor:true, fields:[],
+    config:{ field:'invoice.lines', mode:'each', item:'item', eachLabel:'For each item', emptyLabel:'No items' },
+    check:c => [!c.field.trim() && 'List field'].filter(Boolean),
+    sum:c => `${c.mode === 'each' ? 'For each item in' : 'Split each record from'} ${c.field}`,
+    simulate:(n, sim) => { const list = getPath(sim.ctx, n.config.field), cnt = Array.isArray(list) ? list.length : list ? 1 : 0;
+      if (!cnt) return { port:'empty', msg:'The list is empty, so the “No items” path is used', ms:1 };
+      const first = Array.isArray(list) ? list[0] : list;
+      const label = first && first.description ? first.description : JSON.stringify(first).slice(0, 40);
+      return { port:'each', msg:`${cnt} item${cnt > 1 ? 's' : ''} — the next steps run once per item${cnt ? ` (first: ${label}…)` : ''}`, ms:2 }; } },
   'approval':{ cat:'logic', icon:'user-check', label:'Approval', desc:'Pauses until someone approves', kw:'approve sign-off wait person',
     ins:['in'], outs:[['approved','Approved'],['rejected','Rejected']], config:{ who:'Credit control team', after:'48 hours' },
     fields:[F('who','Approver','select',{ o:['Credit control team','Elena Pavlou','Nikos Charalambous'] }), F('after','Escalate after','select',{ o:['24 hours','48 hours','5 days'] })],
@@ -2473,7 +2483,13 @@ function wfCanConnect(from, fromPort, to, toPort) {
   if (from === to) return { ok:false, reason:'A step can’t connect to itself.' };
   if (!WF_TYPES[b.type].ins.includes(toPort)) return { ok:false, reason:`${b.title} has no “${toPort}” input.` };
   if (WF.edges.some(e => e.from === from && e.fromPort === fromPort && e.to === to && e.toPort === toPort)) return { ok:false, reason:'These steps are already connected this way.' };
-  if (wfReaches(to, from)) return { ok:false, reason:`That would create a loop back to ${a.title}. Loops aren’t supported in this prototype.` };
+  if (wfReaches(to, from)) {
+    // one controlled exception: a step may connect back into the For each that started the loop
+    const isForEach = b.type === 'for-each', srcOk = a.type !== 'for-each' && a.type !== 'if-else' && a.type !== 'switch';
+    const backEdges = WF.edges.filter(e => e.to === b.id && e.toPort === 'in' && wfNode(e.from) && wfReaches(b.id, e.from)).length;
+    if (isForEach && srcOk && backEdges === 0) return { ok:true, loop:true };
+    return { ok:false, reason:`That would create a loop back to ${a.title}. Only a For each step can loop — connect the last step of the loop back into the For each itself.` };
+  }
   return { ok:true };
 }
 function wfConnect(from, fromPort, to, toPort) {
@@ -2740,7 +2756,7 @@ function wfFieldHTML(n, f) {
   const hint = f.hint ? `<span class="hint">${esc(f.hint)}</span>` : '';
   if (f.t === 'toggle') return `<label class="toggle-row"><span class="switch"><input type="checkbox" data-cfg="${f.k}" ${v ? 'checked' : ''}></span>${esc(f.l)}</label>`;
   if (f.t === 'conn') { const list = connNames(f.kinds); return `<div class="field">${lab}<select class="input ${miss ? 'missing' : ''}" data-cfg="${f.k}">${list.length ? list.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('') : '<option value="">No connection of this type yet</option>'}</select><span class="hint">Shared credentials from <a href="#connections" style="color:inherit">Global connections</a>. Secrets stay out of the workflow.</span></div>`; }
-  if (f.t === 'select') return `<div class="field">${lab}<select class="input ${miss ? 'missing' : ''}" data-cfg="${f.k}">${f.o.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${o ? esc(o) : 'Choose…'}</option>`).join('')}</select>${hint}</div>`;
+  if (f.t === 'select') return `<div class="field">${lab}<select class="input ${miss ? 'missing' : ''}" data-cfg="${f.k}">${f.o.map(o => { const val = Array.isArray(o) ? o[0] : o, lbl = Array.isArray(o) ? o[1] : o; return `<option value="${esc(val)}" ${val === v ? 'selected' : ''}>${lbl ? esc(lbl) : 'Choose…'}</option>`; }).join('')}</select>${hint}</div>`;
   if (f.t === 'textarea') return `<div class="field">${lab}<textarea class="input ${f.mono ? 'mono' : ''} ${miss ? 'missing' : ''}" data-cfg="${f.k}" placeholder="${esc(f.ph || '')}">${esc(v)}</textarea>${hint}</div>`;
   if (f.t === 'map') return `<div><div class="lbl" style="margin-bottom:6px">Field mappings</div><table class="map-t">${MAP_ROWS.map(([a, b]) => `<tr><td class="mono">${a}</td><td>→</td><td class="mono">${b}</td></tr>`).join('')}</table><div class="hint">Shared with the Template designer’s data model.</div></div>`;
   if (f.t === 'opentpl') return n.config.template ? `<button class="btn sm" data-opentpl><i data-lucide="pen-tool"></i>Open in Template designer</button>` : '';
@@ -3050,6 +3066,19 @@ const WF_EDITORS = {
     wire:(n, box) => { box.querySelector('[data-cfg="op"]').addEventListener('change', e => { $('#wfValueField').hidden = NO_VALUE_OPS.includes(e.target.value); }); }
   },
 
+  'for-each':{
+    html:n => { const c = n.config, sim = wfSim(); return datalists(sim) +
+      sec('Loop', fld('List field', inp('field', c.field, { mono:true, req:true, list:'dlCtx', ph:'invoice.lines' }), 'A field that holds a list, such as the invoice line items.', true) +
+        fld('Loop behaviour', sel('mode', ['each', 'split'], c.mode), 'each — run the next steps once per item, keeping the whole record. split — turn each item into its own record that runs the rest of the workflow.') +
+        fld('Item name', inp('item', c.item, { mono:true, ph:'item' }), 'Downstream steps refer to each item as {{item.description}} or {{item.amount}}.')) +
+      sec('Branch names', `<div class="props-grid">${fld('When there are items', inp('eachLabel', c.eachLabel, { aria:'Name for the loop branch' }))}${fld('When the list is empty', inp('emptyLabel', c.emptyLabel, { aria:'Name for the empty branch' }))}</div>`) +
+      sec('Preview', '<div id="wfPreview"></div>'); },
+    preview:n => { const c = n.config; if (!c.field.trim()) return '<p class="muted" style="margin:0">Choose a list field to see how many times the loop runs.</p>';
+      const sim = wfSim(), list = getPath(sim.ctx, c.field), cnt = Array.isArray(list) ? list.length : list ? 1 : 0;
+      return `<div class="kv"><dt>Sample list</dt><dd class="mono">${esc(c.field)}</dd><dt>Items</dt><dd>${cnt}</dd></div>` +
+        (cnt ? chk(true, `The next steps run <b>${cnt} time${cnt > 1 ? 's' : ''}</b> — once per item.`) : chk(false, 'The list is empty, so the “' + esc(c.emptyLabel) + '” branch is used.', true)); }
+  },
+
   'generate-pdf':{
     html:n => { const c = n.config; return sec('Template',
         fld('Template', sel('template', Object.keys(TEMPLATE_VERSIONS), c.template), '', true) +
@@ -3168,7 +3197,8 @@ function wfRunOutcome() { // plain-language result of the last test
   if (email) return `${num} would be emailed to ${wfResolve(email.config.to, sim.ctx).text}. Nothing was sent.`;
   if (print) return `${num} would join tonight’s print batch.`;
   if (review) return `${num} failed validation and would wait in ${review.title}.`;
-  return `${num} completed ${done.length} steps.`;
+  const loopNote = WF.lastRun && WF.lastRun.note ? WF.lastRun.note : '';
+  return `${num} completed ${done.length} steps.${loopNote}`;
 }
 function wfDrawExec() {
   const errs = WF.issues ? WF.issues.filter(i => i.lvl === 'err').length : null;
@@ -3187,6 +3217,11 @@ function wfDrawExec() {
       <div><div class="row"><span class="lbl">Test input</span><select class="input" id="wfRecord" style="width:auto;margin-left:auto;padding:4px 8px;font-size:12.5px" aria-label="Load a sample customer"><option value="">Load sample customer…</option>${CUSTOMERS.map((c, i) => `<option value="${i}">${esc(c.name)}</option>`).join('')}<option value="bad">Record with problems</option></select></div>
         <pre class="log">${esc(JSON.stringify(payload, null, 2))}</pre>
         <p class="hint">${hook ? `This is the sample payload of ${esc(hook.title)}. Edit it in that step’s settings.` : 'Generated sample data.'} Test runs never send email, call endpoints or write to an archive.</p></div>
+      <div>${(() => { const fan = WF.nodes.filter(n => n.config && n.config.batch === 'each'); const loop = WF.nodes.filter(n => n.type === 'for-each');
+        return fan.length || loop.length ? `<div class="check ok" style="margin-bottom:8px"><i data-lucide="repeat"></i><span>${[
+          fan.length ? `<b>Per-record runs:</b> ${esc(fan.map(n => n.title).join(', '))} fan out — each record in the file gets its own run, retries and audit trail. This test shows one sample record.` : '',
+          loop.length ? `<b>In-run loops:</b> ${esc(loop.map(n => n.title).join(', '))} repeat the steps after them once per list item.` : ''
+        ].filter(Boolean).join('<br>')}</span></div>` : ''; })()}</div>
       <div>${WF.nodes.length ? plan.concat(rest.map(n => n.id)).map(id => {
           const n = wfNode(id), r = WF.run, st = r && r.state[id];
           const cls = st === 'succeeded' ? 'ok' : st === 'failed' ? 'err' : st === 'running' ? 'run' : plan.includes(id) ? 'wait' : 'skip';
@@ -3230,24 +3265,39 @@ function wfTestRun() {
   if (!WF.nodes.some(n => wfType(n).cat === 'input')) { wfSetPanel(true, 'test'); return toast('Add an input step before running a test', 'circle-alert'); }
   WF.run = { active:true, state:{}, msg:{}, ms:{}, edge:{} };
   wfSetPanel(true, 'test'); wfDrawNodes(); wfDrawEdges();
-  const queue = WF.nodes.filter(n => wfType(n).cat === 'input').map(n => n.id), seen = new Set();
-  let total = 0, failedAt = null;
   const sim = wfSim();
+  // in-run loops: a For each with a step connected back into it repeats its body once per list item
+  const loops = WF.nodes.filter(n => n.type === 'for-each').map(fe => {
+    const back = WF.edges.find(e => e.to === fe.id && wfReaches(fe.id, e.from));
+    if (!back) return null;
+    const body = WF.nodes.filter(n => n.id !== fe.id && wfReaches(fe.id, n.id) && wfReaches(n.id, fe.id)).map(n => n.id);
+    const list = getPath(sim.ctx, fe.config.field);
+    const count = Math.max(1, Array.isArray(list) ? list.length : list ? 1 : 0);
+    return { fe:fe.id, body, count };
+  }).filter(Boolean);
+  const maxVisits = id => { const l = loops.find(l => l.fe === id || l.body.includes(id)); return l ? l.count : 1; };
+  const visits = {};
+  const queue = WF.nodes.filter(n => wfType(n).cat === 'input').map(n => n.id);
+  let total = 0, failedAt = null;
   const next = () => {
-    let id; do { id = queue.shift(); } while (id && seen.has(id));
+    let id; do { id = queue.shift(); } while (id && (visits[id] || 0) >= maxVisits(id));
     if (!id) {
       WF.run.active = false;
-      WF.lastRun = { ok:!failedAt, ms:total, id:'RUN-' + (55121 + Math.floor(Math.random() * 80)), failedAt };
+      const loopNote = loops.length ? ` Looped ${loops.map(l => `${l.count} time${l.count > 1 ? 's' : ''}`).join(' and ')}.` : '';
+      WF.lastRun = { ok:!failedAt, ms:total, id:'RUN-' + (55121 + Math.floor(Math.random() * 80)), failedAt, note:loopNote };
       wfDrawAll();
-      return toast(failedAt ? `Test failed at ${failedAt}` : `Test run succeeded in ${total} ms`, failedAt ? 'circle-x' : 'circle-check');
+      return toast(failedAt ? `Test failed at ${failedAt}` : `Test run succeeded in ${total} ms${loopNote}`, failedAt ? 'circle-x' : 'circle-check');
     }
-    seen.add(id);
+    visits[id] = (visits[id] || 0) + 1;
+    const isLoopRevisit = visits[id] > 1 && loops.some(l => l.fe === id);
     const n = wfNode(id), t = wfType(n);
     WF.edges.filter(e => e.to === id && WF.run.state[e.from] === 'succeeded').forEach(e => WF.run.edge[e.id] = 'flow');
     WF.run.state[id] = 'running'; WF.run.msg[id] = 'Running…';
     wfDrawNodes(); wfDrawEdges(); wfDrawExec();
     const res = t.simulate && !wfMissing(n).length ? t.simulate(n, sim) : null;
-    const [msg, ms] = res ? [res.msg, res.ms || 10] : typeof t.run === 'function' ? t.run(n.config) : t.run;
+    const [msg0, ms] = res ? [res.msg, res.ms || 10] : typeof t.run === 'function' ? t.run(n.config) : t.run;
+    const loop = loops.find(l => l.fe === id);
+    const msg = isLoopRevisit && loop ? `Item ${visits[id]} of ${loop.count} — repeating the loop steps` : loop && !loop.body.length ? `${loop.count} item${loop.count > 1 ? 's' : ''} — connect a step back into ${n.title} to loop over them` : msg0;
     setTimeout(() => {
       if (!WF.run) return;
       WF.edges.filter(e => e.to === id && WF.run.edge[e.id]).forEach(e => WF.run.edge[e.id] = 'done');

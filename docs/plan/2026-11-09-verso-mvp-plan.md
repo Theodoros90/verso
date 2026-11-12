@@ -8,7 +8,7 @@ Date: 2026-11-09
 
 ## 1. What the design reference tells us
 
-`design-reference/Verso prototype v5 s.html` is a single-file, no-backend prototype. What carries over as **visual and product direction**:
+`design-reference/Verso prototype v6.html` is a single-file, no-backend prototype. What carries over as **visual and product direction**:
 
 | Area | Carry over | Do not carry over |
 |---|---|---|
