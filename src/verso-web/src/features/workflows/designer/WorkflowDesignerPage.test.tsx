@@ -244,10 +244,36 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(document.querySelector('datalist option[value="invoice.date"]')).not.toBeNull())
   })
 
+  it('filters the palette by search and collapses categories', async () => {
+    mockApi()
+    await open()
+    const user = userEvent.setup()
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search steps' }), 'pdf')
+    expect(screen.getByRole('button', { name: 'Add Generate PDF' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add Validate data' })).not.toBeInTheDocument()
+    await user.clear(screen.getByRole('searchbox', { name: 'Search steps' }))
+    await user.type(screen.getByRole('searchbox', { name: 'Search steps' }), 'zzzz')
+    expect(screen.getByText(/No steps match/)).toBeInTheDocument()
+    await user.clear(screen.getByRole('searchbox', { name: 'Search steps' }))
+
+    // Every category starts collapsed.
+    expect(screen.queryByRole('button', { name: 'Add Validate data' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^Processing/ }))
+    expect(screen.getByRole('button', { name: 'Add Validate data' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^Processing/ }))
+    expect(screen.queryByRole('button', { name: 'Add Validate data' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+    expect(screen.getByRole('button', { name: 'Add Generate PDF' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Collapse all' }))
+    expect(screen.queryByRole('button', { name: 'Add Generate PDF' })).not.toBeInTheDocument()
+  })
+
   it('adds steps from the palette, and allows only one trigger', async () => {
     const calls = mockApi()
     await open()
     const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
 
     expect(screen.getByRole('button', { name: 'Add API / webhook' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add ERP connector' })).toBeDisabled() // inputs share the one-trigger rule

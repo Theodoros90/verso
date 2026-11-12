@@ -11,7 +11,7 @@ import {
   type EdgeChange,
   type NodeChange,
 } from '@xyflow/react'
-import { CircleAlert, CircleCheck, FilePlus2, Redo2, Save, Trash2, Undo2, UploadCloud } from 'lucide-react'
+import { ChevronDown, CircleAlert, CircleCheck, FilePlus2, Redo2, Save, Search, Trash2, Undo2, UploadCloud } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useBlocker, useParams } from 'react-router'
 
@@ -19,6 +19,7 @@ import { usePermissions } from '@/app/AuthGate'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/form'
+import { Tooltip } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/lib/api/client'
 import type { NodeTypeDto, WorkflowDto, WorkflowIssueDto, WorkflowVersionDto } from '@/lib/api/generated'
@@ -121,7 +122,6 @@ const nodeTypesForFlow = { verso: NodeCard }
 const isEditable = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))
 
 /** The palette shows the first sentence only (as the prototype does); the rest, such as "Simulated: ...", stays in the settings panel and tooltip. */
-const shortDescription = (description: string) => (description.split(/\.\s/)[0] ?? description).replace(/\.$/, '')
 
 function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string | null; onReload: (message?: string) => void }) {
   const { workflow, version, nodeTypes } = loaded
@@ -422,6 +422,23 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
     return [...groups.entries()]
   }, [nodeTypes])
   const hasTrigger = def.nodes.some((n) => typeOf.get(n.type)?.category === 'input')
+  const [stepSearch, setStepSearch] = useState('')
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set()) // every category starts collapsed
+  const searching = stepSearch.trim() !== ''
+  const visibleGroups = useMemo(() => {
+    const q = stepSearch.trim().toLowerCase()
+    if (!q) return byCategory
+    return byCategory
+      .map(([c, types]) => [c, types.filter((t) => `${t.label} ${t.description}`.toLowerCase().includes(q))] as [string, NodeTypeDto[]])
+      .filter(([, types]) => types.length > 0)
+  }, [byCategory, stepSearch])
+  const toggleCategory = (c: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(c)) next.add(c)
+      return next
+    })
+  const allCollapsed = expanded.size === 0
 
   return (
     <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)_300px] xl:grid-cols-[240px_minmax(0,1fr)_320px]">
@@ -430,37 +447,74 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
           <h3 className="mb-2.5 flex items-center text-[13px] font-semibold">
             Steps <span className="ml-auto text-xs font-normal text-ink-3">{readOnly ? '' : 'Click or drag'}</span>
           </h3>
-          {byCategory.map(([category, types]) => (
+          <div className="relative mb-2.5">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden="true" />
+            <input
+              type="search"
+              value={stepSearch}
+              onChange={(e) => setStepSearch(e.target.value)}
+              placeholder="Search steps"
+              aria-label="Search steps"
+              className="h-8 w-full rounded-lg border border-line bg-surface-2 pr-2.5 pl-8 text-[12.5px] outline-none placeholder:text-ink-3 focus:border-cyan"
+            />
+          </div>
+          <div className="mb-2 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setExpanded(allCollapsed ? new Set(byCategory.map(([c]) => c)) : new Set())}
+              className="text-xs text-ink-3 hover:text-cyan-strong"
+            >
+              {allCollapsed ? 'Expand all' : 'Collapse all'}
+            </button>
+          </div>
+          {searching && visibleGroups.length === 0 && <p className="text-[12.5px] text-ink-3">No steps match “{stepSearch.trim()}”.</p>}
+          {visibleGroups.map(([category, types]) => (
             <div key={category} className="mb-3">
-              <div className="mb-1.5 flex items-center gap-1.5 text-xs text-ink-3">
+              <button
+                type="button"
+                onClick={() => toggleCategory(category)}
+                aria-expanded={searching || expanded.has(category)}
+                disabled={searching}
+                className="mb-1.5 flex w-full items-center gap-1.5 text-xs text-ink-3 hover:text-ink disabled:cursor-default disabled:hover:text-ink-3"
+              >
                 <span className="size-2 rounded-full" style={{ background: CATEGORY_COLORS[category] }} aria-hidden="true" />
                 {CATEGORY_LABELS[category] ?? category}
-              </div>
+                <span className="text-ink-3/70">({types.length})</span>
+                <ChevronDown className={cn('ml-auto size-3.5 transition-transform', !searching && !expanded.has(category) && '-rotate-90')} aria-hidden="true" />
+              </button>
               <div className="flex flex-col gap-1.5">
-                {types.map((t) => {
+                {(searching || expanded.has(category)) && types.map((t) => {
                   const Icon = NODE_ICONS[t.type] ?? CircleAlert
                   const disabled = readOnly || (t.category === 'input' && hasTrigger)
                   return (
-                    <button
+                    <Tooltip
                       key={t.type}
-                      type="button"
-                      disabled={disabled}
-                      draggable={!disabled}
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData('application/x-verso-node', t.type)
-                        e.dataTransfer.effectAllowed = 'copy'
-                      }}
-                      onClick={() => addType(t)}
-                      aria-label={`Add ${t.label}`}
-                      title={t.category === 'input' && hasTrigger ? 'A workflow has exactly one trigger.' : t.description}
-                      className="flex items-start gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-2 text-left text-[12.5px] font-medium hover:border-cyan hover:text-cyan-strong disabled:cursor-default disabled:opacity-50 disabled:hover:border-line disabled:hover:text-ink"
+                      title={t.label}
+                      content={
+                        <>
+                          {t.description}
+                          {t.category === 'input' && hasTrigger && (
+                            <span className="mt-1.5 block border-t border-line pt-1.5 text-ink-3">A workflow has exactly one trigger.</span>
+                          )}
+                        </>
+                      }
                     >
-                      <Icon className="mt-px size-4 flex-none" style={{ color: CATEGORY_COLORS[t.category] }} strokeWidth={1.75} aria-hidden="true" />
-                      <span className="min-w-0">
-                        <span className="block">{t.label}</span>
-                        <span className="mt-0.5 block text-[11.5px] leading-snug font-normal text-ink-3">{shortDescription(t.description)}</span>
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        draggable={!disabled}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('application/x-verso-node', t.type)
+                          e.dataTransfer.effectAllowed = 'copy'
+                        }}
+                        onClick={() => addType(t)}
+                        aria-label={`Add ${t.label}`}
+                        className="flex w-full items-center gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-2 text-left text-[12.5px] font-medium hover:border-cyan hover:text-cyan-strong disabled:cursor-default disabled:opacity-50 disabled:hover:border-line disabled:hover:text-ink"
+                      >
+                        <Icon className="size-4 flex-none" style={{ color: CATEGORY_COLORS[t.category] }} strokeWidth={1.75} aria-hidden="true" />
+                        <span className="min-w-0">{t.label}</span>
+                      </button>
+                    </Tooltip>
                   )
                 })}
               </div>
