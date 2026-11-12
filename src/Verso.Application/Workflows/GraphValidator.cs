@@ -202,9 +202,13 @@ public static class GraphValidator
         (NodeCatalog.Validate, "invalid") => "Invalid records will end the run as Rejected.",
         (NodeCatalog.ParseContent, "failed") => "Content that can't be parsed will end the run as Rejected.",
         (NodeCatalog.MapFields, "failed") => "A value that can't be transformed will end the run as Rejected.",
+        (NodeCatalog.TransformData, "failed") => "A rule that can't be applied will end the run as Rejected.",
         (NodeCatalog.GeneratePdf, "failed") =>"Data that can't make a complete document will end the run as Rejected.",
         _ => $"'{port.Label}' isn't connected; the run ends there.",
     };
+
+    private static string Setting(JsonElement o, string name) =>
+        o.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()!.Trim() : "";
 
     private static bool IsJsonObject(string text)
     {
@@ -257,6 +261,25 @@ public static class GraphValidator
                 {
                     yield return new(Warning, "map.unmapped",
                         $"No mapping for {string.Join(", ", unmapped)}, which '{mappingTarget.Name}' uses. That's fine if the data already has these fields under that name.", NodeId: node.Id);
+                }
+
+                break;
+
+            case NodeCatalog.TransformData:
+                if (Count(c, "rules") == 0)
+                {
+                    yield return new(Error, "config.required", "Add at least one rule.", NodeId: node.Id);
+                    break;
+                }
+
+                var ruleNumber = 0;
+                foreach (var rule in c.GetProperty("rules").EnumerateArray())
+                {
+                    ruleNumber++;
+                    if (Executions.DataTransformer.Incomplete(Setting(rule, "operation"), Setting(rule, "target"), Setting(rule, "a"), Setting(rule, "b"), Setting(rule, "text")) is { } problem)
+                    {
+                        yield return new(Error, "config.invalid", $"Rule {ruleNumber}: {problem}", NodeId: node.Id, Field: $"rules[{ruleNumber - 1}]");
+                    }
                 }
 
                 break;

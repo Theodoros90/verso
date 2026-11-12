@@ -18,7 +18,7 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
         using var response = await _client.GetAsync(new Uri("/api/v1/node-types", UriKind.Relative));
         var types = (await ReadAsync(response)).EnumerateArray().ToList();
 
-        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "scheduled-trigger", "manual-trigger", "folder-input", "parse", "map-fields", "validate", "generate-pdf", "archive"], types.Select(t => t.GetProperty("type").GetString()));
+        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "scheduled-trigger", "manual-trigger", "folder-input", "parse", "map-fields", "transform", "validate", "generate-pdf", "archive"], types.Select(t => t.GetProperty("type").GetString()));
         var validate = types.Single(t => t.GetProperty("type").GetString() == "validate");
         Assert.Equal("process", validate.GetProperty("category").GetString());
         Assert.Equal(["valid", "invalid"], validate.GetProperty("outputs").EnumerateArray().Select(p => p.GetProperty("id").GetString()));
@@ -171,6 +171,40 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
         map["config"]!["rows"]!.AsArray().Add(JsonNode.Parse("""{ "from": "n", "to": "customer.name", "transform": "as-is" }"""));
         map["config"]!["rows"]!.AsArray().Add(JsonNode.Parse("""{ "from": "l", "to": "lines", "transform": "as-is" }"""));
         Assert.Null(await WarningAsync());
+    }
+
+    [Fact]
+    public async Task TransformData_NeedsRules_EachWithWhatItsOperationReads()
+    {
+        var (templateId, _) = await CreateInvoiceTemplateAsync(null);
+        var id = await CreateWorkflowAsync();
+        var definition = InvoiceStandard(templateId);
+        var transform = JsonNode.Parse("""{ "id": "transform", "type": "transform", "title": "Transform data", "position": { "x": 130, "y": 200 }, "config": { "rules": [] } }""")!;
+        definition["nodes"]!.AsArray().Add(transform);
+        definition["edges"]!.AsArray().First(e => (string?)e!["target"] == "validate")!["target"] = "transform";
+        definition["edges"]!.AsArray().Add(JsonNode.Parse("""{ "id": "e8", "source": "transform", "sourcePort": "success", "target": "validate", "targetPort": "in" }"""));
+
+        async Task<List<JsonElement>> ErrorsAsync()
+        {
+            using var response = await _client.PostAsJsonAsync(new Uri($"/api/v1/workflows/{id}/draft/validate", UriKind.Relative), new { definition });
+            return [.. (await ReadAsync(response)).GetProperty("issues").EnumerateArray()
+                .Where(i => i.GetProperty("nodeId").GetString() == "transform" && i.GetProperty("severity").GetString() == "error")
+                .Select(i => i.Clone())];
+        }
+
+        Assert.Contains(await ErrorsAsync(), i => i.GetProperty("code").GetString() == "config.required");
+
+        transform["config"] = JsonNode.Parse("""
+            { "rules": [ { "target": "totals.gross", "operation": "add", "a": "totals.net", "b": "" },
+                         { "target": "totals.vat", "operation": "round", "a": "totals.vat", "b": "" } ] }
+            """);
+        var errors = await ErrorsAsync();
+        var error = Assert.Single(errors);
+        Assert.Equal("rules[0]", error.GetProperty("field").GetString());
+        Assert.Contains("Rule 1", error.GetProperty("message").GetString(), StringComparison.Ordinal);
+
+        transform["config"]!["rules"]![0]!["b"] = "totals.vat";
+        Assert.Empty(await ErrorsAsync());
     }
 
     [Fact]

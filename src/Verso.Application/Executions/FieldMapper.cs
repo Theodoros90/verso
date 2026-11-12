@@ -220,7 +220,10 @@ public static partial class FieldMapper
         return decimal.TryParse(normalised, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
     }
 
-    private static bool TryDate(string text, out DateOnly date)
+    internal static decimal? AsNumber(JsonElement value) =>
+        AsNumber(value, value.ValueKind == JsonValueKind.String ? value.GetString() : null);
+
+    internal static bool TryDate(string text, out DateOnly date)
     {
         if (DateOnly.TryParseExact(text, DateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
         {

@@ -230,6 +230,7 @@ public sealed partial class ExecutionEngine(
             or NodeCatalog.ManualTrigger or NodeCatalog.FolderInput => Task.FromResult(new Outcome("out", null)),
         NodeCatalog.ParseContent => Task.FromResult(Parse(run, node)),
         NodeCatalog.MapFields => Task.FromResult(Map(run, node)),
+        NodeCatalog.TransformData => Task.FromResult(Transform(run, node)),
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
         NodeCatalog.GeneratePdf => GeneratePdfAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
@@ -259,6 +260,19 @@ public sealed partial class ExecutionEngine(
         }
 
         run.Data = mapped;
+        return new Outcome("success", null);
+    }
+
+    /// <summary>A rule that can't be applied is a data problem (port 'failed', the run ends Rejected unless the workflow handles it). The result holds no values.</summary>
+    private static Outcome Transform(Run run, Workflows.WorkflowNode node)
+    {
+        var result = DataTransformer.Apply(node.Config, run.Data);
+        if (result.Data is not { } transformed)
+        {
+            return new Outcome("failed", new { issues = result.Issues.Select(i => new { code = i.Code, message = i.Message, field = i.Field }) });
+        }
+
+        run.Data = transformed;
         return new Outcome("success", null);
     }
 
@@ -385,6 +399,12 @@ public sealed partial class ExecutionEngine(
             run.Data = FieldMapper.Apply(node.Config, run.Data).Data
                 ?? throw new StepException("map.restore", $"Step '{node.Title}' succeeded before but its mapping can't be applied again.", retryable: false);
         }
+        else if (node.Type == NodeCatalog.TransformData && run.Execution.Step(node.Id).OutputPort == "success")
+        {
+            // Transforming is deterministic, like mapping: the data is rebuilt rather than stored again.
+            run.Data = DataTransformer.Apply(node.Config, run.Data).Data
+                ?? throw new StepException("transform.restore", $"Step '{node.Title}' succeeded before but its rules can't be applied again.", retryable: false);
+        }
         else if (node.Type == NodeCatalog.ParseContent && run.Execution.Step(node.Id).OutputPort == "success")
         {
             // Parsing is deterministic, so the data is rebuilt rather than stored a second time.
@@ -415,6 +435,10 @@ public sealed partial class ExecutionEngine(
                 break;
             case (NodeCatalog.MapFields, "failed"):
                 execution.Reject("data.unmappable", $"The data couldn't be mapped in step '{last.Title}' (see its issues).", now);
+                Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
+                break;
+            case (NodeCatalog.TransformData, "failed"):
+                execution.Reject("data.untransformable", $"The data couldn't be transformed in step '{last.Title}' (see its issues).", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;
             case (NodeCatalog.GeneratePdf, "failed"):

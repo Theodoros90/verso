@@ -724,6 +724,9 @@ pre.log.json{max-height:280px;overflow:auto;margin:0;font-size:11px;line-height:
       <div class="nav-group">Run</div>
       <a href="#jobs" data-view="jobs"><i data-lucide="activity"></i>Jobs &amp; delivery<span class="count" id="navFailCount">2</span></a>
       <a href="#integrations" data-view="integrations"><i data-lucide="plug"></i>Integrations</a>
+      <div class="nav-group">Resources</div>
+      <a href="#connections" data-view="connections"><i data-lucide="plug-zap"></i>Global connections</a>
+      <a href="#variables" data-view="variables"><i data-lucide="braces"></i>Global variables</a>
       <div class="nav-group">Govern</div>
       <a href="#archive" data-view="archive"><i data-lucide="archive"></i>Archive</a>
       <a href="#audit" data-view="audit"><i data-lucide="shield-check"></i>Audit trail</a>
@@ -756,6 +759,8 @@ pre.log.json{max-height:280px;overflow:auto;margin:0;font-size:11px;line-height:
     <main class="view" id="view-assistant" hidden style="overflow:hidden"></main>
     <main class="view" id="view-jobs" hidden></main>
     <main class="view" id="view-integrations" hidden></main>
+    <main class="view" id="view-connections" hidden></main>
+    <main class="view" id="view-variables" hidden></main>
     <main class="view" id="view-archive" hidden></main>
     <main class="view" id="view-audit" hidden></main>
   </div>
@@ -1066,6 +1071,8 @@ const VIEWS = {
   assistant:{ title:'Assistant', crumb:'Grounded in your templates, data and jobs' },
   jobs:{ title:'Jobs & delivery', crumb:'Live, refreshes every 2 seconds' },
   integrations:{ title:'Integrations', crumb:'Data sources, channels and APIs' },
+  connections:{ title:'Global connections', crumb:'Shared credentials and endpoints, managed by admins' },
+  variables:{ title:'Global variables', crumb:'Reusable values for every workflow' },
   archive:{ title:'Archive', crumb:'2.4M documents, WORM storage' },
   audit:{ title:'Audit trail', crumb:'Tamper-evident event log' }
 };
@@ -1870,6 +1877,168 @@ function openIntegration(it) {
 }
 
 /* =========================================================
+   Global connections & Global variables
+   Admin-managed shared resources. Workflow steps reference them by
+   name; credentials never leave this screen (prototype: local only).
+   ========================================================= */
+const CONN_KINDS = ['API / HTTP endpoint', 'SQL database', 'SFTP', 'SMTP email', 'Vault / secrets', 'Identity (OIDC)', 'AI provider', 'SOAP web service'];
+const CONN_AUTH = { 'API / HTTP endpoint':['OAuth 2.0 client credentials','API key','Bearer token','Mutual TLS'], 'SQL database':['SQL authentication','Windows integrated','Managed identity'], 'SFTP':['SSH key','Username and password'], 'SMTP email':['SMTP credentials','OAuth 2.0'], 'Vault / secrets':['Service principal','Managed identity'], 'Identity (OIDC)':['Client credentials','Authorization code'], 'AI provider':['API key'], 'SOAP web service':['WS-Security username','Mutual TLS'] };
+const GCONNS = [
+  { name:'Halcyon Finance API', kind:'API / HTTP endpoint', auth:'OAuth 2.0 client credentials', env:'Production', status:'ok', endpoint:'https://api.halcyon-energy.cy/v1', secret:'••••••••••••••••', tested:'2 hours ago', desc:'Billing and customer data for invoices.', on:true },
+  { name:'Core banking SQL', kind:'SQL database', auth:'Managed identity', env:'Production', status:'ok', endpoint:'sql-halcyon.database.windows.net / BillingCore', secret:'••••••••••••••••', tested:'1 hour ago', desc:'Reads statement and transaction data.', on:true },
+  { name:'SMTP relay', kind:'SMTP email', auth:'SMTP credentials', env:'Production', status:'err', endpoint:'smtp-relay.halcyon-energy.cy:587', secret:'••••••••••••••••', tested:'4 hours ago', desc:'Outbound email for document delivery.', on:true },
+  { name:'Print house SFTP', kind:'SFTP', auth:'SSH key', env:'Production', status:'warn', endpoint:'sftp.cyprusprintservices.com:22', secret:'••••••••••••••••', tested:'Yesterday', desc:'Nightly print batches. Key expires in 6 days.', on:true },
+  { name:'Azure Key Vault', kind:'Vault / secrets', auth:'Managed identity', env:'Production', status:'ok', endpoint:'verso-kv.vault.azure.net', secret:'••••••••••••••••', tested:'3 hours ago', desc:'Central store for every secret Verso uses.', on:true },
+  { name:'Entra ID (OIDC)', kind:'Identity (OIDC)', auth:'Client credentials', env:'Production', status:'ok', endpoint:'login.microsoftonline.com/halcyon', secret:'••••••••••••••••', tested:'5 hours ago', desc:'Sign-in and API tokens for staff and services.', on:true },
+  { name:'Document AI', kind:'AI provider', auth:'API key', env:'Test', status:'ok', endpoint:'ai.halcyon-energy.cy/v1', secret:'••••••••••••••••', tested:'20 minutes ago', desc:'Extraction and drafting assistance. Test tenant only.', on:true }
+];
+const GVARS = [
+  { name:'companyName', type:'Text', scope:'Tenant', env:'All', value:'Halcyon Energy', sensitive:false, desc:'Legal name printed on every document.', updated:'2 weeks ago' },
+  { name:'defaultCurrency', type:'Text', scope:'Tenant', env:'All', value:'EUR', sensitive:false, desc:'Used when the source record has no currency.', updated:'2 weeks ago' },
+  { name:'vatRate', type:'Number', scope:'Tenant', env:'All', value:'19', sensitive:false, desc:'Cyprus VAT rate for calculations and checks.', updated:'1 month ago' },
+  { name:'invoiceEmailFrom', type:'Text', scope:'Tenant', env:'All', value:'billing@halcyon-energy.cy', sensitive:false, desc:'From address for invoice email.', updated:'3 weeks ago' },
+  { name:'statementStorage', type:'Text', scope:'Tenant', env:'All', value:'/finance/statements', sensitive:false, desc:'Base archive folder for statements.', updated:'1 month ago' },
+  { name:'portalApiKey', type:'Secret', scope:'Environment', env:'Test', value:'••••••••••••••••', sensitive:true, desc:'Key for the customer portal API. Referenced, never printed.', updated:'5 days ago' }
+];
+/* persistence (prototype: browser only) */
+function gLoad(key, fallback) { try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback; } catch (e) { return fallback; } }
+function gSave(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
+const gconnsStore = gLoad('verso-gconns', null); if (gconnsStore) GCONNS.splice(0, GCONNS.length, ...gconnsStore);
+const gvarsStore = gLoad('verso-gvars', null); if (gvarsStore) GVARS.splice(0, GVARS.length, ...gvarsStore);
+const connNames = kinds => GCONNS.filter(c => !kinds || kinds.includes(c.kind)).map(c => c.name);
+const connUsedBy = name => (window.VersoWorkflow ? WF.nodes.filter(n => n.config && n.config.conn === name).map(n => n.title) : []);
+const connSt = s => ({ ok:'<span class="pill ok">Connected</span>', warn:'<span class="pill warn">Needs attention</span>', err:'<span class="pill err">Failing</span>', off:'<span class="pill">Inactive</span>' }[s] || '<span class="pill">Inactive</span>');
+
+function renderConnections() {
+  const v = $('#view-connections');
+  v.innerHTML = `<div class="pad">
+    <div class="sec-title"><h3>Global connections</h3><p>Reusable endpoints and credentials. Workflow steps pick one by name — secrets stay here and are never saved inside a workflow.</p></div>
+    <section class="panel">
+      <div class="panel-h" style="padding:14px 16px"><h3 style="margin:0">${GCONNS.length} connections</h3><button class="btn primary sm" id="gNewConn" style="margin-left:auto"><i data-lucide="plus"></i>New connection</button></div>
+      <div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Type</th><th>Authentication</th><th>Endpoint</th><th>Environment</th><th>Status</th><th>Last tested</th><th>Used by</th><th></th></tr></thead><tbody>
+        ${GCONNS.map((c, i) => { const used = connUsedBy(c.name); return `<tr>
+          <td><b>${esc(c.name)}</b>${c.desc ? `<div class="muted" style="font-size:12px">${esc(c.desc)}</div>` : ''}</td>
+          <td>${esc(c.kind)}</td><td>${esc(c.auth)}</td><td class="mono">${esc(c.endpoint)}</td><td>${esc(c.env)}</td>
+          <td>${connSt(c.on ? c.status : 'off')}</td><td>${esc(c.tested)}</td>
+          <td>${used.length ? `<span class="tag">${used.length} step${used.length > 1 ? 's' : ''}</span>` : '<span class="muted">—</span>'}</td>
+          <td class="row" style="gap:6px;justify-content:flex-end"><button class="btn sm" data-ctest="${i}"><i data-lucide="plug-zap"></i>Test</button><button class="btn sm ghost" data-cedit="${i}">Edit</button></td>
+        </tr>`; }).join('')}
+      </tbody></table></div>
+      <div style="padding:12px 16px;border-top:1px solid var(--line)" class="muted">Prototype: connections are stored in this browser only and the test button is simulated. No external service is contacted.</div>
+    </section>
+  </div>`;
+  $('#gNewConn').onclick = () => openConnEditor(null);
+  v.querySelectorAll('[data-cedit]').forEach(b => b.onclick = () => openConnEditor(GCONNS[+b.dataset.cedit]));
+  v.querySelectorAll('[data-ctest]').forEach(b => b.onclick = () => {
+    const c = GCONNS[+b.dataset.ctest];
+    toast(`Testing ${c.name}…`, 'plug-zap');
+    setTimeout(() => toast(c.status === 'err' ? `${c.name}: connected, but the test message was rejected. Check the SPF record.` : c.status === 'warn' ? `${c.name}: connected, but the key expires in 6 days.` : `${c.name}: connected in ${80 + Math.floor(Math.random() * 120)} ms. Authentication OK.`, c.status === 'ok' ? 'circle-check' : 'triangle-alert'), 900);
+  });
+  icons();
+}
+
+function openConnEditor(c) {
+  const isNew = !c;
+  const d = c || { name:'', kind:'API / HTTP endpoint', auth:'API key', env:'Test', status:'ok', endpoint:'', secret:'', desc:'', on:true, tested:'Not tested yet' };
+  openDrawer({
+    title:isNew ? 'New connection' : d.name, sub:isNew ? 'Shared across every workflow' : `${d.kind} · ${d.env}`, icon:`<i data-lucide="plug-zap"></i>`,
+    body:`
+      <div class="field"><label>Name<span class="req">Required</span></label><input class="input" id="gcName" value="${esc(d.name)}" placeholder="e.g. Finance API"></div>
+      <div class="field"><label>Type</label><select class="input" id="gcKind">${CONN_KINDS.map(k => `<option ${k === d.kind ? 'selected' : ''}>${k}</option>`).join('')}</select></div>
+      <div class="field"><label>Authentication</label><select class="input" id="gcAuth">${(CONN_AUTH[d.kind] || ['API key']).map(a => `<option ${a === d.auth ? 'selected' : ''}>${a}</option>`).join('')}</select></div>
+      <div class="field"><label>Endpoint / host<span class="req">Required</span></label><input class="input mono" id="gcEndpoint" value="${esc(d.endpoint)}" placeholder="https://api.example.com or host:port"></div>
+      <div class="field"><label>Secret or key</label><div class="row"><input class="input mono" id="gcSecret" type="password" value="${esc(d.secret)}" placeholder="Paste once — it is masked afterwards"><button class="btn sm" id="gcReveal" type="button">Show</button></div><span class="hint">Prototype: kept in this browser. In production this goes straight to the bank's secret store and is never displayed again.</span></div>
+      <div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field"><label>Environment</label><select class="input" id="gcEnv">${['Development', 'Test', 'Production'].map(e => `<option ${e === d.env ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
+        <div class="field"><label>Active</label><select class="input" id="gcOn"><option value="1" ${d.on ? 'selected' : ''}>Active</option><option value="0" ${!d.on ? 'selected' : ''}>Inactive</option></select></div>
+      </div>
+      <div class="field"><label>Description</label><input class="input" id="gcDesc" value="${esc(d.desc || '')}" placeholder="What is this connection for?"></div>`,
+    foot:`<button class="btn" data-close>Cancel</button><button class="btn primary" id="gcSave">${isNew ? 'Create connection' : 'Save changes'}</button>`
+  });
+  const kindSel = $('#gcKind'), authSel = $('#gcAuth');
+  kindSel.onchange = () => { authSel.innerHTML = (CONN_AUTH[kindSel.value] || ['API key']).map(a => `<option>${a}</option>`).join(''); };
+  $('#gcReveal').onclick = () => { const s = $('#gcSecret'); s.type = s.type === 'password' ? 'text' : 'password'; };
+  $('#gcSave').onclick = () => {
+    const name = $('#gcName').value.trim();
+    if (!name) return toast('Give the connection a name.', 'triangle-alert');
+    if (GCONNS.some(x => x.name === name && x !== d)) return toast('A connection with that name already exists.', 'triangle-alert');
+    const endpoint = $('#gcEndpoint').value.trim();
+    if (!endpoint) return toast('Endpoint or host is required.', 'triangle-alert');
+    const secret = $('#gcSecret').value.trim();
+    Object.assign(d, { name, kind:kindSel.value, auth:authSel.value, endpoint, env:$('#gcEnv').value, on:$('#gcOn').value === '1', desc:$('#gcDesc').value.trim(), secret:secret ? '••••••••••••••••' : d.secret, tested:'Not tested yet' });
+    if (isNew) GCONNS.push(d);
+    gSave('verso-gconns', GCONNS);
+    closeOverlays();
+    renderConnections();
+    toast(isNew ? `Connection “${name}” created.` : `Connection “${name}” saved.`, 'plug-zap');
+  };
+}
+
+function renderVariables() {
+  const v = $('#view-variables');
+  v.innerHTML = `<div class="pad">
+    <div class="sec-title"><h3>Global variables</h3><p>Named values every workflow can reference with {{double braces}} — for example {{companyName}} or {{vatRate}}. Sensitive values are referenced but never printed into documents.</p></div>
+    <section class="panel">
+      <div class="panel-h" style="padding:14px 16px"><h3 style="margin:0">${GVARS.length} variables</h3><button class="btn primary sm" id="gNewVar" style="margin-left:auto"><i data-lucide="plus"></i>New variable</button></div>
+      <div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Value</th><th>Type</th><th>Scope</th><th>Environment</th><th>Sensitive</th><th>Updated</th><th></th></tr></thead><tbody>
+        ${GVARS.map((g, i) => `<tr>
+          <td class="mono"><b>{{${esc(g.name)}}}</b>${g.desc ? `<div class="muted" style="font-size:12px;font-family:var(--font)">${esc(g.desc)}</div>` : ''}</td>
+          <td class="mono">${g.sensitive ? '••••••••••••••••' : esc(g.value)}</td>
+          <td>${esc(g.type)}</td><td>${esc(g.scope)}</td><td>${esc(g.env)}</td>
+          <td>${g.sensitive ? '<span class="pill warn">Secret</span>' : '<span class="muted">No</span>'}</td>
+          <td>${esc(g.updated)}</td>
+          <td class="row" style="gap:6px;justify-content:flex-end"><button class="btn sm ghost" data-vedit="${i}">Edit</button><button class="btn sm ghost" data-vdel="${i}" style="color:var(--err)">Delete</button></td>
+        </tr>`).join('')}
+      </tbody></table></div>
+      <div style="padding:12px 16px;border-top:1px solid var(--line)" class="muted">Use them anywhere steps accept template text: email subjects and bodies, file name and folder patterns, metadata values. They resolve before the sample data fields.</div>
+    </section>
+  </div>`;
+  $('#gNewVar').onclick = () => openVarEditor(null);
+  v.querySelectorAll('[data-vedit]').forEach(b => b.onclick = () => openVarEditor(GVARS[+b.dataset.vedit]));
+  v.querySelectorAll('[data-vdel]').forEach(b => b.onclick = () => {
+    const g = GVARS[+b.dataset.vdel];
+    GVARS.splice(GVARS.indexOf(g), 1); gSave('verso-gvars', GVARS); renderVariables();
+    toast(`Variable {{${g.name}}} deleted. Steps using it will flag it as unresolved.`, 'trash-2');
+  });
+  icons();
+}
+
+function openVarEditor(g) {
+  const isNew = !g;
+  const d = g || { name:'', type:'Text', scope:'Tenant', env:'All', value:'', sensitive:false, desc:'', updated:'Just now' };
+  openDrawer({
+    title:isNew ? 'New variable' : `{{${d.name}}}`, sub:isNew ? 'Reusable in every workflow' : `${d.type} · ${d.scope}`, icon:`<i data-lucide="braces"></i>`,
+    body:`
+      <div class="field"><label>Name<span class="req">Required</span></label><input class="input mono" id="gvName" value="${esc(d.name)}" placeholder="e.g. companyName"></div>
+      <div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field"><label>Type</label><select class="input" id="gvType">${['Text','Number','Boolean','Date','JSON','Secret'].map(t => `<option ${t === d.type ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+        <div class="field"><label>Scope</label><select class="input" id="gvScope">${['Tenant','Environment','Workflow'].map(s => `<option ${s === d.scope ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+      </div>
+      <div class="field"><label>Environment</label><select class="input" id="gvEnv">${['All','Development','Test','Production'].map(e => `<option ${e === d.env ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
+      <div class="field"><label>Value<span class="req">Required</span></label><input class="input mono" id="gvValue" type="${d.sensitive ? 'password' : 'text'}" value="${esc(d.value)}" placeholder="e.g. Halcyon Energy"></div>
+      <div class="field"><label>Description</label><input class="input" id="gvDesc" value="${esc(d.desc || '')}" placeholder="What is this used for?"></div>
+      <label class="toggle-row"><span class="switch"><input type="checkbox" id="gvSens" ${d.sensitive ? 'checked' : ''}></span>Sensitive (secret) — referenced by workflows, never printed into documents</label>`,
+    foot:`<button class="btn" data-close>Cancel</button><button class="btn primary" id="gvSave">${isNew ? 'Create variable' : 'Save changes'}</button>`
+  });
+  $('#gvType').onchange = () => { $('#gvSens').checked = $('#gvType').value === 'Secret'; };
+  $('#gvSens').onchange = () => { const val = $('#gvValue'); val.type = ($('#gvSens').checked || $('#gvType').value === 'Secret') ? 'password' : 'text'; };
+  $('#gvSave').onclick = () => {
+    const name = $('#gvName').value.trim().replace(/[^\w]/g, '');
+    if (!name) return toast('Give the variable a name (letters, numbers, underscore).', 'triangle-alert');
+    if (GVARS.some(x => x.name === name && x !== d)) return toast('A variable with that name already exists.', 'triangle-alert');
+    const value = $('#gvValue').value.trim();
+    if (!value) return toast('A value is required.', 'triangle-alert');
+    const sensitive = $('#gvSens').checked || $('#gvType').value === 'Secret';
+    Object.assign(d, { name, type:sensitive ? 'Secret' : $('#gvType').value, scope:$('#gvScope').value, env:$('#gvEnv').value, value, sensitive, desc:$('#gvDesc').value.trim(), updated:'Just now' });
+    if (isNew) GVARS.push(d);
+    gSave('verso-gvars', GVARS);
+    closeOverlays();
+    renderVariables();
+    toast(isNew ? `Variable {{${name}}} created.` : `Variable {{${name}}} saved.`, 'braces');
+  };
+}
+
+/* =========================================================
    Archive
    ========================================================= */
 const AR = { q:'', type:'', channel:'', days:'120' };
@@ -2035,10 +2204,14 @@ const FILTERS = {
   year:v => String(v).slice(0, 4), month:v => String(v).slice(5, 7), day:v => String(v).slice(8, 10),
   date:v => fmtDate(v), money:v => eur(+v), upper:v => String(v).toUpperCase(), lower:v => String(v).toLowerCase(), slug:v => slug(String(v))
 };
-function wfResolve(str, ctx) { // fills {{path}} and {{path|filter}} tokens from sample data
+function wfResolve(str, ctx) { // fills {{path}} and {{path|filter}} tokens from sample data, then global variables
   const unknown = [];
   const text = String(str || '').replace(/\{\{\s*([\w.]+)\s*(?:\|\s*(\w+)\s*)?\}\}/g, (m, path, f) => {
-    const v = getPath(ctx, path);
+    let v = getPath(ctx, path);
+    if (v === undefined || v === null || typeof v === 'object') { // try a global variable (secrets are never substituted)
+      const g = (typeof GVARS !== 'undefined' ? GVARS : []).find(x => x.name === path);
+      if (g && !g.sensitive) v = g.value;
+    }
     if (v === undefined || v === null || typeof v === 'object') { unknown.push(path); return m; }
     if (f && !FILTERS[f]) { unknown.push(`${path}|${f}`); return m; }
     return f ? FILTERS[f](v) : String(v);
@@ -2135,9 +2308,9 @@ const WF_TYPES = {
     fields:[F('accept','Accepted file types','text',{ req:true }), F('maxSize','Largest file','select',{ o:['10 MB','25 MB','100 MB'] }), F('who','Who can upload','select',{ o:['Signed-in staff','Portal customers','Anyone with the link'] })],
     sum:c => `${c.accept}, up to ${c.maxSize}`, run:['1 file received', 30] },
   'sftp-folder':{ cat:'input', icon:'folder-input', label:'SFTP folder', desc:'Picks up files from a watched folder', kw:'sftp ftp file folder poll',
-    ins:[], outs:OUT, config:{ host:'', folder:'/inbound', pattern:'*.xml', poll:'Every 5 minutes' },
-    fields:[F('host','Host','mono',{ req:true, ph:'sftp.example.com' }), F('folder','Folder','mono',{ req:true }), F('pattern','File pattern','mono'), F('poll','Check for files','select',{ o:['Every minute','Every 5 minutes','Hourly'] })],
-    sum:c => `${c.host}${c.folder}/${c.pattern}`, run:['Picked up 1 file', 40] },
+    ins:[], outs:OUT, config:{ conn:'Print house SFTP', folder:'/inbound', pattern:'*.xml', poll:'Every 5 minutes' },
+    fields:[F('conn','Connection','conn',{ kinds:['SFTP'], req:true }), F('folder','Folder','mono',{ req:true }), F('pattern','File pattern','mono'), F('poll','Check for files','select',{ o:['Every minute','Every 5 minutes','Hourly'] })],
+    sum:c => `Via ${c.conn || 'no connection'}, ${c.folder}/${c.pattern}`, run:['Picked up 1 file', 40] },
   'scheduled':{ cat:'input', icon:'calendar-clock', label:'Scheduled trigger', desc:'Runs at fixed times', kw:'cron time schedule nightly',
     ins:[], outs:OUT, config:{ cron:'0 1 * * *', tz:'Europe/Nicosia' },
     fields:[F('cron','Cron expression','mono',{ req:true }), F('tz','Time zone','select',{ o:['Europe/Nicosia','UTC','Europe/Luxembourg'] })],
@@ -2226,9 +2399,9 @@ const WF_TYPES = {
     fields:[F('classes','Document types, comma separated','text',{ req:true, hint:'Each type becomes an output. “Unsure” catches low-confidence results.' })],
     sum:c => `${listOf(c.classes).length} types`, run:c => [`Classified as ${listOf(c.classes)[0]} (98%)`, 410] },
   'ai-draft':{ cat:'ai', icon:'pen-line', label:'Draft text', desc:'Writes a paragraph for the document', kw:'ai write generate text copy',
-    ins:['in'], outs:SF, config:{ prompt:'', tone:'Formal', lang:'Same as document' },
-    fields:[F('prompt','What to write','textarea',{ req:true, ph:'A short note explaining this month’s reactive power surcharge' }), F('tone','Tone','select',{ o:['Formal','Friendly','Plain and direct'] }), F('lang','Language','select',{ o:['Same as document','English','Greek'] })],
-    sum:c => c.prompt, run:['Drafted 64 words', 1100] },
+    ins:['in'], outs:SF, config:{ prompt:'', conn:'Document AI', tone:'Formal', lang:'Same as document' },
+    fields:[F('prompt','What to write','textarea',{ req:true, ph:'A short note explaining this month’s reactive power surcharge' }), F('conn','AI provider connection','conn',{ kinds:['AI provider'] }), F('tone','Tone','select',{ o:['Formal','Friendly','Plain and direct'] }), F('lang','Language','select',{ o:['Same as document','English','Greek'] })],
+    sum:c => `${c.conn || 'no connection'} · ${c.prompt}`, run:['Drafted 64 words', 1100] },
   'human-review':{ cat:'ai', icon:'scan-eye', label:'Human review', desc:'A person checks AI output before it continues', kw:'review check person ai',
     ins:['in'], outs:[['approved','Approved'],['rejected','Rejected']], config:{ who:'Template leads', sample:'Only low-confidence results' },
     fields:[F('who','Reviewers','select',{ o:['Template leads','Credit control team'] }), F('sample','Review','select',{ o:['Only low-confidence results','Every document','A 5% sample'] })],
@@ -2237,8 +2410,8 @@ const WF_TYPES = {
   /* Outputs */
   'send-email':{ cat:'output', icon:'mail', label:'Send email', desc:'Emails the document to the customer (prototype: never sent)', kw:'smtp mail deliver',
     ins:['in'], outs:[['sent','Sent'],['bounced','Bounced',true]], editor:true, fields:[],
-    config:{ to:'{{customer.email}}', subject:'Invoice {{invoice.number}}', body:DEFAULT_BODY, attach:'auto', retries:'3' },
-    check:c => [!c.to.trim() && 'Recipient', !c.subject.trim() && 'Subject'].filter(Boolean),
+    config:{ to:'{{customer.email}}', subject:'Invoice {{invoice.number}}', body:DEFAULT_BODY, attach:'auto', retries:'3', conn:'SMTP relay' },
+    check:c => [!c.to.trim() && 'Recipient', !c.subject.trim() && 'Subject', !c.conn && 'SMTP connection'].filter(Boolean),
     sum:c => `To ${c.to}, ${c.retries} ${c.retries === '1' ? 'retry' : 'retries'}`,
     simulate:(n, sim) => { const to = wfResolve(n.config.to, sim.ctx).text, a = wfAttachNode(n); return { port:'sent', msg:`Would send to ${to}${a ? ' with ' + sim.files[a.id] : ''}. Nothing was sent.`, ms:412 }; } },
   'print-queue':{ cat:'output', icon:'printer', label:'Print queue', desc:'Sends documents for printing and posting', kw:'print post mail pcl',
@@ -2253,13 +2426,13 @@ const WF_TYPES = {
     sum:c => `${c.dest.split(' (')[0]}, ${c.meta.filter(m => m.key.trim()).length} metadata fields`,
     simulate:(n, sim) => { const a = wfAttachNode(n); return { msg:`Would store ${a ? sim.files[a.id] : 'the document'} at ${wfResolve(n.config.folder, sim.ctx).text}/`, ms:88 }; } },
   'upload-sftp':{ cat:'output', icon:'server', label:'Upload to SFTP', desc:'Puts files on a partner’s server', kw:'sftp ftp upload partner',
-    ins:['in'], outs:SF, config:{ host:'', folder:'/in' },
-    fields:[F('host','Host','mono',{ req:true, ph:'sftp.partner.com' }), F('folder','Folder','mono',{ req:true })],
-    sum:c => `${c.host}${c.folder}`, run:['Uploaded 1 file', 220] },
+    ins:['in'], outs:SF, config:{ conn:'Print house SFTP', folder:'/in' },
+    fields:[F('conn','Connection','conn',{ kinds:['SFTP'], req:true }), F('folder','Folder','mono',{ req:true })],
+    sum:c => `Via ${c.conn || 'no connection'}${c.folder}`, run:['Uploaded 1 file', 220] },
   'deliver-api':{ cat:'output', icon:'send', label:'Deliver via API', desc:'Posts the document to another system', kw:'http rest post api webhook deliver',
-    ins:['in'], outs:[['delivered','Delivered'],['failed','Failed',true]], config:{ url:'', auth:'OAuth 2.0 client credentials' },
-    fields:[F('url','Endpoint URL','mono',{ req:true, ph:'https://api.partner.com/documents' }), F('auth','Authentication','select',{ o:['OAuth 2.0 client credentials','API key','Mutual TLS'] })],
-    sum:c => c.url.replace(/^https?:\/\//, ''), run:['201 Created', 180] }
+    ins:['in'], outs:[['delivered','Delivered'],['failed','Failed',true]], config:{ url:'', conn:'Halcyon Finance API' },
+    fields:[F('url','Endpoint URL','mono',{ req:true, ph:'https://api.partner.com/documents' }), F('conn','Connection','conn',{ kinds:['API / HTTP endpoint'] })],
+    sum:c => `${c.conn || 'no connection'} · ${c.url.replace(/^https?:\/\//, '')}`, run:['201 Created', 180] }
 };
 const MAP_ROWS = [['InvoiceId','invoice.number'],['InvoiceDate','invoice.date'],['DueDate','invoice.dueDate'],['Account.Name','customer.name'],['Account.Address1_Composite','customer.address'],['Account.VatNo','customer.vatNumber'],['Account.EmailAddress1','customer.email'],['InvoiceDetails[]','lines[]'],['TotalAmount','totals.gross']];
 const RUN_PORT = { validate:'valid', 'if-else':'yes', approval:'approved', 'ai-extract':'extracted', 'human-review':'approved', 'send-email':'sent', 'print-queue':'queued', 'deliver-api':'delivered' };
@@ -2566,6 +2739,7 @@ function wfFieldHTML(n, f) {
   const lab = `<label>${esc(f.l)}${f.req ? '<span class="req">Required</span>' : ''}</label>`;
   const hint = f.hint ? `<span class="hint">${esc(f.hint)}</span>` : '';
   if (f.t === 'toggle') return `<label class="toggle-row"><span class="switch"><input type="checkbox" data-cfg="${f.k}" ${v ? 'checked' : ''}></span>${esc(f.l)}</label>`;
+  if (f.t === 'conn') { const list = connNames(f.kinds); return `<div class="field">${lab}<select class="input ${miss ? 'missing' : ''}" data-cfg="${f.k}">${list.length ? list.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('') : '<option value="">No connection of this type yet</option>'}</select><span class="hint">Shared credentials from <a href="#connections" style="color:inherit">Global connections</a>. Secrets stay out of the workflow.</span></div>`; }
   if (f.t === 'select') return `<div class="field">${lab}<select class="input ${miss ? 'missing' : ''}" data-cfg="${f.k}">${f.o.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${o ? esc(o) : 'Choose…'}</option>`).join('')}</select>${hint}</div>`;
   if (f.t === 'textarea') return `<div class="field">${lab}<textarea class="input ${f.mono ? 'mono' : ''} ${miss ? 'missing' : ''}" data-cfg="${f.k}" placeholder="${esc(f.ph || '')}">${esc(v)}</textarea>${hint}</div>`;
   if (f.t === 'map') return `<div><div class="lbl" style="margin-bottom:6px">Field mappings</div><table class="map-t">${MAP_ROWS.map(([a, b]) => `<tr><td class="mono">${a}</td><td>→</td><td class="mono">${b}</td></tr>`).join('')}</table><div class="hint">Shared with the Template designer’s data model.</div></div>`;
@@ -2897,9 +3071,10 @@ const WF_EDITORS = {
       return proto('Prototype only. Test runs show what would be sent. No email ever leaves Verso.') +
       sec('Message', fld('Recipient', inp('to', c.to, { mono:true, req:true, ph:'{{customer.email}}' }), '', true) +
         fld('Subject', inp('subject', c.subject, { req:true, ph:'Invoice {{invoice.number}}' }), '', true) +
-        fld('Body', `<textarea class="input" data-cfg="body" rows="7">${esc(c.body)}</textarea>`, 'Fields in double braces are filled from the invoice data. Filters: |money, |date, |upper.')) +
+        fld('Body', `<textarea class="input" data-cfg="body" rows="7">${esc(c.body)}</textarea>`, 'Fields in double braces are filled from the invoice data, and global variables like {{companyName}} come from Global variables. Filters: |money, |date, |upper.')) +
       sec('Attachment', fld('Attach the file from', `<select class="input" data-cfg="attach"><option value="auto" ${c.attach === 'auto' ? 'selected' : ''}>Connected document step${auto ? ` (${esc(auto.title)})` : ''}</option>${docs.map(d => `<option value="${d.id}" ${c.attach === d.id ? 'selected' : ''}>${esc(d.title)} (${d.id})</option>`).join('')}<option value="none" ${c.attach === 'none' ? 'selected' : ''}>No attachment</option></select>`) + '<div id="wfAttachRef"></div>') +
-      sec('Delivery', fld('Retry count', sel('retries', ['0','1','2','3','4','5'], c.retries), 'Retries happen 5, 15, then 60 minutes apart. Then the Bounced output is used.')) +
+      sec('Delivery', fld('SMTP connection', `<select class="input" data-cfg="conn">${connNames(['SMTP email']).map(o => `<option value="${esc(o)}" ${o === c.conn ? 'selected' : ''}>${esc(o)}</option>`).join('') || '<option value="">No SMTP connection yet</option>'}</select>`, 'Shared credentials from Global connections. Secrets stay out of the workflow.', true) +
+        fld('Retry count', sel('retries', ['0','1','2','3','4','5'], c.retries), 'Retries happen 5, 15, then 60 minutes apart. Then the Bounced output is used.')) +
       sec('Preview', '<div id="wfPreview"></div>'); },
     preview:n => {
       const sim = wfSim(), c = n.config, to = wfResolve(c.to, sim.ctx), sub = wfResolve(c.subject, sim.ctx), body = wfResolve(c.body, sim.ctx), a = wfAttachNode(n);
@@ -2961,6 +3136,12 @@ function wfValidate() {
     const open = outs.filter(p => !p.optional && !WF.edges.some(e => e.from === n.id && e.fromPort === p.id));
     if (outs.length > 1) open.forEach(p => issues.push({ lvl:'warn', node:n.id, msg:`The “${p.label}” output of ${n.title} isn’t connected. Records that take this path stop here.` }));
     else if (open.length && ['input','process','logic','doc','ai'].includes(t.cat)) issues.push({ lvl:'warn', node:n.id, msg:`The output of ${n.title} isn’t used by any later step.` });
+    if (n.config && n.config.conn) { // global connection checks
+      const gc = GCONNS.find(c => c.name === n.config.conn);
+      if (!gc) issues.push({ lvl:'err', node:n.id, msg:`${n.title}: the connection “${n.config.conn}” no longer exists in Global connections.` });
+      else if (!gc.on) issues.push({ lvl:'err', node:n.id, msg:`${n.title}: the connection “${gc.name}” is inactive, so this step can’t run.` });
+      else if (gc.status === 'err') issues.push({ lvl:'warn', node:n.id, msg:`${n.title}: the connection “${gc.name}” is failing — the last test was rejected.` });
+    }
   });
   WF.issues = issues;
   return issues;
@@ -3271,7 +3452,7 @@ document.addEventListener('keydown', e => {
 /* =========================================================
    Boot
    ========================================================= */
-const RENDER = { dashboard:renderDashboard, designer:renderDesigner, workflow:renderWorkflow, preview:renderPreview, assistant:renderAssistant, jobs:renderJobs, integrations:renderIntegrations, archive:renderArchive, audit:renderAudit };
+const RENDER = { dashboard:renderDashboard, designer:renderDesigner, workflow:renderWorkflow, preview:renderPreview, assistant:renderAssistant, jobs:renderJobs, integrations:renderIntegrations, connections:renderConnections, variables:renderVariables, archive:renderArchive, audit:renderAudit };
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { paintThemeIcon(); if (!$('#view-dashboard').hidden) renderDashboard(); });
 paintThemeIcon();
 updateFailCount();

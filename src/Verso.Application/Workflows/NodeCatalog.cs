@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), validate, generate-pdf, archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -35,6 +35,7 @@ public static class NodeCatalog
     public const string FolderInput = "folder-input";
     public const string ParseContent = "parse";
     public const string MapFields = "map-fields";
+    public const string TransformData = "transform";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string Archive = "archive";
@@ -141,6 +142,9 @@ public static class NodeCatalog
     private const string DataPathPattern =@"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$";
 
     private const string OptionalDataPathPattern = @"^([A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*)?$";
+
+    /// <summary>A number or a data path (or empty, for settings an operation doesn't use).</summary>
+    private const string OperandPattern = @"^(-?[0-9]+(\.[0-9]+)?|[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*)?$";
 
     private const string EndpointPathPattern = @"^/[A-Za-z0-9._~/-]*$";
 
@@ -334,6 +338,28 @@ public static class NodeCatalog
               "required": ["rows"] }
             """,
             """{ "rows": [] }"""),
+
+        Node(TransformData, "Transform data", "process",
+            "Calculates, reformats or reshapes values with an ordered list of rules (no scripts): each rule writes a result to a target field, and a rule sees what the rules above it wrote.",
+            [In], [new PortDto("success", "Success", true), new PortDto("failed", "Failed", false)],
+            $$$"""
+            { "type": "object",
+              "properties": {
+                "rules": { "type": "array", "title": "Rules", "maxItems": {{{Executions.DataTransformer.MaxRules}}},
+                  "items": { "type": "object", "required": ["target", "operation"],
+                    "properties": {
+                      "target": { "type": "string", "title": "Target field", "minLength": 1, "maxLength": 200, "pattern": "{{{Escape(DataPathPattern)}}}", "x-widget": "data-path",
+                        "description": "Where the result is written, such as totals.gross." },
+                      "operation": { "type": "string", "title": "Operation", "enum": {{{JsonSerializer.Serialize(Executions.DataTransformer.Operations.Keys)}}}, "x-enumLabels": {{{JsonSerializer.Serialize(Executions.DataTransformer.Operations.Values)}}} },
+                      "a": { "type": "string", "title": "A: field or number", "maxLength": 200, "pattern": "{{{Escape(OperandPattern)}}}", "x-widget": "mono",
+                        "description": "The field to read, or a number. Not used by Build text and Remove." },
+                      "b": { "type": "string", "title": "B: field or number", "maxLength": 200, "pattern": "{{{Escape(OperandPattern)}}}", "x-widget": "mono",
+                        "description": "The second value of Add, Subtract, Multiply and Divide; the decimals of Round (default 2)." },
+                      "text": { "type": "string", "title": "Text", "maxLength": 500, "x-widget": "pattern",
+                        "description": "Build text: use fields such as {{customer.name}} ({{invoice.number}}). Fallback: the value to use when A is missing or empty." } } } } },
+              "required": ["rules"] }
+            """,
+            """{ "rules": [] }"""),
 
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",
