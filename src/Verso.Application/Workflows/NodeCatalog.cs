@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), validate, generate-pdf, archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -36,6 +36,7 @@ public static class NodeCatalog
     public const string ParseContent = "parse";
     public const string MapFields = "map-fields";
     public const string TransformData = "transform";
+    public const string MergeData = "merge-data";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string Archive = "archive";
@@ -360,6 +361,30 @@ public static class NodeCatalog
               "required": ["rules"] }
             """,
             """{ "rules": [] }"""),
+
+        Node(MergeData, "Merge data", "process",
+            "Joins the data with a lookup table on a key: each record gets the fields of the lookup row whose key equals the record's. The lookup table is typed into the step (one list of records).",
+            [In], [new PortDto("success", "Success", true), new PortDto("failed", "Failed", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "key": { "type": "string", "title": "Match on", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DataPathPattern)}}", "x-widget": "mono",
+                  "description": "The field of the data to look up, such as customer.id." },
+                "lookupKey": { "type": "string", "title": "Lookup field", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DataPathPattern)}}", "x-widget": "mono",
+                  "description": "The field of each lookup record that holds the key, such as id. Each key may appear once." },
+                "lookup": { "type": "string", "title": "Lookup table (JSON list)", "minLength": 1, "maxLength": {{Executions.DataMerger.MaxLookupText}}, "x-widget": "json",
+                  "description": "A JSON list of records, such as [{ \"id\": \"C-1001\", \"name\": \"Kestrel Logistics Ltd\" }]. Reference data only, no real customer data." },
+                "source": { "type": "string", "title": "List to enrich (optional)", "maxLength": 200, "pattern": "{{Escape(OptionalDataPathPattern)}}", "x-widget": "mono",
+                  "description": "A list in the data, such as lines: each entry is matched on its own, and 'Match on' is read from the entry. Leave empty to match the data itself." },
+                "into": { "type": "string", "title": "Write matches into (optional)", "maxLength": 200, "pattern": "{{Escape(OptionalDataPathPattern)}}", "x-widget": "data-path",
+                  "description": "Where the lookup record's fields are written, such as customer. Leave empty to write them at the top level of the record." },
+                "overwrite": { "type": "boolean", "title": "Replace values the data already has",
+                  "description": "Off: the lookup only fills in what's missing." },
+                "strategy": { "type": "string", "title": "When there's no match", "enum": {{JsonSerializer.Serialize(Executions.DataMerger.Strategies.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Executions.DataMerger.Strategies.Values)}},
+                  "description": "Dropping applies to a list; a single record with no match fails the step." } },
+              "required": ["key", "lookupKey", "lookup", "strategy"] }
+            """,
+            """{ "key": "", "lookupKey": "", "lookup": "[]", "source": "", "into": "", "overwrite": false, "strategy": "keep" }"""),
 
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",

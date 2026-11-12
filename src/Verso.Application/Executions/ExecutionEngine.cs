@@ -231,6 +231,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.ParseContent => Task.FromResult(Parse(run, node)),
         NodeCatalog.MapFields => Task.FromResult(Map(run, node)),
         NodeCatalog.TransformData => Task.FromResult(Transform(run, node)),
+        NodeCatalog.MergeData => Task.FromResult(Merge(run, node)),
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
         NodeCatalog.GeneratePdf => GeneratePdfAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
@@ -274,6 +275,19 @@ public sealed partial class ExecutionEngine(
 
         run.Data = transformed;
         return new Outcome("success", null);
+    }
+
+    /// <summary>A record that can't be merged (or has no match, under the 'stop' strategy) is a data problem: port 'failed', the run ends Rejected unless the workflow handles it. The result holds counts, no values.</summary>
+    private static Outcome Merge(Run run, Workflows.WorkflowNode node)
+    {
+        var result = DataMerger.Apply(node.Config, run.Data);
+        if (result.Data is not { } merged)
+        {
+            return new Outcome("failed", new { issues = result.Issues.Select(i => new { code = i.Code, message = i.Message, field = i.Field }) });
+        }
+
+        run.Data = merged;
+        return new Outcome("success", new { matched = result.Matched, unmatched = result.Unmatched, dropped = result.Dropped });
     }
 
     private static Outcome Validate(Run run, Workflows.WorkflowNode node)
@@ -405,6 +419,12 @@ public sealed partial class ExecutionEngine(
             run.Data = DataTransformer.Apply(node.Config, run.Data).Data
                 ?? throw new StepException("transform.restore", $"Step '{node.Title}' succeeded before but its rules can't be applied again.", retryable: false);
         }
+        else if (node.Type == NodeCatalog.MergeData && run.Execution.Step(node.Id).OutputPort == "success")
+        {
+            // Merging is deterministic, like transforming: the data is rebuilt rather than stored again.
+            run.Data = DataMerger.Apply(node.Config, run.Data).Data
+                ?? throw new StepException("merge.restore", $"Step '{node.Title}' succeeded before but its merge can't be applied again.", retryable: false);
+        }
         else if (node.Type == NodeCatalog.ParseContent && run.Execution.Step(node.Id).OutputPort == "success")
         {
             // Parsing is deterministic, so the data is rebuilt rather than stored a second time.
@@ -439,6 +459,10 @@ public sealed partial class ExecutionEngine(
                 break;
             case (NodeCatalog.TransformData, "failed"):
                 execution.Reject("data.untransformable", $"The data couldn't be transformed in step '{last.Title}' (see its issues).", now);
+                Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
+                break;
+            case (NodeCatalog.MergeData, "failed"):
+                execution.Reject("data.unmergeable", $"The data couldn't be merged in step '{last.Title}' (see its issues).", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;
             case (NodeCatalog.GeneratePdf, "failed"):

@@ -18,7 +18,7 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
         using var response = await _client.GetAsync(new Uri("/api/v1/node-types", UriKind.Relative));
         var types = (await ReadAsync(response)).EnumerateArray().ToList();
 
-        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "scheduled-trigger", "manual-trigger", "folder-input", "parse", "map-fields", "transform", "validate", "generate-pdf", "archive"], types.Select(t => t.GetProperty("type").GetString()));
+        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "scheduled-trigger", "manual-trigger", "folder-input", "parse", "map-fields", "transform", "merge-data", "validate", "generate-pdf", "archive"], types.Select(t => t.GetProperty("type").GetString()));
         var validate = types.Single(t => t.GetProperty("type").GetString() == "validate");
         Assert.Equal("process", validate.GetProperty("category").GetString());
         Assert.Equal(["valid", "invalid"], validate.GetProperty("outputs").EnumerateArray().Select(p => p.GetProperty("id").GetString()));
@@ -204,6 +204,37 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
         Assert.Contains("Rule 1", error.GetProperty("message").GetString(), StringComparison.Ordinal);
 
         transform["config"]!["rules"]![0]!["b"] = "totals.vat";
+        Assert.Empty(await ErrorsAsync());
+    }
+
+    [Fact]
+    public async Task MergeData_NeedsAUsableLookupTable()
+    {
+        var (templateId, _) = await CreateInvoiceTemplateAsync(null);
+        var id = await CreateWorkflowAsync();
+        var definition = InvoiceStandard(templateId);
+        var merge = JsonNode.Parse("""
+            { "id": "merge", "type": "merge-data", "title": "Merge data", "position": { "x": 130, "y": 200 },
+              "config": { "key": "customer.id", "lookupKey": "id", "lookup": "[]", "source": "", "into": "customer", "overwrite": false, "strategy": "keep" } }
+            """)!;
+        definition["nodes"]!.AsArray().Add(merge);
+        definition["edges"]!.AsArray().First(e => (string?)e!["target"] == "validate")!["target"] = "merge";
+        definition["edges"]!.AsArray().Add(JsonNode.Parse("""{ "id": "e8", "source": "merge", "sourcePort": "success", "target": "validate", "targetPort": "in" }"""));
+
+        async Task<List<string>> ErrorsAsync()
+        {
+            using var response = await _client.PostAsJsonAsync(new Uri($"/api/v1/workflows/{id}/draft/validate", UriKind.Relative), new { definition });
+            return [.. (await ReadAsync(response)).GetProperty("issues").EnumerateArray()
+                .Where(i => i.GetProperty("nodeId").GetString() == "merge" && i.GetProperty("severity").GetString() == "error")
+                .Select(i => i.GetProperty("message").GetString()!)];
+        }
+
+        Assert.Contains(await ErrorsAsync(), m => m.Contains("at least one", StringComparison.Ordinal));
+
+        merge["config"]!["lookup"] = """[ { "id": "C-1", "name": "A" }, { "id": "C-1", "name": "B" } ]""";
+        Assert.Contains(await ErrorsAsync(), m => m.Contains("repeats", StringComparison.Ordinal));
+
+        merge["config"]!["lookup"] = """[ { "id": "C-1", "name": "A" }, { "id": "C-2", "name": "B" } ]""";
         Assert.Empty(await ErrorsAsync());
     }
 
