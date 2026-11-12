@@ -1,0 +1,58 @@
+{
+  "layoutSchemaVersion": 1,
+  "header": {
+    "heightMm": 62,
+    "elements": [
+      { "id": "issuer", "type": "text", "xMm": 0, "yMm": 1, "widthMm": 95, "heightMm": 16,
+        "props": { "text": "{{issuer.name}}\n{{issuer.address}}\nVAT {{issuer.vatNumber}}", "style": { "fontSizePt": 9 } } },
+      { "id": "title", "type": "text", "xMm": 98, "yMm": 0, "widthMm": 80, "heightMm": 12,
+        "props": { "text": "VAT notice", "style": { "fontSizePt": 24, "bold": true, "align": "right", "font": "serif" } } },
+      { "id": "customer-box", "type": "box", "xMm": 0, "yMm": 20, "widthMm": 90, "heightMm": 34,
+        "props": { "borderColor": "#C4CDD6", "fill": "#F8FAFB", "radiusMm": 1.5 } },
+      { "id": "customer", "type": "text", "xMm": 3, "yMm": 23, "widthMm": 84, "heightMm": 28,
+        "props": { "text": "Customer\n{{customer.label}}\n{{customer.address}}\nVAT {{customer.vatNumber}}" } },
+      { "id": "ref-number", "type": "field", "xMm": 110, "yMm": 22, "widthMm": 68, "heightMm": 6,
+        "props": { "label": "Invoice no.", "binding": "invoice.number", "style": { "align": "right" } } },
+      { "id": "ref-date", "type": "field", "xMm": 110, "yMm": 29, "widthMm": 68, "heightMm": 6,
+        "props": { "label": "Invoice date", "binding": "invoice.date", "filter": "date", "style": { "align": "right" } } },
+      { "id": "ref-country", "type": "field", "xMm": 110, "yMm": 36, "widthMm": 68, "heightMm": 6,
+        "props": { "label": "Customer country", "binding": "customer.country", "style": { "align": "right", "bold": true } } },
+      { "id": "header-rule", "type": "divider", "xMm": 0, "yMm": 59, "widthMm": 178, "heightMm": 1,
+        "props": { "thicknessPt": 0.75, "color": "#1A232C" } }
+    ]
+  },
+  "body": {
+    "blocks": [
+      { "id": "n1-title", "type": "text",
+        "props": { "text": "Supply to a customer in another member state", "style": { "fontSizePt": 14, "bold": true, "font": "serif" } } },
+      { "id": "n1", "type": "text", "spaceBeforeMm": 5,
+        "props": { "text": "Invoice {{invoice.number}} dated {{invoice.date|date}} was issued to {{customer.label}}, registered for VAT under {{customer.vatNumber}}." } },
+      { "id": "n2", "type": "text", "spaceBeforeMm": 4,
+        "props": { "text": "Where that VAT number is valid, the customer accounts for VAT on this supply (reverse charge). The invoice therefore shows VAT of {{totals.vat|money}}. This is sample wording for demonstration only." } },
+      { "id": "net", "type": "field", "spaceBeforeMm": 6,
+        "props": { "label": "Net", "binding": "totals.net", "filter": "money", "style": { "align": "right" } } },
+      { "id": "vat", "type": "field",
+        "props": { "label": "VAT", "binding": "totals.vat", "filter": "money", "style": { "align": "right" } } },
+      { "id": "gross", "type": "field",
+        "props": { "label": "Total due", "binding": "totals.gross", "filter": "money", "style": { "align": "right", "bold": true, "fontSizePt": 12 } } },
+
+      { "id": "page-break-1", "type": "divider", "spaceBeforeMm": 100, "props": { "thicknessPt": 0.25, "color": "#FFFFFF" } },
+      { "id": "page-break-2", "type": "divider", "spaceBeforeMm": 100, "props": { "thicknessPt": 0.25, "color": "#FFFFFF" } },
+
+      { "id": "p2-title", "type": "text",
+        "props": { "text": "Customer declaration", "style": { "fontSizePt": 16, "bold": true, "font": "serif" } } },
+      { "id": "p2-text", "type": "text", "spaceBeforeMm": 4,
+        "props": { "text": "We confirm that {{customer.name}} is registered for VAT under {{customer.vatNumber}} and that the services on invoice {{invoice.number}} are received for business purposes." } },
+      { "id": "p2-return", "type": "text", "spaceBeforeMm": 4,
+        "props": { "text": "Please sign and return a copy to {{issuer.email}} within 14 days.", "style": { "fontSizePt": 9 } } },
+      { "id": "p2-sign", "type": "signature", "spaceBeforeMm": 20, "props": { "label": "Customer's authorised signatory" } }
+    ]
+  },
+  "footer": {
+    "heightMm": 10,
+    "elements": [
+      { "id": "footer-text", "type": "text", "xMm": 0, "yMm": 2, "widthMm": 178, "heightMm": 6,
+        "props": { "text": "{{issuer.name}} · VAT notice for invoice {{invoice.number}}", "style": { "fontSizePt": 8, "color": "#66727E", "align": "center" } } }
+    ]
+  }
+}

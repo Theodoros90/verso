@@ -1,0 +1,29 @@
+{
+  "_comment": "Synthetic. The data model the two XML-batch templates read (what the workflow's Map fields and Transform steps produce from one <Invoice> of invoices.xml). Used as the templates' sample data.",
+  "issuer": {
+    "name": "Halcyon Energy Ltd",
+    "address": "14 Archbishop Makarios III Ave, 1065 Nicosia, Cyprus",
+    "vatNumber": "CY10293847X",
+    "email": "billing@halcyon-energy.example"
+  },
+  "invoice": { "number": "INV-2026-004102", "date": "2026-11-03", "dueDate": "2026-12-03", "currency": "EUR", "poNumber": "PO-77310" },
+  "customer": {
+    "name": "Rheinwerk Handels GmbH",
+    "address": "Hafenstrasse 12, 50667 Cologne, Germany",
+    "country": "DE",
+    "vatNumber": "DE811569869",
+    "email": "ap@rheinwerk-handels.example",
+    "label": "Rheinwerk Handels GmbH (DE)"
+  },
+  "lines": [
+    { "description": "Energy management consulting, October 2026", "qty": 12, "unit": "h", "unitPrice": 95, "vatRate": 0, "amount": 1140 },
+    { "description": "Monitoring software licence, November 2026", "qty": 1, "unit": "month", "unitPrice": 660, "vatRate": 0, "amount": 660 }
+  ],
+  "totals": { "net": 1800, "vat": 0, "gross": 1800 },
+  "payment": {
+    "iban": "CY82 0000 0000 0000 0000 0000 0000",
+    "bic": "TESTCY2N",
+    "reference": "INV-2026-004102",
+    "terms": "Payment due within 30 days. Late payments may incur interest."
+  }
+}

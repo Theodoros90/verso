@@ -18,6 +18,7 @@
   <ItemGroup>
     <!-- Shared synthetic fixtures, copied next to the test assembly. -->
     <None Include="..\fixtures\**\*.json" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\**\*.xml" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

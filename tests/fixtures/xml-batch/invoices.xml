@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic test data: fictional companies, .example domains, made-up VAT numbers; the IBAN has valid check digits for an all-zero account.
+     Three invoices in one file:
+       1. domestic, small          -> invoice PDF (2 pages) -> archive
+       2. customer in Germany      -> invoice PDF + VAT notice PDF -> one combined pack -> archive
+       3. domestic, over 10,000    -> waits for an approval, then invoice PDF -> archive
+     Each invoice needs at least two <line> elements: XML has no list syntax, so one <line> would be read as a single object, not a list. -->
+<InvoiceBatch>
+  <batchId>BATCH-2026-11-12-01</batchId>
+
+  <Invoice>
+    <issuer>
+      <name>Halcyon Energy Ltd</name>
+      <address>14 Archbishop Makarios III Ave, 1065 Nicosia, Cyprus</address>
+      <vatNumber>CY10293847X</vatNumber>
+      <email>billing@halcyon-energy.example</email>
+    </issuer>
+    <invoice>
+      <number>INV-2026-004101</number>
+      <date>02/11/2026</date>
+      <dueDate>02/12/2026</dueDate>
+      <currency>EUR</currency>
+      <poNumber>PO-55120</poNumber>
+    </invoice>
+    <customer>
+      <name>Kestrel Logistics Ltd</name>
+      <address>88 Franklin Roosevelt Ave, 3011 Limassol, Cyprus</address>
+      <country>cy</country>
+      <vatNumber>CY99887766K</vatNumber>
+      <email>ap@kestrel-logistics.example</email>
+    </customer>
+    <lines>
+      <line><description>Electricity supply, October 2026 (commercial tariff)</description><qty>18450</qty><unit>kWh</unit><unitPrice>0.2185</unitPrice><vatRate>19</vatRate><amount>4031.33</amount></line>
+      <line><description>Reactive power surcharge</description><qty>1</qty><unit>month</unit><unitPrice>592.04</unitPrice><vatRate>19</vatRate><amount>592.04</amount></line>
+      <line><description>Meter rental</description><qty>1</qty><unit>month</unit><unitPrice>12.5</unitPrice><vatRate>19</vatRate><amount>12.5</amount></line>
+    </lines>
+    <totals><net>4635.87</net><vat>880.82</vat><gross>5516.69</gross></totals>
+    <payment>
+      <iban>CY82 0000 0000 0000 0000 0000 0000</iban>
+      <bic>TESTCY2N</bic>
+      <reference>INV-2026-004101</reference>
+      <terms>Payment due within 30 days. Late payments may incur interest.</terms>
+    </payment>
+  </Invoice>
+
+  <Invoice>
+    <issuer>
+      <name>Halcyon Energy Ltd</name>
+      <address>14 Archbishop Makarios III Ave, 1065 Nicosia, Cyprus</address>
+      <vatNumber>CY10293847X</vatNumber>
+      <email>billing@halcyon-energy.example</email>
+    </issuer>
+    <invoice>
+      <number>INV-2026-004102</number>
+      <date>03/11/2026</date>
+      <dueDate>03/12/2026</dueDate>
+      <currency>EUR</currency>
+      <poNumber>PO-77310</poNumber>
+    </invoice>
+    <customer>
+      <name>Rheinwerk Handels GmbH</name>
+      <address>Hafenstrasse 12, 50667 Cologne, Germany</address>
+      <country>de</country>
+      <vatNumber>DE811569869</vatNumber>
+      <email>ap@rheinwerk-handels.example</email>
+    </customer>
+    <lines>
+      <line><description>Energy management consulting, October 2026</description><qty>12</qty><unit>h</unit><unitPrice>95</unitPrice><vatRate>0</vatRate><amount>1140</amount></line>
+      <line><description>Monitoring software licence, November 2026</description><qty>1</qty><unit>month</unit><unitPrice>660</unitPrice><vatRate>0</vatRate><amount>660</amount></line>
+    </lines>
+    <totals><net>1800</net><vat>0</vat><gross>1800</gross></totals>
+    <payment>
+      <iban>CY82 0000 0000 0000 0000 0000 0000</iban>
+      <bic>TESTCY2N</bic>
+      <reference>INV-2026-004102</reference>
+      <terms>Payment due within 30 days. Late payments may incur interest.</terms>
+    </payment>
+  </Invoice>
+
+  <Invoice>
+    <issuer>
+      <name>Halcyon Energy Ltd</name>
+      <address>14 Archbishop Makarios III Ave, 1065 Nicosia, Cyprus</address>
+      <vatNumber>CY10293847X</vatNumber>
+      <email>billing@halcyon-energy.example</email>
+    </issuer>
+    <invoice>
+      <number>INV-2026-004103</number>
+      <date>04/11/2026</date>
+      <dueDate>04/12/2026</dueDate>
+      <currency>EUR</currency>
+      <poNumber>PO-88001</poNumber>
+    </invoice>
+    <customer>
+      <name>Aphrodite Shipping Co Ltd</name>
+      <address>3 Port Street, 6021 Larnaca, Cyprus</address>
+      <country>cy</country>
+      <vatNumber>CY55443322M</vatNumber>
+      <email>accounts@aphrodite-shipping.example</email>
+    </customer>
+    <lines>
+      <line><description>Electricity supply, October 2026 (industrial tariff)</description><qty>142500</qty><unit>kWh</unit><unitPrice>0.2185</unitPrice><vatRate>19</vatRate><amount>31136.25</amount></line>
+      <line><description>Reactive power surcharge</description><qty>1</qty><unit>month</unit><unitPrice>1240.5</unitPrice><vatRate>19</vatRate><amount>1240.5</amount></line>
+    </lines>
+    <totals><net>32376.75</net><vat>6151.58</vat><gross>38528.33</gross></totals>
+    <payment>
+      <iban>CY82 0000 0000 0000 0000 0000 0000</iban>
+      <bic>TESTCY2N</bic>
+      <reference>INV-2026-004103</reference>
+      <terms>Payment due within 30 days. Late payments may incur interest.</terms>
+    </payment>
+  </Invoice>
+</InvoiceBatch>

@@ -1,0 +1,77 @@
+{
+  "layoutSchemaVersion": 1,
+  "header": {
+    "heightMm": 62,
+    "elements": [
+      { "id": "issuer", "type": "text", "xMm": 0, "yMm": 1, "widthMm": 95, "heightMm": 16,
+        "props": { "text": "{{issuer.name}}\n{{issuer.address}}\nVAT {{issuer.vatNumber}}", "style": { "fontSizePt": 9 } } },
+      { "id": "title", "type": "text", "xMm": 118, "yMm": 0, "widthMm": 60, "heightMm": 12,
+        "props": { "text": "Invoice", "style": { "fontSizePt": 24, "bold": true, "align": "right", "font": "serif" } } },
+      { "id": "billto-box", "type": "box", "xMm": 0, "yMm": 20, "widthMm": 90, "heightMm": 34,
+        "props": { "borderColor": "#C4CDD6", "fill": "#F8FAFB", "radiusMm": 1.5 } },
+      { "id": "billto", "type": "text", "xMm": 3, "yMm": 23, "widthMm": 84, "heightMm": 28,
+        "props": { "text": "Bill to\n{{customer.name}}\n{{customer.address}}\nVAT {{customer.vatNumber}}" } },
+      { "id": "inv-number", "type": "field", "xMm": 110, "yMm": 22, "widthMm": 68, "heightMm": 6,
+        "props": { "label": "Invoice no.", "binding": "invoice.number", "style": { "align": "right" } } },
+      { "id": "inv-date", "type": "field", "xMm": 110, "yMm": 29, "widthMm": 68, "heightMm": 6,
+        "props": { "label": "Date", "binding": "invoice.date", "filter": "date", "style": { "align": "right" } } },
+      { "id": "inv-due", "type": "field", "xMm": 110, "yMm": 36, "widthMm": 68, "heightMm": 6,
+        "props": { "label": "Due", "binding": "invoice.dueDate", "filter": "date", "style": { "align": "right", "bold": true } } },
+      { "id": "inv-po", "type": "field", "xMm": 110, "yMm": 43, "widthMm": 68, "heightMm": 6,
+        "props": { "label": "PO", "binding": "invoice.poNumber", "style": { "align": "right" } } },
+      { "id": "header-rule", "type": "divider", "xMm": 0, "yMm": 59, "widthMm": 178, "heightMm": 1,
+        "props": { "thicknessPt": 0.75, "color": "#1A232C" } }
+    ]
+  },
+  "body": {
+    "blocks": [
+      { "id": "lines", "type": "table",
+        "props": {
+          "binding": "lines",
+          "emptyText": "No invoice lines.",
+          "columns": [
+            { "header": "Description", "binding": "description", "widthPct": 46 },
+            { "header": "Qty", "binding": "qty", "filter": "number", "align": "right", "widthPct": 10 },
+            { "header": "Unit price", "binding": "unitPrice", "filter": "money", "align": "right", "widthPct": 16 },
+            { "header": "VAT %", "binding": "vatRate", "align": "right", "widthPct": 10 },
+            { "header": "Amount", "binding": "amount", "filter": "money", "align": "right", "widthPct": 18 }
+          ]
+        } },
+      { "id": "net", "type": "field", "spaceBeforeMm": 4,
+        "props": { "label": "Net", "binding": "totals.net", "filter": "money", "style": { "align": "right" } } },
+      { "id": "vat", "type": "field",
+        "props": { "label": "VAT", "binding": "totals.vat", "filter": "money", "style": { "align": "right" } } },
+      { "id": "gross", "type": "field",
+        "props": { "label": "Total due", "binding": "totals.gross", "filter": "money", "style": { "align": "right", "bold": true, "fontSizePt": 12 } } },
+
+      { "id": "page-break-1", "type": "divider", "spaceBeforeMm": 100, "props": { "thicknessPt": 0.25, "color": "#FFFFFF" } },
+      { "id": "page-break-2", "type": "divider", "spaceBeforeMm": 100, "props": { "thicknessPt": 0.25, "color": "#FFFFFF" } },
+
+      { "id": "p2-title", "type": "text",
+        "props": { "text": "Payment instructions", "style": { "fontSizePt": 16, "bold": true, "font": "serif" } } },
+      { "id": "p2-intro", "type": "text", "spaceBeforeMm": 4,
+        "props": { "text": "Please pay {{totals.gross|money}} by {{invoice.dueDate|date}} using the details below, quoting the payment reference." } },
+      { "id": "p2-iban", "type": "field", "spaceBeforeMm": 5,
+        "props": { "label": "IBAN", "binding": "payment.iban" } },
+      { "id": "p2-bic", "type": "field",
+        "props": { "label": "BIC", "binding": "payment.bic" } },
+      { "id": "p2-ref", "type": "field",
+        "props": { "label": "Payment reference", "binding": "payment.reference", "style": { "bold": true } } },
+      { "id": "p2-rule", "type": "divider", "spaceBeforeMm": 8, "props": { "thicknessPt": 0.5, "color": "#C4CDD6" } },
+      { "id": "terms-title", "type": "text", "spaceBeforeMm": 5,
+        "props": { "text": "Terms", "style": { "fontSizePt": 12, "bold": true } } },
+      { "id": "terms", "type": "text", "spaceBeforeMm": 2,
+        "props": { "text": "{{payment.terms}}", "style": { "fontSizePt": 9 } } },
+      { "id": "contact", "type": "text", "spaceBeforeMm": 4,
+        "props": { "text": "Questions about this invoice: {{issuer.email}}", "style": { "fontSizePt": 9 } } },
+      { "id": "sign", "type": "signature", "spaceBeforeMm": 14, "props": { "label": "Authorised signatory" } }
+    ]
+  },
+  "footer": {
+    "heightMm": 10,
+    "elements": [
+      { "id": "footer-text", "type": "text", "xMm": 0, "yMm": 2, "widthMm": 178, "heightMm": 6,
+        "props": { "text": "{{issuer.name}} · VAT {{issuer.vatNumber}} · Invoice {{invoice.number}}", "style": { "fontSizePt": 8, "color": "#66727E", "align": "center" } } }
+    ]
+  }
+}

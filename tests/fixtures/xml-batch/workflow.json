@@ -1,0 +1,78 @@
+{
+  "_comment": "Synthetic sample. __INVOICE_TEMPLATE_ID__ and __NOTICE_TEMPLATE_ID__ are replaced with the ids of the two templates before the workflow is saved (tools/samples/load-xml-invoice-batch.ps1 does it). The folder paths are examples: change them to folders the Worker's service account can modify.",
+  "nodes": [
+    { "id": "trigger", "type": "folder-input", "title": "Invoice batch files", "position": { "x": 0, "y": 200 },
+      "config": { "sourcePath": "D:\\Verso\\xml-batch\\in", "pattern": "*.json", "includeSubfolders": false, "interval": "every-minute",
+                  "processedPath": "D:\\Verso\\xml-batch\\processed", "failedPath": "D:\\Verso\\xml-batch\\failed" } },
+
+    { "id": "parse", "type": "parse", "title": "Read the XML", "position": { "x": 260, "y": 200 },
+      "config": { "source": "content", "format": "xml", "encoding": "utf-8", "recordPath": "InvoiceBatch", "numbers": true } },
+
+    { "id": "loop", "type": "for-each", "title": "For each invoice", "position": { "x": 520, "y": 200 },
+      "config": { "field": "Invoice", "mode": "split", "item": "item", "eachLabel": "Each invoice", "emptyLabel": "No invoices" } },
+
+    { "id": "map", "type": "map-fields", "title": "Map to the invoice model", "position": { "x": 780, "y": 200 },
+      "config": { "rows": [
+        { "from": "lines.line", "to": "lines", "transform": "as-is" },
+        { "from": "invoice.date", "to": "invoice.date", "transform": "date" },
+        { "from": "invoice.dueDate", "to": "invoice.dueDate", "transform": "date" },
+        { "from": "customer.country", "to": "customer.country", "transform": "uppercase" } ] } },
+
+    { "id": "transform", "type": "transform", "title": "Defaults and labels", "position": { "x": 1040, "y": 200 },
+      "config": { "rules": [
+        { "target": "invoice.currency", "operation": "default", "a": "invoice.currency", "text": "EUR" },
+        { "target": "customer.label", "operation": "text", "text": "{{customer.name}} ({{customer.country}})" } ] } },
+
+    { "id": "validate", "type": "validate", "title": "Validate invoice data", "position": { "x": 1300, "y": 200 },
+      "config": {
+        "required": [ "invoice.number", "invoice.date", "customer.name", "customer.address", "customer.country", "lines", "totals.gross" ],
+        "types": [
+          { "field": "invoice.date", "type": "date" }, { "field": "invoice.dueDate", "type": "date" },
+          { "field": "totals.gross", "type": "number" }, { "field": "customer.email", "type": "email" },
+          { "field": "customer.vatNumber", "type": "eu-vat" }, { "field": "payment.iban", "type": "iban" } ] } },
+
+    { "id": "big", "type": "if-else", "title": "Over 10,000?", "position": { "x": 1560, "y": 200 },
+      "config": { "conditions": [ { "join": "and", "field": "totals.gross", "op": "greater-or-equal", "compare": "value", "value": "10000" } ],
+                  "yesLabel": "Over 10,000", "noLabel": "Standard" } },
+
+    { "id": "approve", "type": "approval", "title": "Approve large invoice", "position": { "x": 1820, "y": 60 },
+      "config": { "approver": "operator", "escalateAfter": "24h" } },
+
+    { "id": "pdf", "type": "generate-pdf", "title": "Invoice PDF (2 pages)", "position": { "x": 2080, "y": 200 },
+      "config": { "templateId": "__INVOICE_TEMPLATE_ID__", "templateVersion": "latest-published", "fileName": "{{invoice.number}}.pdf" } },
+
+    { "id": "foreign", "type": "if-else", "title": "Customer outside Cyprus?", "position": { "x": 2340, "y": 200 },
+      "config": { "conditions": [ { "join": "and", "field": "customer.country", "op": "not-equals", "compare": "value", "value": "CY" } ],
+                  "yesLabel": "Outside Cyprus", "noLabel": "Domestic" } },
+
+    { "id": "notice", "type": "generate-pdf", "title": "VAT notice PDF (2 pages)", "position": { "x": 2600, "y": 60 },
+      "config": { "templateId": "__NOTICE_TEMPLATE_ID__", "templateVersion": "latest-published", "fileName": "{{invoice.number}}-vat-notice.pdf" } },
+
+    { "id": "combine", "type": "combine-pdfs", "title": "Combine into one pack", "position": { "x": 2860, "y": 60 },
+      "config": { "order": "generated", "bookmarks": true, "fileName": "{{invoice.number}}-pack.pdf" } },
+
+    { "id": "archive-pack", "type": "archive", "title": "Archive pack", "position": { "x": 3120, "y": 60 },
+      "config": { "folderPattern": "invoice-packs/{{invoice.date|year}}/{{invoice.date|month}}", "retention": "10y",
+                  "metadata": [ { "key": "InvoiceNumber", "value": "{{invoice.number}}" }, { "key": "Customer", "value": "{{customer.name}}" }, { "key": "Country", "value": "{{customer.country}}" } ] } },
+
+    { "id": "archive", "type": "archive", "title": "Archive invoice", "position": { "x": 2600, "y": 340 },
+      "config": { "folderPattern": "invoices/{{invoice.date|year}}/{{invoice.date|month}}", "retention": "7y",
+                  "metadata": [ { "key": "InvoiceNumber", "value": "{{invoice.number}}" }, { "key": "Customer", "value": "{{customer.name}}" }, { "key": "Country", "value": "{{customer.country}}" } ] } }
+  ],
+  "edges": [
+    { "id": "e1",  "source": "trigger",   "sourcePort": "out",      "target": "parse",        "targetPort": "in" },
+    { "id": "e2",  "source": "parse",     "sourcePort": "success",  "target": "loop",         "targetPort": "in" },
+    { "id": "e3",  "source": "loop",      "sourcePort": "each",     "target": "map",          "targetPort": "in" },
+    { "id": "e4",  "source": "map",       "sourcePort": "success",  "target": "transform",    "targetPort": "in" },
+    { "id": "e5",  "source": "transform", "sourcePort": "success",  "target": "validate",     "targetPort": "in" },
+    { "id": "e6",  "source": "validate",  "sourcePort": "valid",    "target": "big",          "targetPort": "in" },
+    { "id": "e7",  "source": "big",       "sourcePort": "yes",      "target": "approve",      "targetPort": "in" },
+    { "id": "e8",  "source": "approve",   "sourcePort": "approved", "target": "pdf",          "targetPort": "in" },
+    { "id": "e9",  "source": "big",       "sourcePort": "no",       "target": "pdf",          "targetPort": "in" },
+    { "id": "e10", "source": "pdf",       "sourcePort": "success",  "target": "foreign",      "targetPort": "in" },
+    { "id": "e11", "source": "foreign",   "sourcePort": "yes",      "target": "notice",       "targetPort": "in" },
+    { "id": "e12", "source": "notice",    "sourcePort": "success",  "target": "combine",      "targetPort": "in" },
+    { "id": "e13", "source": "combine",   "sourcePort": "success",  "target": "archive-pack", "targetPort": "in" },
+    { "id": "e14", "source": "foreign",   "sourcePort": "no",       "target": "archive",      "targetPort": "in" }
+  ]
+}
