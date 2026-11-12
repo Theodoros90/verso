@@ -186,6 +186,21 @@ const nodeTypes: NodeTypeDto[] = [
     },
     defaults: { to: '{{customer.email}}', subject: 'Invoice {{invoice.number}}', body: 'Dear {{customer.name}},', attach: 'document' },
   },
+  {
+    type: 'print-queue', label: 'Print queue', category: 'output', description: 'Sends the PDF for printing and posting.',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'queued', label: 'Queued', required: true }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        queue: { type: 'string', title: 'Print queue', 'x-widget': 'mono' },
+        envelope: { type: 'string', title: 'Envelope', enum: ['dl-window', 'c4'], 'x-enumLabels': ['DL window', 'C4 large'] },
+        duplex: { type: 'boolean', title: 'Print double-sided' },
+      },
+      required: ['queue', 'envelope'],
+    },
+    defaults: { queue: '', envelope: 'dl-window', duplex: true },
+  },
 ]
 
 const definition = {
@@ -430,6 +445,24 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'send-email', config: { to: '{{customer.email}}', attach: 'none' } })
+  })
+
+  it('adds a Print queue step with its defaults, an Envelope choice and the double-sided switch', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Print queue' }))
+
+    expect(await screen.findByRole('heading', { name: 'Print queue', level: 3 })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Envelope/)).toHaveDisplayValue('DL window')
+    await user.type(screen.getByRole('textbox', { name: /Print queue/ }), 'cyprus-print-nightly')
+    await user.selectOptions(screen.getByLabelText(/Envelope/), 'c4')
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'print-queue', config: { queue: 'cyprus-print-nightly', envelope: 'c4', duplex: true } })
   })
 
   it('adds a Combine PDFs step with its defaults and a page order choice', async () => {

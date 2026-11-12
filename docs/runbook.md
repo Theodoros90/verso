@@ -212,6 +212,28 @@ The `send-email` step ([ADR 0006](adr/0006-send-email.md)) makes the **Worker** 
 5. **Check:** run a workflow with a Send email step to an internal address and look for the message; the step result in the execution history shows the message id (not the address).
 6. **Limits:** delivery is at-least-once (a duplicate is possible after a Worker stop or relay timeout); bounces are not tracked; attachments up to 10 MB.
 
+### B9. Print queue
+
+The `print-queue` step ([ADR 0007](adr/0007-print-queue.md)) makes the **Worker** write a PDF and a small job file into a spool folder that the print system (or the print house's import job) picks up. Workflow authors type only a queue **key**; the folder behind it is yours to set. Without a matching queue, a run reaching the step fails with `print.queue_unknown`.
+
+1. **Create one folder per queue** on a local disk or file server, for example `\\fileserver\verso\print\cyprus-print-nightly`. Never use a drive or share root.
+2. **Grant the Worker's service account** (for example the gMSA `CORP\svc-verso-worker$`) **Modify** on it (it creates and renames files there). No passwords are stored in Verso.
+3. **Configure the Worker** (`appsettings.Production.json` or service environment variables). Keys are 2 to 64 lower-case letters, digits and `-`; tell workflow authors the keys:
+
+   ```json
+   "Print": {
+     "Queues": {
+       "cyprus-print-nightly": { "Name": "Cyprus Print Services, nightly", "Path": "\\\\fileserver\\verso\\print\\cyprus-print-nightly" },
+       "limassol-inhouse":     { "Name": "In-house printer, Limassol",     "Path": "D:\\Verso\\print\\limassol" }
+     }
+   }
+   ```
+
+   Every Worker needs the same queues, because any Worker may run a step. Restart the Worker after changing them.
+4. **The print system's side.** For each job it finds `{jobId}.json` (written last, so the PDF is already complete). The JSON names the PDF (`file`) and says how to print it (`envelope`: `dl-window` or `c4`, `duplex`, `fileName`, `sha256`). It should delete both files after taking the job. Ignore files ending in `.tmp`.
+5. **Check:** run a workflow with a Print queue step and look in the folder for the two files; the step result in the execution history shows the job id.
+6. **Limits:** `queued` means the files are in the folder, nothing comes back from the print system; PDFs only; one copy.
+
 ---
 
 ## Part C. Operations

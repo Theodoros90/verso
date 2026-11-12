@@ -37,6 +37,24 @@ public static class DependencyInjection
         return services;
     }
 
+    /// <summary>Worker only: the print queues (<c>Print:Queues:{key}:Path</c>) of the Print queue step. The API never writes to them.</summary>
+    public static IServiceCollection AddVersoPrintSpooler(this IServiceCollection services, IConfiguration configuration)
+    {
+        var options = new Print.PrintOptions();
+        foreach (var child in configuration.GetSection(Print.PrintOptions.Section).GetSection(nameof(Print.PrintOptions.Queues)).GetChildren())
+        {
+            options.Queues[child.Key] = new Print.PrintQueueOptions
+            {
+                Name = child[nameof(Print.PrintQueueOptions.Name)] ?? "",
+                Path = child[nameof(Print.PrintQueueOptions.Path)] ?? "",
+            };
+        }
+
+        services.AddSingleton(Options.Create(options));
+        services.AddSingleton<IPrintSpooler, Print.FolderPrintSpooler>();
+        return services;
+    }
+
     /// <summary>Worker only: the SMTP relay of the Send email step (<c>Email</c> section). The API never sends mail.</summary>
     public static IServiceCollection AddVersoEmail(this IServiceCollection services, IConfiguration configuration)
     {

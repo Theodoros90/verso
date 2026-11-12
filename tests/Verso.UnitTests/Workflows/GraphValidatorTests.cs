@@ -378,7 +378,7 @@ public sealed class GraphValidatorTests
         foreach (var type in NodeCatalog.All)
         {
             var errors = ConfigSchemaValidator.Validate(type.ConfigSchema, type.Defaults);
-            // These need user input: generate-pdf and generate-docx a template, sftp-folder a host, merge-data its two key fields. (Folder input needs its paths typed; that is checked by the graph rules.)
+            // These need user input: generate-pdf and generate-docx a template, sftp-folder a host, merge-data its two key fields, print-queue the key of a configured queue. (Folder input needs its paths typed; that is checked by the graph rules.)
             // Everything else is valid out of the box.
             var expected = type.Type switch
             {
@@ -388,6 +388,7 @@ public sealed class GraphValidatorTests
                 NodeCatalog.IfElse => ["conditions[0].field"],
                 NodeCatalog.SwitchRoute => ["field"],
                 NodeCatalog.ForEach => ["field"],
+                NodeCatalog.PrintQueue => ["queue"],
                 _ => Array.Empty<string>(),
             };
             Assert.Equal(expected, errors.Select(e => e.Field).ToArray());

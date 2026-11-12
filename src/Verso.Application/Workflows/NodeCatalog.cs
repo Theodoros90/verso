@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -47,6 +47,7 @@ public static class NodeCatalog
     public const string GenerateEmail = "generate-email";
     public const string CombinePdfs = "combine-pdfs";
     public const string SendEmail = "send-email";
+    public const string PrintQueue = "print-queue";
     public const string Archive = "archive";
 
     public const string LatestPublished = "latest-published";
@@ -614,6 +615,20 @@ public static class NodeCatalog
               "required": ["to", "subject", "attach"] }
             """,
             """{ "to": "{{customer.email}}", "subject": "Invoice {{invoice.number}}", "body": "Dear {{customer.name}},\n\nPlease find your invoice {{invoice.number}} attached.", "attach": "document" }"""),
+
+        Node(PrintQueue, "Print queue", "output",
+            "Sends the generated PDF for printing and posting: the Worker writes it, with a small job file, into the spool folder of a print queue the administrator set up (ADR 0007). Nothing is sent to a printer directly.",
+            [In], [new PortDto("queued", "Queued", true)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "queue": { "type": "string", "title": "Print queue", "minLength": 2, "maxLength": 64, "pattern": "{{Escape(Executions.PrintQueues.KeyPattern)}}", "x-widget": "mono",
+                  "description": "The queue's key as the administrator configured it (Print:Queues), such as cyprus-print-nightly. Lower-case letters, digits and hyphens." },
+                "envelope": { "type": "string", "title": "Envelope", "enum": {{JsonSerializer.Serialize(Executions.PrintQueues.Envelopes.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Executions.PrintQueues.Envelopes.Values)}} },
+                "duplex": { "type": "boolean", "title": "Print double-sided" } },
+              "required": ["queue", "envelope"] }
+            """,
+            $$"""{ "queue": "", "envelope": "{{Executions.PrintQueues.DefaultEnvelope}}", "duplex": true }"""),
 
         Node(Archive, "Archive", "output",
             "Stores the document in the Verso archive with metadata and a retention period.",

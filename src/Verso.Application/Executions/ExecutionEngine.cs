@@ -31,7 +31,7 @@ public sealed class StepException(string code, string message, bool retryable) :
 /// Hangfire's own retry is off for this job); data problems end the run as Rejected.
 /// </summary>
 public sealed partial class ExecutionEngine(
-    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IPdfCombiner combiner, IEmailSender email, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
+    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IPdfCombiner combiner, IEmailSender email, IPrintSpooler spooler, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
 {
     /// <summary>Attempts per step (plan §6.3), within one execution attempt.</summary>
     public const int MaxStepAttempts = 3;
@@ -370,6 +370,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.GenerateEmail => GenerateEmailAsync(run, node, ct),
         NodeCatalog.CombinePdfs => CombinePdfsAsync(run, node, ct),
         NodeCatalog.SendEmail => SendEmailAsync(run, node, ct),
+        NodeCatalog.PrintQueue => PrintQueueAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
         _ => throw new StepException("node.unsupported", $"Node type '{node.Type}' can't run in this version of Verso.", retryable: false),
     };
@@ -733,6 +734,49 @@ public sealed partial class ExecutionEngine(
         }
 
         return new Outcome("sent", new { recipients = recipients.Count, attachment = attached, htmlBody = html is not null, messageId, warnings });
+    }
+
+    /// <summary>
+    /// Print queue (ADR 0007): writes the run's current PDF and a job file into the spool folder of the named queue. The job id is derived
+    /// from (execution, step, iteration), so a retry rewrites the same files rather than queueing a second job. The PDF is read back
+    /// from storage and its SHA-256 checked first. Only PDFs can be printed. The result holds the job id and queue key, no content.
+    /// </summary>
+    private async Task<Outcome> PrintQueueAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    {
+        string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        var queue = Text("queue");
+        if (!PrintQueues.IsValidKey(queue))
+        {
+            throw new StepException("print.queue_invalid", $"Step '{node.Title}' has no valid print queue key.", retryable: false);
+        }
+
+        var document = run.Document
+            ?? throw new StepException("print.no_document", "There is no generated document to print: put a Generate PDF step before Print queue on this path.", retryable: false);
+        if (document.ContentType != Document.PdfContentType)
+        {
+            throw new StepException("print.not_pdf", $"'{document.FileName}' isn't a PDF; only PDFs can be printed.", retryable: false);
+        }
+
+        var bytes = await store.ReadAsync(document.StorageKey, ct)
+            ?? throw new StepException("storage.missing", "The generated document is missing from storage.", retryable: true);
+        if (DocumentKeys.Sha256Hex(bytes) != document.Sha256)
+        {
+            throw new StepException("storage.integrity", "The stored document doesn't match its recorded SHA-256.", retryable: true);
+        }
+
+        var envelope = PrintQueues.Envelopes.ContainsKey(Text("envelope")) ? Text("envelope") : PrintQueues.DefaultEnvelope;
+        var duplex = !node.Config.TryGetProperty("duplex", out var d) || d.ValueKind != JsonValueKind.False;
+        var jobId = DocumentKeys.Sha256Hex(System.Text.Encoding.UTF8.GetBytes($"{run.Execution.Id:N}/{node.Id}/{run.Iteration}"))[..32];
+        try
+        {
+            await spooler.SpoolAsync(new PrintJob(jobId, queue, document.FileName, bytes, document.Sha256, envelope, duplex, clock.GetUtcNow()), ct);
+        }
+        catch (PrintSpoolException ex)
+        {
+            throw new StepException(ex.Code, ex.Message, ex.Retryable);
+        }
+
+        return new Outcome("queued", new { jobId, queue, fileName = document.FileName, sizeBytes = document.SizeBytes, envelope, duplex });
     }
 
     private async Task<Outcome> ArchiveAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
