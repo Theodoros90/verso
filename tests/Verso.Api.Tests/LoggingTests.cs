@@ -108,7 +108,7 @@ public sealed class LoggingTests(MigratedDatabaseFixture fixture) : IDisposable
     {
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var engine = new ExecutionEngine(
-            scope.ServiceProvider.GetRequiredService<VersoDbContext>(), new FakePdfPrinter(), new FakeDocxWriter(), store, new RecordingExecutionJobs(),
+            scope.ServiceProvider.GetRequiredService<VersoDbContext>(), new FakePdfPrinter(), new FakeDocxWriter(), new FakePdfCombiner(), store, new RecordingExecutionJobs(),
             TimeProvider.System, scope.ServiceProvider.GetRequiredService<ILogger<ExecutionEngine>>()); // logs go to the capture
         await engine.RunAsync(id, CancellationToken.None);
     }

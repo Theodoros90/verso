@@ -41,7 +41,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null, JsonNode? combineConfig = null)
     {
         var templateId = await PublishInvoiceTemplateAsync();
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -78,6 +78,25 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
             var document = definition["nodes"]!.AsArray().Single(n => (string?)n!["id"] == "pdf")!;
             document["type"] = "generate-email";
             document["config"] = emailConfig.DeepClone();
+        }
+
+        if (combineConfig is not null)
+        {
+            // trigger → validate → pdf → pdf2 → combine → archive: two PDFs from the same template, then one pack.
+            var nodes = definition["nodes"]!.AsArray();
+            var edges = definition["edges"]!.AsArray();
+            var pdf = nodes.Single(n => (string?)n!["id"] == "pdf")!;
+            var second = pdf.DeepClone();
+            second["id"] = "pdf2";
+            second["title"] = "Generate second PDF";
+            second["config"]!["fileName"] = "{{invoice.number}}-copy.pdf";
+            nodes.Add(second);
+            nodes.Add(JsonNode.Parse("""{ "id": "combine", "type": "combine-pdfs", "title": "Combine PDFs", "position": { "x": 1040, "y": 80 }, "config": {} }""")!);
+            nodes.Single(n => (string?)n!["id"] == "combine")!["config"] = combineConfig.DeepClone();
+            edges.Remove(edges.Single(e => (string?)e!["id"] == "e3"));
+            edges.Add(JsonNode.Parse("""{ "id": "e3", "source": "pdf", "sourcePort": "success", "target": "pdf2", "targetPort": "in" }"""));
+            edges.Add(JsonNode.Parse("""{ "id": "e4", "source": "pdf2", "sourcePort": "success", "target": "combine", "targetPort": "in" }"""));
+            edges.Add(JsonNode.Parse("""{ "id": "e5", "source": "combine", "sourcePort": "success", "target": "archive", "targetPort": "in" }"""));
         }
 
         definition["nodes"]![1]!["config"] = (rules ?? StandardRules).DeepClone();
@@ -235,11 +254,11 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     }
 
     /// <summary>One job run of the execution, as the Worker's Hangfire job would do it.</summary>
-    public async Task RunEngineAsync(Guid executionId, IPdfPrinter printer, IDocumentStore store, RecordingExecutionJobs jobs, IDocxWriter? docx = null, CancellationToken ct = default)
+    public async Task RunEngineAsync(Guid executionId, IPdfPrinter printer, IDocumentStore store, RecordingExecutionJobs jobs, IDocxWriter? docx = null, IPdfCombiner? combiner = null, CancellationToken ct = default)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VersoDbContext>();
-        await new ExecutionEngine(db, printer, docx ?? new FakeDocxWriter(), store, jobs, TimeProvider.System, NullLogger<ExecutionEngine>.Instance).RunAsync(executionId, ct);
+        await new ExecutionEngine(db, printer, docx ?? new FakeDocxWriter(), combiner ?? new FakePdfCombiner(), store, jobs, TimeProvider.System, NullLogger<ExecutionEngine>.Instance).RunAsync(executionId, ct);
     }
 
     public async Task<T> WithDbAsync<T>(Func<VersoDbContext, Task<T>> action)
@@ -335,6 +354,25 @@ internal sealed class RecordingExecutionJobs : IExecutionJobs
     public void Enqueue(Guid executionId) => Enqueued.Enqueue(executionId);
 
     public void Schedule(Guid executionId, TimeSpan delay) => Scheduled.Enqueue((executionId, delay));
+}
+
+/// <summary>Stands in for the PDF combiner: returns small unique bytes, and remembers the titles it was given, in order, and the bookmarks setting.</summary>
+internal sealed class FakePdfCombiner : IPdfCombiner
+{
+    private int _calls;
+
+    public int Calls => _calls;
+    public List<string> LastTitles { get; } = [];
+    public bool? LastBookmarks { get; private set; }
+
+    public CombinedPdf Combine(IReadOnlyList<PdfPart> parts, bool bookmarks)
+    {
+        var call = Interlocked.Increment(ref _calls);
+        LastTitles.Clear();
+        LastTitles.AddRange(parts.Select(p => p.Title));
+        LastBookmarks = bookmarks;
+        return new CombinedPdf(Encoding.ASCII.GetBytes($"%PDF-1.7\n% fake combined {call} parts={parts.Count} {Guid.NewGuid():N}\n%%EOF\n"), parts.Count);
+    }
 }
 
 /// <summary>Stands in for the Word writer: returns small unique bytes per call, and remembers what it was asked to write.</summary>

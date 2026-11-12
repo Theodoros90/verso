@@ -155,6 +155,21 @@ const nodeTypes: NodeTypeDto[] = [
     },
     defaults: { layout: 'invoice', subject: 'Invoice {{invoice.number}}', body: 'Dear {{customer.name}},', darkMode: true },
   },
+  {
+    type: 'combine-pdfs', label: 'Combine PDFs', category: 'doc', description: 'Joins the PDFs this run generated into one.',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'success', label: 'Success', required: true }, { id: 'failed', label: 'Failed', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        order: { type: 'string', title: 'Page order', enum: ['generated', 'reverse'], 'x-enumLabels': ['In the order generated', 'Last generated first'] },
+        bookmarks: { type: 'boolean', title: 'Add bookmarks' },
+        fileName: { type: 'string', title: 'Output filename pattern', 'x-widget': 'pattern' },
+      },
+      required: ['order', 'bookmarks', 'fileName'],
+    },
+    defaults: { order: 'generated', bookmarks: true, fileName: '{{invoice.number}}-pack.pdf' },
+  },
 ]
 
 const definition = {
@@ -365,6 +380,24 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'generate-email', config: { layout: 'invoice', body: 'Line one\n\nLine two', darkMode: true } })
+  })
+
+  it('adds a Combine PDFs step with its defaults and a page order choice', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Combine PDFs' }))
+
+    expect(await screen.findByRole('heading', { name: 'Combine PDFs', level: 3 })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Page order/)).toHaveDisplayValue('In the order generated')
+    expect(screen.getByRole('option', { name: 'Last generated first' })).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText(/Page order/), 'reverse')
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'combine-pdfs', config: { order: 'reverse', bookmarks: true, fileName: '{{invoice.number}}-pack.pdf' } })
   })
 
   it('shows the server issues when publishing is refused', async () => {

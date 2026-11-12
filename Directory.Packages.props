@@ -32,6 +32,8 @@
     <PackageVersion Include="Microsoft.Playwright" Version="1.64.1" />
     <!-- DOCX output (Worker only; MIT): Open XML SDK, approved 2026-11-12 -->
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
+    <!-- Combine PDFs (Worker only): PDFsharp 6.2.4 is the last MIT release; 6.5.0 and 7.x are AGPL-3.0 and must not be used. Approved 2026-11-12, ADR 0005 -->
+    <PackageVersion Include="PDFsharp" Version="6.2.4" />
     <!-- Tests -->
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.14" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -45,6 +45,7 @@ public static class NodeCatalog
     public const string GeneratePdf = "generate-pdf";
     public const string GenerateDocx = "generate-docx";
     public const string GenerateEmail = "generate-email";
+    public const string CombinePdfs = "combine-pdfs";
     public const string Archive = "archive";
 
     public const string LatestPublished = "latest-published";
@@ -53,7 +54,14 @@ public static class NodeCatalog
     public static bool IsDocumentStep(string type) => type is GeneratePdf or GenerateDocx;
 
     /// <summary>Every step that leaves a document for a later Archive step: the template steps and the HTML email (which needs no template).</summary>
-    public static bool ProducesDocument(string type) => IsDocumentStep(type) || type == GenerateEmail;
+    public static bool ProducesDocument(string type) => IsDocumentStep(type) || type is GenerateEmail or CombinePdfs;
+
+    /// <summary>Page order of a Combine PDFs step: stored keys and labels.</summary>
+    public static readonly IReadOnlyDictionary<string, string> CombineOrders = new Dictionary<string, string>
+    {
+        ["generated"] = "In the order generated",
+        ["reverse"] = "Last generated first",
+    };
 
     /// <summary>Presets of the Generate HTML email step: stored keys and their labels.</summary>
     public static readonly IReadOnlyDictionary<string, string> EmailLayouts = new Dictionary<string, string>
@@ -565,6 +573,21 @@ public static class NodeCatalog
               "required": ["layout", "subject", "body", "fileName", "darkMode"] }
             """,
             """{ "layout": "invoice", "subject": "Invoice {{invoice.number}}", "preheader": "", "body": "Dear {{customer.name}},\n\nYour invoice {{invoice.number}} is ready.", "buttonLabel": "", "buttonUrl": "", "footer": "", "fileName": "{{invoice.number}}.html", "darkMode": true }"""),
+
+        Node(CombinePdfs, "Combine PDFs", "doc",
+            "Joins the PDFs this run has already generated into one PDF, with optional bookmarks. Documents made by Generate PDF steps earlier on the path (and, in a For each loop, for the same item) are used.",
+            [In], [new PortDto("success", "Success", true), new PortDto("failed", "Failed", false)],
+            $$$"""
+            { "type": "object",
+              "properties": {
+                "order": { "type": "string", "title": "Page order", "enum": {{{JsonSerializer.Serialize(CombineOrders.Keys)}}}, "x-enumLabels": {{{JsonSerializer.Serialize(CombineOrders.Values)}}} },
+                "bookmarks": { "type": "boolean", "title": "Add bookmarks",
+                  "description": "One bookmark per combined document, named after its file." },
+                "fileName": { "type": "string", "title": "Output filename pattern", "minLength": 1, "maxLength": 200, "x-widget": "pattern",
+                  "description": "Use fields such as {{invoice.number}}." } },
+              "required": ["order", "bookmarks", "fileName"] }
+            """,
+            """{ "order": "generated", "bookmarks": true, "fileName": "{{invoice.number}}-pack.pdf" }"""),
 
         Node(Archive, "Archive", "output",
             "Stores the document in the Verso archive with metadata and a retention period.",

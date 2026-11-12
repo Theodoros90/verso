@@ -5,6 +5,7 @@ using Verso.Infrastructure.Documents;
 using Verso.Infrastructure.Jobs;
 using Verso.Rendering;
 using Verso.Rendering.Docx;
+using Verso.Rendering.PdfCombine;
 using Verso.Rendering.Pdf;
 using Verso.Worker;
 
@@ -25,6 +26,9 @@ builder.Services.AddHostedService<PdfPrinterWarmUp>();
 
 // Word output: plain text blocks → .docx (Open XML SDK; no browser, no scripting).
 builder.Services.AddSingleton<IDocxWriter, DocxWriter>();
+
+// Combine PDFs: joins PDFs Verso generated itself (PDFsharp; no browser, no scripting).
+builder.Services.AddSingleton<IPdfCombiner, PdfSharpCombiner>();
 
 // Archived documents (local file system in the MVP; Documents:RootPath). Only the Worker writes.
 builder.Services.AddVersoDocumentStore(builder.Configuration);

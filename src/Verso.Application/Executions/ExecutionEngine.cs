@@ -31,7 +31,7 @@ public sealed class StepException(string code, string message, bool retryable) :
 /// Hangfire's own retry is off for this job); data problems end the run as Rejected.
 /// </summary>
 public sealed partial class ExecutionEngine(
-    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
+    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IPdfCombiner combiner, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
 {
     /// <summary>Attempts per step (plan §6.3), within one execution attempt.</summary>
     public const int MaxStepAttempts = 3;
@@ -251,7 +251,7 @@ public sealed partial class ExecutionEngine(
     /// <summary>Whether a path ending at this step by this output ends the run as Rejected (see <see cref="FinishAsync"/>).</summary>
     private static bool Rejects(string nodeType, string? port) => (nodeType, port) is
         (NodeCatalog.Validate, "invalid") or (NodeCatalog.ParseContent, "failed") or (NodeCatalog.MapFields, "failed")
-        or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail, "failed")
+        or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail or NodeCatalog.CombinePdfs, "failed")
         or (NodeCatalog.ApprovalStep, Approval.Rejected);
 
     private sealed record Outcome(string? Port, object? Result, Func<Task>? AfterSave = null);
@@ -368,6 +368,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
         NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx => GenerateDocumentAsync(run, node, ct),
         NodeCatalog.GenerateEmail => GenerateEmailAsync(run, node, ct),
+        NodeCatalog.CombinePdfs => CombinePdfsAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
         _ => throw new StepException("node.unsupported", $"Node type '{node.Type}' can't run in this version of Verso.", retryable: false),
     };
@@ -584,6 +585,75 @@ public sealed partial class ExecutionEngine(
         });
     }
 
+    /// <summary>
+    /// Combine PDFs: joins the PDFs this run generated earlier (same execution and, in a For each loop, same item; not this step's own)
+    /// into one new PDF. Each part is read back from storage and checked against its recorded SHA-256 first. Fewer than two PDFs is a
+    /// workflow problem found while running: port 'failed', the run ends Rejected unless the workflow handles it. No template is involved.
+    /// </summary>
+    private async Task<Outcome> CombinePdfsAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    {
+        var execution = run.Execution;
+        if (await FindDocumentAsync(execution.Id, node.Id, run.Iteration, ct) is { } existing)
+        {
+            run.Document = existing;
+            return new Outcome("success", DocumentResult(existing, []));
+        }
+
+        var sources = await db.Documents
+            .Where(d => d.ExecutionId == execution.Id && d.Iteration == run.Iteration && d.NodeId != node.Id && d.ContentType == Document.PdfContentType)
+            .OrderBy(d => d.CreatedAt).ThenBy(d => d.Id)
+            .ToListAsync(ct);
+        if (sources.Count < 2)
+        {
+            return new Outcome("failed", new { issues = new[] { new { code = "combine.not_enough_documents", message = $"Found {sources.Count} PDF(s) generated earlier in this run; at least two are needed." } } });
+        }
+
+        if (node.Config.TryGetProperty("order", out var order) && order.ValueKind == JsonValueKind.String && order.GetString() == "reverse")
+        {
+            sources.Reverse();
+        }
+
+        var parts = new List<PdfPart>(sources.Count);
+        foreach (var source in sources)
+        {
+            var bytes = await store.ReadAsync(source.StorageKey, ct)
+                ?? throw new StepException("combine.source_missing", $"The stored file of '{source.FileName}' is missing.", retryable: true);
+            if (DocumentKeys.Sha256Hex(bytes) != source.Sha256)
+            {
+                throw new StepException("storage.integrity", $"The stored file of '{source.FileName}' doesn't match its recorded SHA-256.", retryable: true);
+            }
+
+            parts.Add(new PdfPart(source.FileName, bytes));
+        }
+
+        var bookmarks = !node.Config.TryGetProperty("bookmarks", out var b) || b.ValueKind != JsonValueKind.False;
+        CombinedPdf combined;
+        try
+        {
+            combined = combiner.Combine(parts, bookmarks);
+        }
+        catch (PdfCombineException ex)
+        {
+            throw new StepException("combine.invalid_pdf", ex.Message, retryable: false);
+        }
+
+        var key = DocumentKeys.Staging(execution.Id, node.Id, run.Iteration, DocumentNames.Pdf);
+        await store.WriteAsync(key, combined.Content, ct);
+
+        var pattern = PatternText.Resolve(node.Config.GetProperty("fileName").GetString()!, run.Data);
+        var document = Document.Generate(
+            execution.Id, node.Id, templateVersionId: null, DocumentNames.FileName(pattern.Text, DocumentNames.Pdf), combined.Content.LongLength,
+            DocumentKeys.Sha256Hex(combined.Content), store.Provider, key, clock.GetUtcNow(), iteration: run.Iteration, contentType: Document.PdfContentType);
+        db.Documents.Add(document);
+        run.Document = document;
+        return new Outcome("success", new
+        {
+            documentId = document.Id, fileName = document.FileName, sizeBytes = document.SizeBytes, sha256 = document.Sha256,
+            documents = sources.Count, pages = combined.PageCount,
+            warnings = pattern.Missing.Select(p => $"fileName: no value for '{p}'"),
+        });
+    }
+
     private async Task<Outcome> ArchiveAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
     {
         var document = run.Document
@@ -713,6 +783,10 @@ public sealed partial class ExecutionEngine(
                 break;
             case (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail, "failed"):
                 execution.Reject("document.data_incomplete", $"The data can't produce a complete document in step '{last.Title}' (see its issues).", now);
+                Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
+                break;
+            case (NodeCatalog.CombinePdfs, "failed"):
+                execution.Reject("combine.not_enough_documents", $"Step '{last.Title}' found fewer than two PDFs to combine (see its issues).", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;
             default:

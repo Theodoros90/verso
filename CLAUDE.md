@@ -18,7 +18,7 @@ Bank-focused document-generation and workflow platform. MVP: maintain an invoice
 **M7: Execution engine** — accepted 2026-11-10.
 **M8: Execution history and live progress** — accepted 2026-11-10.
 **M9: MVP hardening** — accepted 2026-11-10 (full `tools/ci.ps1` run passed). **MVP complete (M1–M9).**
-Post-MVP: **Generate HTML email step** (2026-11-12, ADR 0004) implemented; awaiting acceptance. **Generate DOCX step** (2026-11-12, ADR 0003) implemented; awaiting acceptance. **Approval step** (2026-11-12, ADR 0002) implemented; awaiting acceptance. **Folder input** (2026-11-11, ADR 0001) implemented; awaiting acceptance. No next milestone agreed yet; post-MVP items are listed under "Not in MVP" in plan §9 and the open decisions in plan §10.
+Post-MVP: **Combine PDFs step** (2026-11-12, ADR 0005) implemented; awaiting acceptance. **Generate HTML email step** (2026-11-12, ADR 0004) implemented; awaiting acceptance. **Generate DOCX step** (2026-11-12, ADR 0003) implemented; awaiting acceptance. **Approval step** (2026-11-12, ADR 0002) implemented; awaiting acceptance. **Folder input** (2026-11-11, ADR 0001) implemented; awaiting acceptance. No next milestone agreed yet; post-MVP items are listed under "Not in MVP" in plan §9 and the open decisions in plan §10.
 Update this line when a milestone is accepted and the next one is agreed.
 
 ## Commands
@@ -44,6 +44,7 @@ powershell -ExecutionPolicy Bypass -File src/Verso.Worker/bin/Debug/net10.0/play
 - Real-time: SignalR (hub hosted in the API)
 - PDF: Playwright for .NET + Chromium, in the Worker only, installed from an offline bundle
 - DOCX: DocumentFormat.OpenXml (Open XML SDK, MIT) in `Verso.Rendering.Docx`, Worker only (approved 2026-11-12, ADR 0003)
+- Combine PDFs: PDFsharp **6.2.4** (MIT; the last MIT release, 6.5.0 and 7.x are AGPL-3.0 and must not be used) in `Verso.Rendering.PdfCombine`, Worker only (approved 2026-11-12, ADR 0005)
 - Frontend: React 19 + TypeScript 5.x + Vite, @xyflow/react (React Flow), Tailwind CSS 4 + shadcn/ui (radix-ui, lucide-react, class-variance-authority, clsx, tailwind-merge, tw-animate-css), react-router, @fontsource fonts (self-hosted); Node 22 LTS ≥ 22.22, used for builds only
 - Frontend tests: Vitest, React Testing Library (+ user-event, jest-dom), jsdom
 - Backend tests: xUnit, Microsoft.AspNetCore.Mvc.Testing, LocalDB for integration tests; PdfPig (PDF text extraction, test projects only; approved 2026-11-09)
@@ -59,7 +60,7 @@ Ask before adding a dependency or changing a version not listed here.
 ## Architecture rules
 
 - Modular monolith, not microservices. Two processes: `Verso.Api` and `Verso.Worker`. They share code and the database, and nothing else (no direct network calls between them).
-- Layered projects: `Verso.Domain` → nothing; `Verso.Rendering` → nothing; `Verso.Rendering.Pdf` → Rendering + Playwright; `Verso.Rendering.Docx` → Rendering + Open XML SDK; `Verso.Application` → Domain + Rendering; `Verso.Infrastructure` → Application (+ Hangfire); `Verso.Api` and `Verso.Worker` → Application + Infrastructure; only `Verso.Worker` also references `Verso.Rendering.Pdf` and `Verso.Rendering.Docx`. Frontend in `src/verso-web`. Keep it lightweight: no abstraction or new project without a concrete need.
+- Layered projects: `Verso.Domain` → nothing; `Verso.Rendering` → nothing; `Verso.Rendering.Pdf` → Rendering + Playwright; `Verso.Rendering.Docx` → Rendering + Open XML SDK; `Verso.Rendering.PdfCombine` → Rendering + PDFsharp; `Verso.Application` → Domain + Rendering; `Verso.Infrastructure` → Application (+ Hangfire); `Verso.Api` and `Verso.Worker` → Application + Infrastructure; only `Verso.Worker` also references `Verso.Rendering.Pdf`, `Verso.Rendering.Docx` and `Verso.Rendering.PdfCombine`. Frontend in `src/verso-web`. Keep it lightweight: no abstraction or new project without a concrete need.
 - Modules (Templates, Workflows, Executions, Documents, Audit, Ingestion) are folders inside the layered projects. Module folders don't reach into each other's internals. One `VersoDbContext`; each module's tables go in its own SQL schema (`Schemas` class); no cross-schema foreign keys.
 - Template designer and workflow designer are separate modules and screens. Workflows reference template **versions**; they never embed template content.
 - Rendering lives in `Verso.Rendering` (layout JSON + data → HTML; no dependencies, enforced by RendererPurityTests). Only the Worker uses Playwright/Chromium. The API never runs Chromium. PDFs are printed from the renderer's `Print` parts (body + header/footer templates), not from the preview HTML.

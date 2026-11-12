@@ -253,6 +253,7 @@ public static class GraphValidator
         (NodeCatalog.IfElse, "yes") => "Records that meet the condition end the run here.",
         (NodeCatalog.IfElse, "no") => "Records that don't meet the condition end the run here.",
         (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail, "failed") => "Data that can't make a complete document will end the run as Rejected.",
+        (NodeCatalog.CombinePdfs, "failed") => "A run with fewer than two PDFs to combine ends here as Rejected.",
         _ => $"'{port.Label}' isn't connected; the run ends there.",
     };
 
