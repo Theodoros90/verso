@@ -2286,197 +2286,10 @@
           }
         }
       }
-    },
-    "/api/v1/admin/folder-locations": {
-      "get": {
-        "tags": [
-          "Administration"
-        ],
-        "operationId": "ListAdminFolderLocations",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AdminFolderLocationDto"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/admin/folder-locations/{key}": {
-      "put": {
-        "tags": [
-          "Administration"
-        ],
-        "operationId": "SaveAdminFolderLocation",
-        "parameters": [
-          {
-            "name": "key",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "oneOf": [
-                  {
-                    "type": "null"
-                  },
-                  {
-                    "$ref": "#/components/schemas/SaveFolderLocationRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminFolderLocationDto"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem\u002Bjson": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "content": {
-              "application/problem\u002Bjson": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "Administration"
-        ],
-        "operationId": "RemoveAdminFolderLocation",
-        "parameters": [
-          {
-            "name": "key",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "No Content"
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem\u002Bjson": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "content": {
-              "application/problem\u002Bjson": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
     "schemas": {
-      "AdminFolderLocationDto": {
-        "required": [
-          "key",
-          "name",
-          "path",
-          "input",
-          "output",
-          "managed",
-          "enabled",
-          "problem",
-          "updatedAt",
-          "updatedBy"
-        ],
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "path": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "input": {
-            "type": "boolean"
-          },
-          "output": {
-            "type": "boolean"
-          },
-          "managed": {
-            "type": "boolean"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "problem": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedBy": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
       "ArchivedDocumentDto": {
         "required": [
           "id",
@@ -4332,41 +4145,6 @@
           }
         }
       },
-      "SaveFolderLocationRequest": {
-        "required": [
-          "name",
-          "path",
-          "input",
-          "output"
-        ],
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "path": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "input": {
-            "type": [
-              "null",
-              "boolean"
-            ]
-          },
-          "output": {
-            "type": [
-              "null",
-              "boolean"
-            ]
-          }
-        }
-      },
       "SaveWorkflowDraftRequest": {
         "required": [
           "definition"
@@ -5014,9 +4792,6 @@
     },
     {
       "name": "Audit"
-    },
-    {
-      "name": "Administration"
     }
   ]
 }

@@ -287,78 +287,12 @@ public sealed class LocalFolderAccessTests : IDisposable
     }
 
     [Fact]
-    public void ManagedLocations_JoinTheConfiguredOnes_AndCanBeReplaced()
-    {
-        var managedPath = Path.Combine(_root, "managed");
-        Directory.CreateDirectory(managedPath);
-        _folders.SetManagedLocations([new ManagedFolderPath("admin-inbound", "Admin inbound", managedPath, Input: true, Output: false)]);
-
-        var location = _folders.Locations.Single(l => l.Key == "admin-inbound");
-        Assert.True(location.Managed);
-        Assert.Null(location.Problem);
-        Assert.False(_folders.Locations.Single(l => l.Key == "in").Managed);
-        Assert.All(_folders.Test(new FolderRef("admin-inbound", ""), FolderAccessMode.Input), c => Assert.True(c.Ok, c.Message));
-
-        _folders.SetManagedLocations([]); // removed by the administrator
-        Assert.DoesNotContain(_folders.Locations, l => l.Key == "admin-inbound");
-        Assert.Equal(FolderErrors.UnknownLocation, Assert.Throws<FolderException>(() =>
-            _folders.List(new FolderRef("admin-inbound", ""), "*", false, TimeSpan.Zero, DateTimeOffset.UtcNow, 1)).Code);
-    }
-
-    [Fact]
-    public void ManagedLocation_CannotReplaceAConfiguredKey()
-    {
-        _folders.SetManagedLocations([new ManagedFolderPath("in", "Hijack", Path.Combine(_root, "out"), Input: true, Output: true)]);
-
-        var location = _folders.Locations.Single(l => l.Key == "in");
-        Assert.False(location.Managed);
-        Assert.Equal("Inbound", location.Name);
-    }
-
-    [Fact]
-    public void ManagedLocation_WithABadPath_IsReportedAsAProblem()
-    {
-        _folders.SetManagedLocations([new ManagedFolderPath("bad-path", "Bad", @"relative\folder", Input: true, Output: false)]);
-
-        var location = _folders.Locations.Single(l => l.Key == "bad-path");
-        Assert.NotNull(location.Problem);
-        Assert.Equal(FolderErrors.Misconfigured, Assert.Throws<FolderException>(() =>
-            _folders.List(new FolderRef("bad-path", ""), "*", false, TimeSpan.Zero, DateTimeOffset.UtcNow, 1)).Code);
-    }
-
-    [Fact]
-    public void AllowedRoots_LimitOnlyManagedLocations()
-    {
-        var allowed = Path.Combine(_root, "allowed");
-        var elsewhere = Path.Combine(_root, "elsewhere");
-        Directory.CreateDirectory(Path.Combine(allowed, "ap"));
-        Directory.CreateDirectory(elsewhere);
-        var folders = new LocalFolderAccess(Options.Create(new FolderAccessOptions
-        {
-            AllowedRoots = [allowed],
-            Locations = new() { ["configured"] = new() { Name = "Configured", Path = elsewhere, Input = true } },
-        }));
-
-        folders.SetManagedLocations(
-        [
-            new ManagedFolderPath("inside-root", "Inside", Path.Combine(allowed, "ap"), Input: true, Output: false),
-            new ManagedFolderPath("outside-root", "Outside", elsewhere, Input: true, Output: false),
-            new ManagedFolderPath("sibling-root", "Sibling", allowed + "-other", Input: true, Output: false), // shares the name prefix only
-        ]);
-
-        Assert.Null(folders.Locations.Single(l => l.Key == "inside-root").Problem);
-        Assert.Contains("AllowedRoots", folders.Locations.Single(l => l.Key == "outside-root").Problem, StringComparison.Ordinal);
-        Assert.Contains("AllowedRoots", folders.Locations.Single(l => l.Key == "sibling-root").Problem, StringComparison.Ordinal);
-        Assert.Null(folders.Locations.Single(l => l.Key == "configured").Problem); // the server's own configuration isn't restricted
-    }
-
-    [Fact]
     public void TypedPaths_Resolve_ButAreNotListedAsLocations_AndMessagesShowThePath()
     {
         var typed = Path.Combine(_root, "typed");
         Directory.CreateDirectory(typed);
         var key = Verso.Application.Ingestion.FolderPaths.KeyForPath(typed);
-        _folders.SetTypedPaths([new ManagedFolderPath(key, typed, typed, Input: true, Output: false)]);
+        _folders.SetTypedPaths([new FolderPathEntry(key, typed, typed, Input: true, Output: false)]);
 
         Assert.DoesNotContain(_folders.Locations, l => l.Key == key); // named locations only
         Write("typed/a.json");
@@ -380,8 +314,8 @@ public sealed class LocalFolderAccessTests : IDisposable
         var outOnly = Verso.Application.Ingestion.FolderPaths.KeyForPath(wrongPurpose);
         _folders.SetTypedPaths(
         [
-            new ManagedFolderPath(bad, @"relative\folder", @"relative\folder", Input: true, Output: false),
-            new ManagedFolderPath(outOnly, wrongPurpose, wrongPurpose, Input: false, Output: true),
+            new FolderPathEntry(bad, @"relative\folder", @"relative\folder", Input: true, Output: false),
+            new FolderPathEntry(outOnly, wrongPurpose, wrongPurpose, Input: false, Output: true),
         ]);
 
         Assert.Equal(FolderErrors.Misconfigured, Assert.Throws<FolderException>(() =>
@@ -403,8 +337,8 @@ public sealed class LocalFolderAccessTests : IDisposable
         var outside = Verso.Application.Ingestion.FolderPaths.KeyForPath(elsewhere);
         folders.SetTypedPaths(
         [
-            new ManagedFolderPath(inside, Path.Combine(allowed, "ap"), Path.Combine(allowed, "ap"), Input: true, Output: false),
-            new ManagedFolderPath(outside, elsewhere, elsewhere, Input: true, Output: false),
+            new FolderPathEntry(inside, Path.Combine(allowed, "ap"), Path.Combine(allowed, "ap"), Input: true, Output: false),
+            new FolderPathEntry(outside, elsewhere, elsewhere, Input: true, Output: false),
         ]);
 
         Assert.Empty(folders.List(new FolderRef(inside, ""), "*", false, TimeSpan.Zero, DateTimeOffset.UtcNow, 1));

@@ -133,7 +133,6 @@ app.MapExecutionEndpoints();
 app.MapDocumentEndpoints();
 app.MapAuditEndpoints();
 app.MapFolderInputEndpoints();
-app.MapFolderLocationAdminEndpoints();
 app.MapHub<ExecutionsHub>(ExecutionsHub.Path).RequireAuthorization(Policies.Read);
 
 app.Run();

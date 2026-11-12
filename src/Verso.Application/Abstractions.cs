@@ -22,7 +22,6 @@ public interface IVersoDbContext
     DbSet<Document> Documents { get; }
     DbSet<ArchiveRecord> ArchiveRecords { get; }
     DbSet<FolderLocation> FolderLocations { get; }
-    DbSet<ManagedFolderLocation> ManagedFolderLocations { get; }
     DbSet<TypedFolderPath> TypedFolderPaths { get; }
     DbSet<FolderWatch> FolderWatches { get; }
     DbSet<FolderFile> FolderFiles { get; }

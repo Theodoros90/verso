@@ -26,22 +26,18 @@ public sealed class FolderLocation
     /// <summary>Why it is disabled (sanitized: never a path).</summary>
     public string? Problem { get; private set; }
 
-    /// <summary>True when an administrator manages it in Verso (see <see cref="ManagedFolderLocation"/>); false when it is set in the Worker's configuration.</summary>
-    public bool Managed { get; private set; }
-
     public string ReportedBy { get; private set; } = "";
     public DateTimeOffset UpdatedAt { get; private set; }
 
-    public static FolderLocation Report(string key, string name, bool allowInput, bool allowOutput, bool managed, string? problem, string reportedBy, DateTimeOffset now)
+    public static FolderLocation Report(string key, string name, bool allowInput, bool allowOutput, string? problem, string reportedBy, DateTimeOffset now)
     {
         var location = new FolderLocation { Key = key };
-        location.Update(name, allowInput, allowOutput, managed, problem, reportedBy, now);
+        location.Update(name, allowInput, allowOutput, problem, reportedBy, now);
         return location;
     }
 
-    public void Update(string name, bool allowInput, bool allowOutput, bool managed, string? problem, string reportedBy, DateTimeOffset now)
+    public void Update(string name, bool allowInput, bool allowOutput, string? problem, string reportedBy, DateTimeOffset now)
     {
-        Managed = managed;
         Name = name;
         AllowInput = allowInput;
         AllowOutput = allowOutput;
@@ -53,7 +49,7 @@ public sealed class FolderLocation
 
     /// <summary>No longer in the Worker's configuration. Kept (not deleted) so workflows that name it show why it stopped.</summary>
     public void Withdraw(string reason, string reportedBy, DateTimeOffset now) =>
-        Update(Name, AllowInput, AllowOutput, Managed, reason, reportedBy, now);
+        Update(Name, AllowInput, AllowOutput, reason, reportedBy, now);
 
     internal static string? Truncate(string? text, int max) => text is { } t && t.Length > max ? t[..max] : text;
 }
@@ -390,56 +386,5 @@ public sealed class FolderAccessTest
         {
             throw new DomainRuleException("folder_access_test.finished", $"Access test {Id} is already {Status}.");
         }
-    }
-}
-
-/// <summary>
-/// A folder location an administrator manages in Verso (Administration screen), as an alternative to listing it in the
-/// Worker's configuration. Only this record holds the path; the Worker reads it, validates it as its own service
-/// identity and reports the outcome in <see cref="FolderLocation"/>. Never deleted: a removed location is marked, so
-/// workflows and audit entries that name it stay explainable.
-/// </summary>
-public sealed class ManagedFolderLocation
-{
-    public const int MaxPathLength = 400;
-
-    private ManagedFolderLocation() { } // EF Core
-
-    public string Key { get; private set; } = "";
-    public string Name { get; private set; } = "";
-
-    /// <summary>Absolute path as the Worker's operating system sees it (local folder, UNC share or mount).</summary>
-    public string Path { get; private set; } = "";
-
-    public bool AllowInput { get; private set; }
-    public bool AllowOutput { get; private set; }
-    public bool Removed { get; private set; }
-    public string UpdatedBy { get; private set; } = "";
-    public DateTimeOffset UpdatedAt { get; private set; }
-
-    public static ManagedFolderLocation Create(string key, string name, string path, bool allowInput, bool allowOutput, string actor, DateTimeOffset now)
-    {
-        var location = new ManagedFolderLocation { Key = key };
-        location.Save(name, path, allowInput, allowOutput, actor, now);
-        return location;
-    }
-
-    /// <summary>Creates or edits it (also brings a removed location back).</summary>
-    public void Save(string name, string path, bool allowInput, bool allowOutput, string actor, DateTimeOffset now)
-    {
-        Name = name;
-        Path = path;
-        AllowInput = allowInput;
-        AllowOutput = allowOutput;
-        Removed = false;
-        UpdatedBy = actor;
-        UpdatedAt = now;
-    }
-
-    public void Remove(string actor, DateTimeOffset now)
-    {
-        Removed = true;
-        UpdatedBy = actor;
-        UpdatedAt = now;
     }
 }

@@ -71,17 +71,13 @@ public sealed partial class FolderIngestion(
     }
 
     /// <summary>
-    /// Brings the catalog of approved locations in line with this Worker: its configuration plus the locations
-    /// administrators manage in Verso (whose paths are handed to the file-system adapter first, so they are checked
-    /// exactly like configured ones). The catalog holds keys, names, purposes and problems only; never paths.
+    /// Brings the catalog of approved locations in line with this Worker's configuration (and loads the paths typed
+    /// into steps). The catalog holds keys, names, purposes and problems only; never paths.
     /// </summary>
     public async Task SyncLocationsAsync(CancellationToken ct)
     {
         var now = clock.GetUtcNow();
-        var managed = await db.ManagedFolderLocations.AsNoTracking().ToListAsync(ct);
-        folders.SetManagedLocations([.. managed.Where(m => !m.Removed).Select(m => new ManagedFolderPath(m.Key, m.Name, m.Path, m.AllowInput, m.AllowOutput))]);
         await FolderPathRegistry.LoadIntoAsync(db, folders, ct); // paths typed into steps
-        var removed = managed.Where(m => m.Removed).Select(m => m.Key).ToHashSet(StringComparer.Ordinal);
 
         var configured = folders.Locations.ToDictionary(l => l.Key, StringComparer.Ordinal);
         var stored = await db.FolderLocations.ToListAsync(ct);
@@ -89,21 +85,21 @@ public sealed partial class FolderIngestion(
         {
             if (configured.Remove(location.Key, out var c))
             {
-                if (location.Name != c.Name || location.AllowInput != c.Input || location.AllowOutput != c.Output || location.Managed != c.Managed
+                if (location.Name != c.Name || location.AllowInput != c.Input || location.AllowOutput != c.Output
                     || location.Problem != c.Problem || !location.Enabled && c.Problem is null)
                 {
-                    location.Update(c.Name, c.Input, c.Output, c.Managed, c.Problem, Worker, now);
+                    location.Update(c.Name, c.Input, c.Output, c.Problem, Worker, now);
                 }
             }
             else if (location.Enabled)
             {
-                location.Withdraw(removed.Contains(location.Key) ? "Removed by an administrator." : "Not configured on the Worker any more.", Worker, now);
+                location.Withdraw("Not configured on the Worker any more.", Worker, now);
             }
         }
 
         foreach (var c in configured.Values)
         {
-            db.FolderLocations.Add(FolderLocation.Report(c.Key, c.Name, c.Input, c.Output, c.Managed, c.Problem, Worker, now));
+            db.FolderLocations.Add(FolderLocation.Report(c.Key, c.Name, c.Input, c.Output, c.Problem, Worker, now));
         }
 
         try

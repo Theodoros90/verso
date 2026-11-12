@@ -26,7 +26,6 @@ public sealed class VersoDbContext(DbContextOptions<VersoDbContext> options) : D
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<ArchiveRecord> ArchiveRecords => Set<ArchiveRecord>();
     public DbSet<FolderLocation> FolderLocations => Set<FolderLocation>();
-    public DbSet<ManagedFolderLocation> ManagedFolderLocations => Set<ManagedFolderLocation>();
     public DbSet<TypedFolderPath> TypedFolderPaths => Set<TypedFolderPath>();
     public DbSet<FolderWatch> FolderWatches => Set<FolderWatch>();
     public DbSet<FolderFile> FolderFiles => Set<FolderFile>();

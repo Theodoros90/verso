@@ -51,15 +51,7 @@ public sealed class FolderPathRegistry(IVersoDbContext db, ICurrentUser user, Ti
     public static async Task LoadIntoAsync(IVersoDbContext db, IFolderAccess folders, CancellationToken ct)
     {
         var rows = await db.TypedFolderPaths.AsNoTracking().ToListAsync(ct);
-        folders.SetTypedPaths([.. rows.Select(r => new ManagedFolderPath(r.Key, r.Path, r.Path, r.AllowInput, r.AllowOutput))]);
-    }
-
-    /// <summary>Hands the administrator-managed locations and the typed paths to the adapter (used where the loop may not have run yet).</summary>
-    public static async Task LoadAllAsync(IVersoDbContext db, IFolderAccess folders, CancellationToken ct)
-    {
-        var managed = await db.ManagedFolderLocations.AsNoTracking().Where(m => !m.Removed).ToListAsync(ct);
-        folders.SetManagedLocations([.. managed.Select(m => new ManagedFolderPath(m.Key, m.Name, m.Path, m.AllowInput, m.AllowOutput))]);
-        await LoadIntoAsync(db, folders, ct);
+        folders.SetTypedPaths([.. rows.Select(r => new FolderPathEntry(r.Key, r.Path, r.Path, r.AllowInput, r.AllowOutput))]);
     }
 
     private void Audit(string key, string path, bool input, bool output, bool created, DateTimeOffset now) =>

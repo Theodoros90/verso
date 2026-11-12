@@ -80,9 +80,6 @@ public sealed class RoleMatrixTests(MigratedDatabaseFixture fixture)
         { "POST", "/api/v1/folder-access-tests", "/api/v1/folder-access-tests", "WX" },
         { "GET", "/api/v1/folder-access-tests/{id:guid}", $"/api/v1/folder-access-tests/{Id}", "WX" },
         { "GET", "/api/v1/workflows/{id:guid}/folder-input", $"/api/v1/workflows/{Id}/folder-input", AnyRole },
-        { "GET", "/api/v1/admin/folder-locations/", "/api/v1/admin/folder-locations", "X" },
-        { "PUT", "/api/v1/admin/folder-locations/{key}", "/api/v1/admin/folder-locations/some-key", "X" },
-        { "DELETE", "/api/v1/admin/folder-locations/{key}", "/api/v1/admin/folder-locations/some-key", "X" },
         { "POST", "/hubs/executions/negotiate", "/hubs/executions/negotiate?negotiateVersion=1", AnyRole },
     };
 

@@ -160,7 +160,7 @@ public sealed class FolderAccessTestRunner(IVersoDbContext db, IFolderAccess fol
         test.Start();
         await db.SaveChangesAsync(ct);
 
-        await FolderPathRegistry.LoadAllAsync(db, folders, ct); // the loop may not have seen a path typed a moment ago
+        await FolderPathRegistry.LoadIntoAsync(db, folders, ct); // the loop may not have seen a path typed a moment ago
 
         var targets = JsonSerializer.Deserialize<List<FolderAccessTargetDto>>(test.Targets, FolderAccessTests.Json) ?? [];
         var results = new List<FolderAccessResultDto>();

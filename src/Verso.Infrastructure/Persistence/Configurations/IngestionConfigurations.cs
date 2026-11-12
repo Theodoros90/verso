@@ -98,19 +98,6 @@ internal sealed class FolderAccessTestConfiguration : IEntityTypeConfiguration<F
     }
 }
 
-internal sealed class ManagedFolderLocationConfiguration : IEntityTypeConfiguration<ManagedFolderLocation>
-{
-    public void Configure(EntityTypeBuilder<ManagedFolderLocation> builder)
-    {
-        builder.ToTable("ManagedFolderLocations", Schemas.Ingestion);
-        builder.HasKey(l => l.Key);
-        builder.Property(l => l.Key).HasMaxLength(64).IsUnicode(false);
-        builder.Property(l => l.Name).HasMaxLength(200).IsRequired();
-        builder.Property(l => l.Path).HasMaxLength(ManagedFolderLocation.MaxPathLength).IsRequired();
-        builder.Property(l => l.UpdatedBy).HasMaxLength(200).IsRequired();
-    }
-}
-
 internal sealed class TypedFolderPathConfiguration : IEntityTypeConfiguration<TypedFolderPath>
 {
     public void Configure(EntityTypeBuilder<TypedFolderPath> builder)

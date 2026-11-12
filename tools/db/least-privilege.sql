@@ -35,7 +35,6 @@ GRANT SELECT, INSERT         ON SCHEMA::audit      TO verso_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::hangfire TO verso_api;  -- the Hangfire client queues jobs
 GRANT SELECT                 ON SCHEMA::ingestion  TO verso_api;  -- approved locations, folder status (reported by the Worker)
 GRANT INSERT, UPDATE         ON OBJECT::ingestion.FolderAccessTests TO verso_api;  -- "Test access" requests
-GRANT INSERT, UPDATE         ON OBJECT::ingestion.ManagedFolderLocations TO verso_api;  -- Administration: approved folder locations
 GRANT INSERT, UPDATE         ON OBJECT::ingestion.TypedFolderPaths       TO verso_api;  -- paths typed into Folder input steps (recorded when a workflow is published)
 
 -- ----- Worker: runs executions and previews; never authors templates or workflows -----
@@ -62,7 +61,5 @@ DENY DELETE         ON OBJECT::templates.TemplateVersions TO verso_api, verso_wo
 DENY DELETE         ON OBJECT::ingestion.FolderLocations  TO verso_api, verso_worker;  -- withdrawn locations are disabled, never deleted
 DENY UPDATE         ON OBJECT::ingestion.FolderFiles      TO verso_api;               -- only the Worker changes ingestion records
 
-DENY DELETE         ON OBJECT::ingestion.ManagedFolderLocations TO verso_api, verso_worker;  -- removed locations are marked, never deleted
-DENY INSERT, UPDATE ON OBJECT::ingestion.ManagedFolderLocations TO verso_worker;               -- the Worker only reads what administrators set
 DENY DELETE         ON OBJECT::ingestion.TypedFolderPaths       TO verso_api, verso_worker;  -- published workflows and ingestion records refer to them
 DENY INSERT, UPDATE ON OBJECT::ingestion.TypedFolderPaths       TO verso_worker;               -- the Worker only reads them

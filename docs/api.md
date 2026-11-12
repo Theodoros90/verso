@@ -46,9 +46,6 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | 409 | `workflow.not_published` | Submission to a workflow with no published version |
 | 409 | `execution.not_retryable` | Retry of an execution that isn't `Failed` (Rejected runs need corrected data, not a retry) |
 | 404 | `folder_access_test.not_found` | Unknown access test id (or deleted after 24 hours) |
-| 409 | `folder_location.key_taken` | Administration: the key is set in the Worker's configuration |
-| 409 | `folder_location.in_use` | Administration: files from or to the location are still being processed |
-| 404 | `folder_location.not_found` | Administration: no managed location with this key |
 
 ## Sign-in and roles
 
@@ -83,7 +80,6 @@ Every endpoint names a policy; one with no policy would still require a Verso ro
 | Audit trail (`/audit`, `/audit/actions`) |  |  |  |  | ✓ | ✓ |
 | Approved folder locations, a workflow's folder activity (`/folder-locations`, `/workflows/{id}/folder-input`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Folder "Test access" (`/folder-access-tests`) |  |  |  | ✓ |  | ✓ |
-| Administer folder locations (`/admin/folder-locations`) |  |  |  |  |  | ✓ |
 
 ## Health
 
@@ -456,17 +452,7 @@ The `folder-input` trigger reads files from folders **on the Worker's side**. Th
 
 ### Typed folder paths
 
-Workflow authors type the three folders into the step, so no administrator step is needed to use a new folder. The Worker has to know the paths (the workflow definition and the ingestion records only carry keys derived from them), so a path is **recorded when a workflow is published or a path is access-tested**, with its purpose (source: input; processed and failed: output), and audited as `FolderPathRegistered` (entity type `FolderPath`, with the path and who typed it). Recorded paths are never deleted, so unfinished files can always be resolved, also after a restart or a newer workflow version. The Worker validates every path as its own service identity. When `FolderInput:AllowedRoots` is set on the server, typed paths (and administrator-managed locations) must lie inside one of those folders; locations in the Worker's own configuration are not limited by it. Error messages and scan errors name the typed path.
-
-### Folder locations administration
-
-Locations can be set in two ways: in the Worker's configuration (`FolderInput:Locations`), or by an **Admin** in the web app (screen *Folder locations*), which stores the path in the database for the Worker to read. Either way the Worker validates the path as its own service identity, and designers only ever see key, name and purpose. Whoever may add a location decides what the Worker's account reads and writes, so these endpoints are **Admin only** and audited (`FolderLocationSaved`, `FolderLocationRemoved`, entity type `FolderLocation`, with the path). A server can limit administrator-managed paths to certain parents with `FolderInput:AllowedRoots` (a list of absolute folders); locations in the Worker's own configuration are not limited by it.
-
-| Method | Path | Success | Purpose |
-|---|---|---|---|
-| GET | `/api/v1/admin/folder-locations` | 200 `AdminFolderLocation[]` | `{ key, name, path, input, output, managed, enabled, problem, updatedAt, updatedBy }`. `path` is null for locations set in the Worker's configuration (read-only here). `problem` is what the Worker reported, or "Waiting for the Worker…" until it has picked up a new or changed location (about 15 seconds). |
-| PUT | `/api/v1/admin/folder-locations/{key}` | 200 `AdminFolderLocation` | Create or change `{ name, path, input, output }`. `key`: 2–64 lower-case letters, digits and `-`, starting with a letter; it never changes. `path`: absolute (`D:\…`, `\\server\share\…` or `/…`), at most 400 characters, no `.` or `..` parts, no wildcards, no control characters; no passwords. At least one of `input` and `output`. 400 `validation` names the field; 409 `folder_location.key_taken` for a key set in the Worker's configuration. |
-| DELETE | `/api/v1/admin/folder-locations/{key}` | 204 | Remove a managed location. The Worker disables it ("Removed by an administrator."); workflows that use it stop scanning and fail validation. 409 `folder_location.in_use` while files of unfinished ingestions refer to it. Adding the key again brings it back. |
+Workflow authors type the three folders into the step, so no administrator step is needed to use a new folder. The Worker has to know the paths (the workflow definition and the ingestion records only carry keys derived from them), so a path is **recorded when a workflow is published or a path is access-tested**, with its purpose (source: input; processed and failed: output), and audited as `FolderPathRegistered` (entity type `FolderPath`, with the path and who typed it). Recorded paths are never deleted, so unfinished files can always be resolved, also after a restart or a newer workflow version. The Worker validates every path as its own service identity. When `FolderInput:AllowedRoots` is set on the server, typed paths must lie inside one of those folders; locations in the Worker's own configuration are not limited by it. Error messages and scan errors name the typed path.
 
 ### How a file is handled
 

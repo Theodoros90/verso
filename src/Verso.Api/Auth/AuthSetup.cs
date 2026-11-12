@@ -65,7 +65,7 @@ public static class Policies
     /// <summary>The audit trail.</summary>
     public const string ReadAudit = "ReadAudit";
 
-    /// <summary>Administration: approved folder locations for folder input.</summary>
+    /// <summary>Administration (Admin role).</summary>
     public const string Administration = "Administration";
 
     public static readonly IReadOnlyDictionary<string, string[]> RolesByPolicy = new Dictionary<string, string[]>
