@@ -170,6 +170,22 @@ const nodeTypes: NodeTypeDto[] = [
     },
     defaults: { order: 'generated', bookmarks: true, fileName: '{{invoice.number}}-pack.pdf' },
   },
+  {
+    type: 'send-email', label: 'Send email', category: 'output', description: 'Emails a message through the bank relay.',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'sent', label: 'Sent', required: true }, { id: 'failed', label: 'Failed', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        to: { type: 'string', title: 'To', 'x-widget': 'pattern' },
+        subject: { type: 'string', title: 'Subject', 'x-widget': 'pattern' },
+        body: { type: 'string', title: 'Message', 'x-widget': 'multiline' },
+        attach: { type: 'string', title: 'Attach', enum: ['none', 'document'], 'x-enumLabels': ['Nothing', 'The generated document'] },
+      },
+      required: ['to', 'subject', 'attach'],
+    },
+    defaults: { to: '{{customer.email}}', subject: 'Invoice {{invoice.number}}', body: 'Dear {{customer.name}},', attach: 'document' },
+  },
 ]
 
 const definition = {
@@ -397,6 +413,23 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'generate-email', config: { layout: 'invoice', body: 'Line one\n\nLine two', darkMode: true } })
+  })
+
+  it('adds a Send email step with its defaults and an Attach choice', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Send email' }))
+
+    expect(await screen.findByRole('heading', { name: 'Send email', level: 3 })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Attach/)).toHaveDisplayValue('The generated document')
+    await user.selectOptions(screen.getByLabelText(/Attach/), 'none')
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'send-email', config: { to: '{{customer.email}}', attach: 'none' } })
   })
 
   it('adds a Combine PDFs step with its defaults and a page order choice', async () => {

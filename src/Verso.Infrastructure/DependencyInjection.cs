@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Verso.Application;
+using Verso.Application.Executions;
 using Verso.Application.Ingestion;
 using Verso.Infrastructure.Ingestion;
 using Verso.Infrastructure.Persistence;
@@ -33,6 +34,28 @@ public static class DependencyInjection
             sql => sql.UseCompatibilityLevel(SqlServerCompatibilityLevel)));
         services.AddScoped<IVersoDbContext>(sp => sp.GetRequiredService<VersoDbContext>());
 
+        return services;
+    }
+
+    /// <summary>Worker only: the SMTP relay of the Send email step (<c>Email</c> section). The API never sends mail.</summary>
+    public static IServiceCollection AddVersoEmail(this IServiceCollection services, IConfiguration configuration)
+    {
+        var section = configuration.GetSection(Email.EmailOptions.Section);
+        var defaults = new Email.EmailOptions();
+        var options = new Email.EmailOptions
+        {
+            Host = section[nameof(Email.EmailOptions.Host)] ?? "",
+            Port = int.TryParse(section[nameof(Email.EmailOptions.Port)], CultureInfo.InvariantCulture, out var port) ? port : defaults.Port,
+            EnableSsl = !bool.TryParse(section[nameof(Email.EmailOptions.EnableSsl)], out var ssl) || ssl,
+            UserName = section[nameof(Email.EmailOptions.UserName)] ?? "",
+            Password = section[nameof(Email.EmailOptions.Password)] ?? "",
+            From = section[nameof(Email.EmailOptions.From)] ?? "",
+            FromName = section[nameof(Email.EmailOptions.FromName)] ?? defaults.FromName,
+            AllowedRecipientDomains = [.. section.GetSection(nameof(Email.EmailOptions.AllowedRecipientDomains)).GetChildren().Select(c => c.Value ?? "").Where(d => d.Length > 0)],
+            Timeout = TimeSpan.TryParse(section[nameof(Email.EmailOptions.Timeout)], CultureInfo.InvariantCulture, out var timeout) ? timeout : defaults.Timeout,
+        };
+        services.AddSingleton(Options.Create(options));
+        services.AddSingleton<IEmailSender, Email.SmtpEmailSender>();
         return services;
     }
 

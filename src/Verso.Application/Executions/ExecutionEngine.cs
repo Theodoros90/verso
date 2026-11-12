@@ -31,7 +31,7 @@ public sealed class StepException(string code, string message, bool retryable) :
 /// Hangfire's own retry is off for this job); data problems end the run as Rejected.
 /// </summary>
 public sealed partial class ExecutionEngine(
-    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IPdfCombiner combiner, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
+    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IPdfCombiner combiner, IEmailSender email, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
 {
     /// <summary>Attempts per step (plan §6.3), within one execution attempt.</summary>
     public const int MaxStepAttempts = 3;
@@ -251,7 +251,7 @@ public sealed partial class ExecutionEngine(
     /// <summary>Whether a path ending at this step by this output ends the run as Rejected (see <see cref="FinishAsync"/>).</summary>
     private static bool Rejects(string nodeType, string? port) => (nodeType, port) is
         (NodeCatalog.Validate, "invalid") or (NodeCatalog.ParseContent, "failed") or (NodeCatalog.MapFields, "failed")
-        or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail or NodeCatalog.CombinePdfs, "failed")
+        or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail or NodeCatalog.CombinePdfs or NodeCatalog.SendEmail, "failed")
         or (NodeCatalog.ApprovalStep, Approval.Rejected);
 
     private sealed record Outcome(string? Port, object? Result, Func<Task>? AfterSave = null);
@@ -369,6 +369,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx => GenerateDocumentAsync(run, node, ct),
         NodeCatalog.GenerateEmail => GenerateEmailAsync(run, node, ct),
         NodeCatalog.CombinePdfs => CombinePdfsAsync(run, node, ct),
+        NodeCatalog.SendEmail => SendEmailAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
         _ => throw new StepException("node.unsupported", $"Node type '{node.Type}' can't run in this version of Verso.", retryable: false),
     };
@@ -654,6 +655,86 @@ public sealed partial class ExecutionEngine(
         });
     }
 
+    /// <summary>Largest file attached to an email (relays commonly refuse more).</summary>
+    public const int MaxEmailAttachmentBytes = 10 * 1024 * 1024;
+
+    /// <summary>
+    /// Send email (ADR 0006): sends the step's text to the recipients through the SMTP relay, optionally with the run's current
+    /// document (an HTML email file becomes the HTML body; any other file is attached). A recipient or text the data can't fill is
+    /// a data problem (port 'failed', the run ends Rejected unless handled). A relay that is down or refuses is a technical failure
+    /// (retried when it may pass). The result holds counts and the attachment's file name, never an address or the text.
+    /// Delivery is at-least-once: if the Worker stops after the relay accepted the mail but before the step is saved, a retry sends it again.
+    /// </summary>
+    private async Task<Outcome> SendEmailAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    {
+        string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        var issues = new List<object>();
+
+        var to = PatternText.Resolve(Text("to"), run.Data);
+        var (recipients, problem) = EmailAddresses.Parse(to.Text);
+        if (problem is not null || recipients.Count == 0)
+        {
+            issues.Add(new { code = "email.recipient_invalid", message = problem ?? "There is no recipient: the 'To' setting resolved to nothing." });
+        }
+
+        var subject = PatternText.Resolve(Text("subject"), run.Data);
+        var subjectLine = EmailAddresses.OneLine(subject.Text);
+        if (subjectLine.Length == 0)
+        {
+            issues.Add(new { code = "email.subject_empty", message = "The subject resolved to nothing." });
+        }
+
+        var body = PatternText.Resolve(Text("body"), run.Data);
+        if (issues.Count > 0)
+        {
+            return new Outcome("failed", new { issues });
+        }
+
+        var warnings = subject.Missing.Select(p => $"subject: no value for '{p}'").Concat(body.Missing.Select(p => $"body: no value for '{p}'")).ToList();
+        var attachments = new List<EmailAttachment>();
+        string? html = null;
+        string? attached = null;
+        if (Text("attach") == "document")
+        {
+            var document = run.Document
+                ?? throw new StepException("email.no_document", "There is no generated document to attach: put a Generate step before Send email on this path, or set 'Attach' to nothing.", retryable: false);
+            if (document.SizeBytes > MaxEmailAttachmentBytes)
+            {
+                throw new StepException("email.attachment_too_large", $"'{document.FileName}' is larger than {MaxEmailAttachmentBytes / (1024 * 1024)} MB.", retryable: false);
+            }
+
+            var bytes = await store.ReadAsync(document.StorageKey, ct)
+                ?? throw new StepException("storage.missing", "The generated document is missing from storage.", retryable: true);
+            if (DocumentKeys.Sha256Hex(bytes) != document.Sha256)
+            {
+                throw new StepException("storage.integrity", "The stored document doesn't match its recorded SHA-256.", retryable: true);
+            }
+
+            if (document.ContentType == Document.HtmlContentType)
+            {
+                html = System.Text.Encoding.UTF8.GetString(bytes);
+            }
+            else
+            {
+                attachments.Add(new EmailAttachment(document.FileName, document.ContentType, bytes));
+            }
+
+            attached = document.FileName;
+        }
+
+        string messageId;
+        try
+        {
+            messageId = await email.SendAsync(new EmailMessage(recipients, subjectLine, body.Text, html, attachments), ct);
+        }
+        catch (EmailSendException ex)
+        {
+            throw new StepException(ex.Code, ex.Message, ex.Retryable);
+        }
+
+        return new Outcome("sent", new { recipients = recipients.Count, attachment = attached, htmlBody = html is not null, messageId, warnings });
+    }
+
     private async Task<Outcome> ArchiveAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
     {
         var document = run.Document
@@ -783,6 +864,10 @@ public sealed partial class ExecutionEngine(
                 break;
             case (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail, "failed"):
                 execution.Reject("document.data_incomplete", $"The data can't produce a complete document in step '{last.Title}' (see its issues).", now);
+                Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
+                break;
+            case (NodeCatalog.SendEmail, "failed"):
+                execution.Reject("email.data_incomplete", $"The data can't produce a complete email in step '{last.Title}' (see its issues).", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;
             case (NodeCatalog.CombinePdfs, "failed"):

@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Verso.Application;
+using Verso.Application.Executions;
 using Verso.Infrastructure;
 using Verso.Infrastructure.Documents;
 using Verso.Infrastructure.Jobs;
@@ -46,6 +47,7 @@ public sealed class ExecutionWorkerFixture : IAsyncLifetime
         builder.Services.AddSingleton<IPdfPrinter, FakePdfPrinter>();
         builder.Services.AddSingleton<Verso.Rendering.Docx.IDocxWriter, FakeDocxWriter>();
         builder.Services.AddSingleton<IPdfCombiner, FakePdfCombiner>();
+        builder.Services.AddSingleton<IEmailSender, FakeEmailSender>();
         builder.Services.AddVersoDocumentStore(builder.Configuration);
         builder.Services.AddVersoJobServer(builder.Configuration);
         _worker = builder.Build();

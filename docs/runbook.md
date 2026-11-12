@@ -187,6 +187,31 @@ The `folder-input` step ([ADR 0001](adr/0001-folder-input.md)) makes the **Worke
 5. **In the workflow designer**, type the three paths on the Folder input step and press **Test access**. The Worker checks each folder as its own account and shows the account it used. Publishing records the typed paths so the Worker can resolve them (also after restarts and newer workflow versions); each new path is audited.
 6. **Tell senders the handoff rule:** write the file under a temporary name (for example `inv-1.json.tmp`) and rename it when complete. Leave `.verso-inflight` alone.
 
+### B8. Send email
+
+The `send-email` step ([ADR 0006](adr/0006-send-email.md)) makes the **Worker** send mail through the bank's SMTP relay. Only the Worker needs this; the API never sends mail. Without it, a workflow can still be designed and published, but a run reaching a Send email step fails with `email.not_configured`.
+
+1. **Ask the mail team for a relay** that accepts the Worker server (by IP or by an authenticated account), supports TLS on the port (usually 587), and allows the `From` address.
+2. **Configure the Worker** (`appsettings.Production.json` or service environment variables):
+
+   ```json
+   "Email": {
+     "Host": "smtp.bank.example",
+     "Port": 587,
+     "EnableSsl": true,
+     "UserName": "svc-verso-mail",
+     "From": "no-reply@bank.example",
+     "FromName": "Verso",
+     "AllowedRecipientDomains": [ "bank.example" ]
+   }
+   ```
+
+   Set the password only as the environment variable `Email__Password` on the service (never in a file in the repository). Leave `UserName` empty for a relay that trusts the server's IP.
+3. **Recommended: set `AllowedRecipientDomains`.** When it is not empty, a message with any recipient outside those domains is refused (`email.recipient_not_allowed`). Start with internal domains and test with a mail catcher outside production.
+4. **Every Worker needs the same settings**, because any Worker may run a step. Restart the Worker after changing them.
+5. **Check:** run a workflow with a Send email step to an internal address and look for the message; the step result in the execution history shows the message id (not the address).
+6. **Limits:** delivery is at-least-once (a duplicate is possible after a Worker stop or relay timeout); bounces are not tracked; attachments up to 10 MB.
+
 ---
 
 ## Part C. Operations

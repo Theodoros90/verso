@@ -41,7 +41,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null, JsonNode? combineConfig = null)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null, JsonNode? combineConfig = null, JsonNode? sendConfig = null)
     {
         var templateId = await PublishInvoiceTemplateAsync();
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -78,6 +78,18 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
             var document = definition["nodes"]!.AsArray().Single(n => (string?)n!["id"] == "pdf")!;
             document["type"] = "generate-email";
             document["config"] = emailConfig.DeepClone();
+        }
+
+        if (sendConfig is not null)
+        {
+            // trigger → validate → pdf → send → archive: the mail carries the PDF; Archive still stores it.
+            var nodes = definition["nodes"]!.AsArray();
+            var edges = definition["edges"]!.AsArray();
+            nodes.Add(JsonNode.Parse("""{ "id": "send", "type": "send-email", "title": "Send email", "position": { "x": 780, "y": 200 }, "config": {} }""")!);
+            nodes.Single(n => (string?)n!["id"] == "send")!["config"] = sendConfig.DeepClone();
+            edges.Remove(edges.Single(e => (string?)e!["id"] == "e3"));
+            edges.Add(JsonNode.Parse("""{ "id": "e3", "source": "pdf", "sourcePort": "success", "target": "send", "targetPort": "in" }"""));
+            edges.Add(JsonNode.Parse("""{ "id": "e4", "source": "send", "sourcePort": "sent", "target": "archive", "targetPort": "in" }"""));
         }
 
         if (combineConfig is not null)
@@ -254,11 +266,11 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     }
 
     /// <summary>One job run of the execution, as the Worker's Hangfire job would do it.</summary>
-    public async Task RunEngineAsync(Guid executionId, IPdfPrinter printer, IDocumentStore store, RecordingExecutionJobs jobs, IDocxWriter? docx = null, IPdfCombiner? combiner = null, CancellationToken ct = default)
+    public async Task RunEngineAsync(Guid executionId, IPdfPrinter printer, IDocumentStore store, RecordingExecutionJobs jobs, IDocxWriter? docx = null, IPdfCombiner? combiner = null, IEmailSender? email = null, CancellationToken ct = default)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VersoDbContext>();
-        await new ExecutionEngine(db, printer, docx ?? new FakeDocxWriter(), combiner ?? new FakePdfCombiner(), store, jobs, TimeProvider.System, NullLogger<ExecutionEngine>.Instance).RunAsync(executionId, ct);
+        await new ExecutionEngine(db, printer, docx ?? new FakeDocxWriter(), combiner ?? new FakePdfCombiner(), email ?? new FakeEmailSender(), store, jobs, TimeProvider.System, NullLogger<ExecutionEngine>.Instance).RunAsync(executionId, ct);
     }
 
     public async Task<T> WithDbAsync<T>(Func<VersoDbContext, Task<T>> action)
@@ -354,6 +366,28 @@ internal sealed class RecordingExecutionJobs : IExecutionJobs
     public void Enqueue(Guid executionId) => Enqueued.Enqueue(executionId);
 
     public void Schedule(Guid executionId, TimeSpan delay) => Scheduled.Enqueue((executionId, delay));
+}
+
+/// <summary>Stands in for the SMTP relay: remembers every message, or fails as told.</summary>
+internal sealed class FakeEmailSender : IEmailSender
+{
+    public List<EmailMessage> Sent { get; } = [];
+    public EmailSendException? Failure { get; set; }
+    /// <summary>Fails this many sends (with <see cref="Failure"/>) and then works.</summary>
+    public int FailTimes { get; set; } = int.MaxValue;
+    private int _failed;
+
+    public Task<string> SendAsync(EmailMessage message, CancellationToken ct)
+    {
+        if (Failure is not null && _failed < FailTimes)
+        {
+            _failed++;
+            throw Failure;
+        }
+
+        Sent.Add(message);
+        return Task.FromResult($"<fake-{Sent.Count}@verso>");
+    }
 }
 
 /// <summary>Stands in for the PDF combiner: returns small unique bytes, and remembers the titles it was given, in order, and the bookmarks setting.</summary>

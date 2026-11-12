@@ -139,7 +139,7 @@ public sealed class GraphValidatorTests
     public void UnknownNodeType_IsAnErrorOnThatNode()
     {
         var def = InvoiceStandard(TemplateId);
-        def["nodes"]!.AsArray()[3]!["type"] = "send-email";
+        def["nodes"]!.AsArray()[3]!["type"] = "print-letter";
 
         Assert.Contains("archive:node.unknown_type", Codes(Validate(def)));
     }

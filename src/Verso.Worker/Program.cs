@@ -30,6 +30,9 @@ builder.Services.AddSingleton<IDocxWriter, DocxWriter>();
 // Combine PDFs: joins PDFs Verso generated itself (PDFsharp; no browser, no scripting).
 builder.Services.AddSingleton<IPdfCombiner, PdfSharpCombiner>();
 
+// Send email: the bank's SMTP relay from the Email section (ADR 0006); credentials only from the environment or a secret store.
+builder.Services.AddVersoEmail(builder.Configuration);
+
 // Archived documents (local file system in the MVP; Documents:RootPath). Only the Worker writes.
 builder.Services.AddVersoDocumentStore(builder.Configuration);
 

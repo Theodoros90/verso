@@ -18,7 +18,7 @@ Bank-focused document-generation and workflow platform. MVP: maintain an invoice
 **M7: Execution engine** — accepted 2026-11-10.
 **M8: Execution history and live progress** — accepted 2026-11-10.
 **M9: MVP hardening** — accepted 2026-11-10 (full `tools/ci.ps1` run passed). **MVP complete (M1–M9).**
-Post-MVP: **Combine PDFs step** (2026-11-12, ADR 0005) implemented; awaiting acceptance. **Generate HTML email step** (2026-11-12, ADR 0004) implemented; awaiting acceptance. **Generate DOCX step** (2026-11-12, ADR 0003) implemented; awaiting acceptance. **Approval step** (2026-11-12, ADR 0002) implemented; awaiting acceptance. **Folder input** (2026-11-11, ADR 0001) implemented; awaiting acceptance. No next milestone agreed yet; post-MVP items are listed under "Not in MVP" in plan §9 and the open decisions in plan §10.
+Post-MVP: **Send email step** (2026-11-12, ADR 0006) implemented; awaiting acceptance. **Combine PDFs step** (2026-11-12, ADR 0005) implemented; awaiting acceptance. **Generate HTML email step** (2026-11-12, ADR 0004) implemented; awaiting acceptance. **Generate DOCX step** (2026-11-12, ADR 0003) implemented; awaiting acceptance. **Approval step** (2026-11-12, ADR 0002) implemented; awaiting acceptance. **Folder input** (2026-11-11, ADR 0001) implemented; awaiting acceptance. No next milestone agreed yet; post-MVP items are listed under "Not in MVP" in plan §9 and the open decisions in plan §10.
 Update this line when a milestone is accepted and the next one is agreed.
 
 ## Commands
@@ -44,6 +44,7 @@ powershell -ExecutionPolicy Bypass -File src/Verso.Worker/bin/Debug/net10.0/play
 - Real-time: SignalR (hub hosted in the API)
 - PDF: Playwright for .NET + Chromium, in the Worker only, installed from an offline bundle
 - DOCX: DocumentFormat.OpenXml (Open XML SDK, MIT) in `Verso.Rendering.Docx`, Worker only (approved 2026-11-12, ADR 0003)
+- Send email: built-in System.Net.Mail.SmtpClient against the bank's SMTP relay, Worker only (approved 2026-11-12, ADR 0006; no new package)
 - Combine PDFs: PDFsharp **6.2.4** (MIT; the last MIT release, 6.5.0 and 7.x are AGPL-3.0 and must not be used) in `Verso.Rendering.PdfCombine`, Worker only (approved 2026-11-12, ADR 0005)
 - Frontend: React 19 + TypeScript 5.x + Vite, @xyflow/react (React Flow), Tailwind CSS 4 + shadcn/ui (radix-ui, lucide-react, class-variance-authority, clsx, tailwind-merge, tw-animate-css), react-router, @fontsource fonts (self-hosted); Node 22 LTS ≥ 22.22, used for builds only
 - Frontend tests: Vitest, React Testing Library (+ user-event, jest-dom), jsdom
@@ -69,7 +70,7 @@ Ask before adding a dependency or changing a version not listed here.
 - Execution states: `Queued → Running → Succeeded | Rejected | Failed`, plus `AwaitingApproval` while an Approval step waits for a person (ADR 0002). Rejected = data failed validation (not retryable). Failed = technical error (retryable).
 - Progress: the Worker writes `ExecutionEvent` rows, and an API hosted service relays them to SignalR. SignalR messages are notifications; the REST API is the source of truth.
 - Document storage goes through `IDocumentStore` (configurable). The MVP adapter is the local file system.
-- AI features are deferred. No email, print, ERP, SFTP or banking integrations. Folder input (approved 2026-11-11, docs/adr/0001-folder-input.md) is the one real file integration: the Worker reads folders whose paths workflow authors type into the step (recorded and audited when a workflow is published, optionally limited by `FolderInput:AllowedRoots`) or that are named locations, always as its own service identity, and never stores credentials.
+- AI features are deferred (the designer only shows disabled AI assistance previews). No print, ERP, SFTP or banking integrations. Folder input (approved 2026-11-11, docs/adr/0001-folder-input.md) is the one real file integration: the Worker reads folders whose paths workflow authors type into the step (recorded and audited when a workflow is published, optionally limited by `FolderInput:AllowedRoots`) or that are named locations, always as its own service identity, and never stores credentials.
 
 ## Working rules
 
@@ -94,7 +95,7 @@ Ask before adding a dependency or changing a version not listed here.
 - Don't apply destructive database changes (dropping or truncating tables or columns, data-losing migrations, resetting databases other than throwaway local/test ones) without approval.
 - Never access production systems.
 - Don't execute arbitrary user-authored code: no `eval`, scripting engines or raw template HTML/JS. Templates are structured layout JSON; bound values are HTML-encoded; Chromium runs with JavaScript disabled and network requests blocked.
-- External integrations stay simulated until explicitly approved (approved so far: folder input).
+- External integrations stay simulated until explicitly approved (approved so far: folder input, and SMTP sending through one relay configured by the administrator, ADR 0006).
 
 **Milestone close-out**
 - End each milestone with: what was built, verification steps (commands + results, manual checks), how it meets the acceptance criteria, and remaining limitations / open issues.

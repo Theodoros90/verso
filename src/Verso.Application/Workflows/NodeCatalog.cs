@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -46,6 +46,7 @@ public static class NodeCatalog
     public const string GenerateDocx = "generate-docx";
     public const string GenerateEmail = "generate-email";
     public const string CombinePdfs = "combine-pdfs";
+    public const string SendEmail = "send-email";
     public const string Archive = "archive";
 
     public const string LatestPublished = "latest-published";
@@ -55,6 +56,13 @@ public static class NodeCatalog
 
     /// <summary>Every step that leaves a document for a later Archive step: the template steps and the HTML email (which needs no template).</summary>
     public static bool ProducesDocument(string type) => IsDocumentStep(type) || type is GenerateEmail or CombinePdfs;
+
+    /// <summary>What a Send email step attaches: nothing, or the run's current document.</summary>
+    public static readonly IReadOnlyDictionary<string, string> EmailAttach = new Dictionary<string, string>
+    {
+        ["none"] = "Nothing",
+        ["document"] = "The generated document",
+    };
 
     /// <summary>Page order of a Combine PDFs step: stored keys and labels.</summary>
     public static readonly IReadOnlyDictionary<string, string> CombineOrders = new Dictionary<string, string>
@@ -588,6 +596,24 @@ public static class NodeCatalog
               "required": ["order", "bookmarks", "fileName"] }
             """,
             """{ "order": "generated", "bookmarks": true, "fileName": "{{invoice.number}}-pack.pdf" }"""),
+
+        Node(SendEmail, "Send email", "output",
+            "Emails a message to the recipients through the bank's SMTP relay (set up by the administrator, ADR 0006), optionally with the generated document attached. A generated HTML email becomes the message body.",
+            [In], [new PortDto("sent", "Sent", true), new PortDto("failed", "Failed", false)],
+            $$$"""
+            { "type": "object",
+              "properties": {
+                "to": { "type": "string", "title": "To", "minLength": 1, "maxLength": 500, "x-widget": "pattern",
+                  "description": "Up to 10 addresses separated by commas, or a field such as {{customer.email}}. The administrator may limit which domains can receive mail." },
+                "subject": { "type": "string", "title": "Subject", "minLength": 1, "maxLength": 200, "x-widget": "pattern",
+                  "description": "One line. Use fields such as {{invoice.number}}." },
+                "body": { "type": "string", "title": "Message", "maxLength": 5000, "x-widget": "multiline",
+                  "description": "Plain text; fields are written as {{customer.name}}. When an HTML email is attached this is its plain-text alternative." },
+                "attach": { "type": "string", "title": "Attach", "enum": {{{JsonSerializer.Serialize(EmailAttach.Keys)}}}, "x-enumLabels": {{{JsonSerializer.Serialize(EmailAttach.Values)}}},
+                  "description": "The document made by the Generate step before this one (up to 10 MB)." } },
+              "required": ["to", "subject", "attach"] }
+            """,
+            """{ "to": "{{customer.email}}", "subject": "Invoice {{invoice.number}}", "body": "Dear {{customer.name}},\n\nPlease find your invoice {{invoice.number}} attached.", "attach": "document" }"""),
 
         Node(Archive, "Archive", "output",
             "Stores the document in the Verso archive with metadata and a retention period.",

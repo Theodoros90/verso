@@ -253,6 +253,7 @@ public static class GraphValidator
         (NodeCatalog.IfElse, "yes") => "Records that meet the condition end the run here.",
         (NodeCatalog.IfElse, "no") => "Records that don't meet the condition end the run here.",
         (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail, "failed") => "Data that can't make a complete document will end the run as Rejected.",
+        (NodeCatalog.SendEmail, "failed") => "Data that can't make a complete email will end the run as Rejected.",
         (NodeCatalog.CombinePdfs, "failed") => "A run with fewer than two PDFs to combine ends here as Rejected.",
         _ => $"'{port.Label}' isn't connected; the run ends there.",
     };
@@ -354,6 +355,15 @@ public static class GraphValidator
                 foreach (var (field, problem) in Executions.Switch.Incomplete(c))
                 {
                     yield return new(Error, "config.invalid", problem, NodeId: node.Id, Field: field);
+                }
+
+                break;
+
+            case NodeCatalog.SendEmail:
+                var recipients = c.TryGetProperty("to", out var toElement) && toElement.ValueKind == JsonValueKind.String ? toElement.GetString()!.Trim() : "";
+                if (recipients.Length > 0 && !recipients.Contains("{{", StringComparison.Ordinal) && Executions.EmailAddresses.Parse(recipients).Problem is { } toProblem)
+                {
+                    yield return new(Error, "config.invalid", toProblem, NodeId: node.Id, Field: "to");
                 }
 
                 break;
