@@ -160,3 +160,16 @@ function inferArrayItems(rows: unknown[]): Record<string, unknown> {
 export function isEmptySchema(dataSchema: unknown): boolean {
   return schemaFields(dataSchema).length === 0
 }
+
+/** The data model's fields as the Map fields step sees them: every scalar reachable through objects, and each list as one field (its columns belong to the rows). */
+export function modelFields(fields: SchemaField[]): string[] {
+  const out: string[] = []
+  const walk = (list: SchemaField[]) => {
+    for (const f of list) {
+      if (f.kind === 'object') walk(f.children)
+      else out.push(f.path)
+    }
+  }
+  walk(fields)
+  return out
+}

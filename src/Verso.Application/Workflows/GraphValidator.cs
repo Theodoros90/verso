@@ -7,8 +7,8 @@ public sealed record WorkflowIssueDto(string Severity, string Code, string Messa
 
 public sealed record WorkflowValidationDto(bool Valid, IReadOnlyList<WorkflowIssueDto> Issues);
 
-/// <summary>What the validator needs to know about a referenced template.</summary>
-public sealed record TemplateRef(Guid Id, string Name, IReadOnlySet<int> PublishedVersions);
+/// <summary>What the validator needs to know about a referenced template. Fields: its data model (latest published version), for the Map fields check.</summary>
+public sealed record TemplateRef(Guid Id, string Name, IReadOnlySet<int> PublishedVersions, IReadOnlyList<string>? Fields = null);
 
 /// <summary>What the validator needs to know about an approved folder location.</summary>
 public sealed record FolderLocationRef(string Key, string Name, bool Input, bool Output, bool Enabled);
@@ -180,7 +180,7 @@ public static class GraphValidator
                 issues.Add(new(Error, e.Code, e.Message, NodeId: node.Id, Field: e.Field));
             }
 
-            issues.AddRange(NodeRules(node, type, templates));
+            issues.AddRange(NodeRules(node, type, templates, MappingTarget(definition, templates)));
             if (type.Type == NodeCatalog.FolderInput)
             {
                 issues.AddRange(FolderRules(node, locations));
@@ -190,10 +190,18 @@ public static class GraphValidator
         return new WorkflowValidationDto(issues.All(i => i.Severity != Error), issues);
     }
 
+    /// <summary>The template a Map fields step prepares data for: the first one a Generate PDF step uses (the designer shows the same one).</summary>
+    private static TemplateRef? MappingTarget(ParsedDefinition definition, IReadOnlyDictionary<Guid, TemplateRef> templates) =>
+        definition.Nodes
+            .Where(n => n.Type == NodeCatalog.GeneratePdf && n.Config.TryGetProperty("templateId", out var t) && t.ValueKind == JsonValueKind.String)
+            .Select(n => Guid.TryParse(n.Config.GetProperty("templateId").GetString(), out var g) && templates.TryGetValue(g, out var template) ? template : null)
+            .FirstOrDefault(t => t is not null);
+
     private static string UnconnectedOptional(NodeTypeDto type, PortDto port) => (type.Type, port.Id) switch
     {
         (NodeCatalog.Validate, "invalid") => "Invalid records will end the run as Rejected.",
         (NodeCatalog.ParseContent, "failed") => "Content that can't be parsed will end the run as Rejected.",
+        (NodeCatalog.MapFields, "failed") => "A value that can't be transformed will end the run as Rejected.",
         (NodeCatalog.GeneratePdf, "failed") =>"Data that can't make a complete document will end the run as Rejected.",
         _ => $"'{port.Label}' isn't connected; the run ends there.",
     };
@@ -212,7 +220,7 @@ public static class GraphValidator
     }
 
     /// <summary>Rules a schema can't express.</summary>
-    private static IEnumerable<WorkflowIssueDto> NodeRules(WorkflowNode node, NodeTypeDto type, IReadOnlyDictionary<Guid, TemplateRef> templates)
+    private static IEnumerable<WorkflowIssueDto> NodeRules(WorkflowNode node, NodeTypeDto type, IReadOnlyDictionary<Guid, TemplateRef> templates, TemplateRef? mappingTarget)
     {
         var c = node.Config;
         switch (type.Type)
@@ -234,6 +242,21 @@ public static class GraphValidator
                 if (rules == 0)
                 {
                     yield return new(Error, "config.required", "Add at least one rule (a required field or a type check).", NodeId: node.Id);
+                }
+
+                break;
+
+            case NodeCatalog.MapFields:
+                if (Count(c, "rows") == 0)
+                {
+                    yield return new(Error, "config.required", "Add at least one mapping.", NodeId: node.Id);
+                    break;
+                }
+
+                if (mappingTarget?.Fields is { Count: > 0 } fields && Executions.FieldMapper.Unmapped(c, fields) is { Count: > 0 } unmapped)
+                {
+                    yield return new(Warning, "map.unmapped",
+                        $"No mapping for {string.Join(", ", unmapped)}, which '{mappingTarget.Name}' uses. That's fine if the data already has these fields under that name.", NodeId: node.Id);
                 }
 
                 break;

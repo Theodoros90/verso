@@ -40,7 +40,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null)
     {
         var templateId = await PublishInvoiceTemplateAsync();
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -71,6 +71,16 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
             definition["nodes"]![1]!["config"] = parseConfig.DeepClone();
             definition["edges"]![0]!["target"] = "parse";
             definition["edges"]!.AsArray().Add(JsonNode.Parse("""{ "id": "e0", "source": "parse", "sourcePort": "success", "target": "validate", "targetPort": "in" }"""));
+        }
+
+        if (mapConfig is not null)
+        {
+            // … → map-fields (success) → validate
+            var map = JsonNode.Parse("""{ "id": "map", "type": "map-fields", "title": "Map fields", "position": { "x": 130, "y": 200 }, "config": {} }""")!;
+            map["config"] = mapConfig.DeepClone();
+            definition["nodes"]!.AsArray().Add(map);
+            definition["edges"]!.AsArray().First(e => (string?)e!["target"] == "validate")!["target"] = "map";
+            definition["edges"]!.AsArray().Add(JsonNode.Parse("""{ "id": "e9", "source": "map", "sourcePort": "success", "target": "validate", "targetPort": "in" }"""));
         }
 
         using var draft = await client.GetAsync(new Uri($"/api/v1/workflows/{workflowId}/draft", UriKind.Relative));

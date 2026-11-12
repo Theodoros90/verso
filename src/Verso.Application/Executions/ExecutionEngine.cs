@@ -229,6 +229,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.ApiTrigger or NodeCatalog.ErpConnector or NodeCatalog.FileUpload or NodeCatalog.SftpFolder or NodeCatalog.ScheduledTrigger
             or NodeCatalog.ManualTrigger or NodeCatalog.FolderInput => Task.FromResult(new Outcome("out", null)),
         NodeCatalog.ParseContent => Task.FromResult(Parse(run, node)),
+        NodeCatalog.MapFields => Task.FromResult(Map(run, node)),
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
         NodeCatalog.GeneratePdf => GeneratePdfAsync(run, node, ct),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
@@ -246,6 +247,19 @@ public sealed partial class ExecutionEngine(
 
         run.Data = parsed;
         return new Outcome("success", new { format = result.Format });
+    }
+
+    /// <summary>A row that can't be applied is a data problem (port 'failed', the run ends Rejected unless the workflow handles it). The result holds no values.</summary>
+    private static Outcome Map(Run run, Workflows.WorkflowNode node)
+    {
+        var result = FieldMapper.Apply(node.Config, run.Data);
+        if (result.Data is not { } mapped)
+        {
+            return new Outcome("failed", new { issues = result.Issues.Select(i => new { code = i.Code, message = i.Message, field = i.Field }) });
+        }
+
+        run.Data = mapped;
+        return new Outcome("success", null);
     }
 
     private static Outcome Validate(Run run, Workflows.WorkflowNode node)
@@ -365,6 +379,12 @@ public sealed partial class ExecutionEngine(
         {
             run.Document = await FindDocumentAsync(run.Execution.Id, node.Id, ct);
         }
+        else if (node.Type == NodeCatalog.MapFields && run.Execution.Step(node.Id).OutputPort == "success")
+        {
+            // Mapping is deterministic, like parsing: the data is rebuilt rather than stored again.
+            run.Data = FieldMapper.Apply(node.Config, run.Data).Data
+                ?? throw new StepException("map.restore", $"Step '{node.Title}' succeeded before but its mapping can't be applied again.", retryable: false);
+        }
         else if (node.Type == NodeCatalog.ParseContent && run.Execution.Step(node.Id).OutputPort == "success")
         {
             // Parsing is deterministic, so the data is rebuilt rather than stored a second time.
@@ -391,6 +411,10 @@ public sealed partial class ExecutionEngine(
                 break;
             case (NodeCatalog.ParseContent, "failed"):
                 execution.Reject("data.unparseable", $"The content couldn't be parsed in step '{last.Title}' (see its issues).", now);
+                Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
+                break;
+            case (NodeCatalog.MapFields, "failed"):
+                execution.Reject("data.unmappable", $"The data couldn't be mapped in step '{last.Title}' (see its issues).", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;
             case (NodeCatalog.GeneratePdf, "failed"):

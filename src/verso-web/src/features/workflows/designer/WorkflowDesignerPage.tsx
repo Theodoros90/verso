@@ -24,13 +24,14 @@ import { ApiError } from '@/lib/api/client'
 import type { NodeTypeDto, WorkflowDto, WorkflowIssueDto, WorkflowVersionDto } from '@/lib/api/generated'
 import { templatesApi } from '@/lib/api/templates'
 import { workflowsApi } from '@/lib/api/workflows'
-import { inferSchema, scalarPaths, schemaFields } from '@/features/templates/model/schema'
+import { inferSchema, modelFields, scalarPaths, schemaFields } from '@/features/templates/model/schema'
 
 import { addNode, asDefinition, connect, moveNode, nextPosition, removeEdges, removeNodes, updateNode, type WorkflowDefinition } from '../model/definition'
 import { CATEGORY_COLORS, CATEGORY_LABELS, NODE_ICONS, NodeCard, type VersoFlowNode } from './NodeCard'
 import { parseJsonObject } from '../model/payloadSchema'
 import { ApiTriggerSettings, type TemplateSample } from './ApiTriggerSettings'
 import { FolderInputSettings } from './FolderInputSettings'
+import { MapFieldsSettings } from './MapFieldsSettings'
 import { SchemaForm, type FieldSchema, type TemplateOption } from './SchemaForm'
 import { useWorkflowState } from './workflowState'
 
@@ -139,6 +140,7 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
   const [templates, setTemplates] = useState<TemplateOption[]>([])
   const [templatePaths, setDataPaths] = useState<string[]>([])
   const [templateSampleData, setTemplateSampleData] = useState<unknown>(undefined)
+  const [templateFields, setTemplateFields] = useState<string[] | undefined>(undefined)
   const dragOrigin = useRef<WorkflowDefinition | null>(null)
 
   // ---------- live validation (server is the source of truth) ----------
@@ -191,6 +193,7 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
   useEffect(() => {
     if (!referencedTemplate) {
       setDataPaths([])
+      setTemplateFields(undefined)
       setTemplateSampleData(undefined)
       return
     }
@@ -199,10 +202,12 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
     latestTemplateVersion(referencedTemplate, controller.signal)
       .then((v) => {
         setDataPaths(v ? scalarPaths(schemaFields(v.dataSchema)).map((f) => f.path) : [])
+        setTemplateFields(v ? modelFields(schemaFields(v.dataSchema)) : undefined)
         setTemplateSampleData(v?.sampleData ?? undefined)
       })
       .catch(() => {
         setDataPaths([])
+        setTemplateFields(undefined)
         setTemplateSampleData(undefined)
       })
     return () => controller.abort()
@@ -605,6 +610,8 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
             dataPaths={dataPaths}
             workflowKey={workflow.key}
             templateSample={templateSample}
+            templateFields={templateFields}
+            templateName={templateName}
             workflowId={workflow.id}
             published={workflow.latestPublishedVersion != null}
             canTest={canEdit}
@@ -642,6 +649,8 @@ function NodeSettings({
   dataPaths,
   workflowKey,
   templateSample,
+  templateFields,
+  templateName,
   workflowId,
   published,
   canTest,
@@ -656,6 +665,8 @@ function NodeSettings({
   dataPaths: string[]
   workflowKey: string
   templateSample?: TemplateSample
+  templateFields?: string[]
+  templateName?: string
   workflowId: string
   published: boolean
   canTest: boolean
@@ -710,6 +721,15 @@ function NodeSettings({
             canTest={canTest}
             workflowId={workflowId}
             published={published}
+          />
+        ) : nodeType && node.type === 'map-fields' ? (
+          <MapFieldsSettings
+            schema={nodeType.configSchema as FieldSchema}
+            templateFields={templateFields}
+            templateName={templateName}
+            value={node.config}
+            onChange={(config, key) => onChange({ config }, key)}
+            ctx={{ templates, dataPaths, errorsFor: fieldErrors, readOnly }}
           />
         ) : nodeType ? (
           <SchemaForm

@@ -1,0 +1,18 @@
+# one-time setup (first run only)
+dotnet tool restore
+dotnet build Verso.slnx
+dotnet tool run dotnet-ef database update --project src/Verso.Infrastructure --startup-project src/Verso.Api
+powershell -ExecutionPolicy Bypass -File src/Verso.Worker/bin/Debug/net10.0/playwright.ps1 install --only-shell chromium
+cd src/verso-web; npm ci; cd ../..
+
+# terminal 1: API (http://localhost:5122)
+cd C:\Practice\Own\2026\verso
+dotnet run --project src/Verso.Api
+
+# terminal 2: Worker (PDF generation, executions)
+cd C:\Practice\Own\2026\verso
+dotnet run --project src/Verso.Worker
+
+# terminal 3: frontend (http://localhost:5180)
+cd C:\Practice\Own\2026\verso\src\verso-web
+npm run dev

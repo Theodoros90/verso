@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), validate, generate-pdf, archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), validate, generate-pdf, archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -34,6 +34,7 @@ public static class NodeCatalog
     public const string ManualTrigger = "manual-trigger";
     public const string FolderInput = "folder-input";
     public const string ParseContent = "parse";
+    public const string MapFields = "map-fields";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
     public const string Archive = "archive";
@@ -317,6 +318,22 @@ public static class NodeCatalog
               "required": ["source", "format", "encoding"] }
             """,
             """{ "source": "content", "format": "auto", "encoding": "utf-8", "recordPath": "", "numbers": true }"""),
+
+        Node(MapFields, "Map fields", "process",
+            "Turns source data into the template's data model: each row copies a field to a new name, optionally transformed. Fields no row mentions stay as they are.",
+            [In], [new PortDto("success", "Success", true), new PortDto("failed", "Failed", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "rows": { "type": "array", "title": "Mappings", "maxItems": 100,
+                  "items": { "type": "object", "required": ["from", "to", "transform"],
+                    "properties": {
+                      "from": { "type": "string", "title": "Source field", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DataPathPattern)}}", "x-widget": "mono" },
+                      "to": { "type": "string", "title": "Destination field", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DataPathPattern)}}", "x-widget": "data-path" },
+                      "transform": { "type": "string", "title": "Transform", "enum": {{JsonSerializer.Serialize(Executions.FieldMapper.Transforms.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Executions.FieldMapper.Transforms.Values)}} } } } } },
+              "required": ["rows"] }
+            """,
+            """{ "rows": [] }"""),
 
         Node(Validate, "Validate data", "process",
             "Checks required fields and value types. Records that pass leave by 'valid', the others by 'invalid'.",

@@ -290,6 +290,7 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
             .Where(g => g != Guid.Empty)
             .Distinct()
             .ToList();
+        var needsModel = definition.Nodes.Any(n => n.Type == NodeCatalog.MapFields); // the data model is only read for the Map fields check
         var rows = ids.Count == 0
             ? []
             : await db.Templates.AsNoTracking()
@@ -299,9 +300,12 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
                     t.Id,
                     t.Name,
                     Published = t.Versions.Where(v => v.Status == TemplateVersionStatus.Published).Select(v => v.VersionNumber!.Value).ToList(),
+                    Model = needsModel
+                        ? t.Versions.Where(v => v.Status == TemplateVersionStatus.Published).OrderByDescending(v => v.VersionNumber).Select(v => v.Content.DataSchema).FirstOrDefault()
+                        : null,
                 })
                 .ToListAsync(ct);
-        var templates = rows.ToDictionary(r => r.Id, r => new TemplateRef(r.Id, r.Name, r.Published.ToHashSet()));
+        var templates = rows.ToDictionary(r => r.Id, r => new TemplateRef(r.Id, r.Name, r.Published.ToHashSet(), Executions.FieldMapper.TemplateFields(r.Model)));
 
         // Approved folder locations (reported by the Worker), only when a folder-input step needs them.
         var locations = definition.Nodes.Any(n => n.Type == NodeCatalog.FolderInput)

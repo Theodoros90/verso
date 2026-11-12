@@ -18,7 +18,7 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
         using var response = await _client.GetAsync(new Uri("/api/v1/node-types", UriKind.Relative));
         var types = (await ReadAsync(response)).EnumerateArray().ToList();
 
-        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "scheduled-trigger", "manual-trigger", "folder-input", "parse", "validate", "generate-pdf", "archive"], types.Select(t => t.GetProperty("type").GetString()));
+        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "scheduled-trigger", "manual-trigger", "folder-input", "parse", "map-fields", "validate", "generate-pdf", "archive"], types.Select(t => t.GetProperty("type").GetString()));
         var validate = types.Single(t => t.GetProperty("type").GetString() == "validate");
         Assert.Equal("process", validate.GetProperty("category").GetString());
         Assert.Equal(["valid", "invalid"], validate.GetProperty("outputs").EnumerateArray().Select(p => p.GetProperty("id").GetString()));
@@ -127,6 +127,53 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
     }
 
     [Fact]
+    public async Task MapFields_WarnsAboutTemplateFieldsNoRowMaps_ReadFromThePublishedTemplate()
+    {
+        var model = JsonNode.Parse("""
+            { "type": "object", "properties": {
+                "invoice": { "type": "object", "properties": { "number": { "type": "string" } } },
+                "customer": { "type": "object", "properties": { "name": { "type": "string" } } },
+                "lines": { "type": "array", "items": { "type": "object", "properties": { "amount": { "type": "number" } } } } } }
+            """);
+        var (templateId, etag) = await CreateInvoiceTemplateAsync(model);
+        var id = await CreateWorkflowAsync();
+        var definition = InvoiceStandard(templateId);
+        var map = JsonNode.Parse("""
+            { "id": "map", "type": "map-fields", "title": "Map fields", "position": { "x": 130, "y": 200 },
+              "config": { "rows": [ { "from": "no", "to": "invoice.number", "transform": "as-is" } ] } }
+            """)!;
+        definition["nodes"]!.AsArray().Add(map);
+        definition["edges"]!.AsArray().First(e => (string?)e!["target"] == "validate")!["target"] = "map";
+        definition["edges"]!.AsArray().Add(JsonNode.Parse("""{ "id": "e9", "source": "map", "sourcePort": "success", "target": "validate", "targetPort": "in" }"""));
+
+        async Task<string?> WarningAsync()
+        {
+            using var response = await _client.PostAsJsonAsync(new Uri($"/api/v1/workflows/{id}/draft/validate", UriKind.Relative), new { definition });
+            return (await ReadAsync(response)).GetProperty("issues").EnumerateArray()
+                .FirstOrDefault(i => i.GetProperty("code").GetString() == "map.unmapped") is { ValueKind: JsonValueKind.Object } w ? w.GetProperty("message").GetString() : null;
+        }
+
+        // A template with no published version has no model to compare with yet.
+        Assert.Null(await WarningAsync());
+
+        using (var publishTemplate = await SendWithIfMatchAsync(HttpMethod.Post, $"/api/v1/templates/{templateId}/draft/publish", etag))
+        {
+            Assert.Equal(HttpStatusCode.OK, publishTemplate.StatusCode);
+        }
+
+        var message = await WarningAsync();
+        Assert.NotNull(message);
+        Assert.Contains("customer.name, lines", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("invoice.number", message, StringComparison.Ordinal);
+        Assert.Contains("Commercial invoice", message, StringComparison.Ordinal);
+
+        // Mapping the rest silences it.
+        map["config"]!["rows"]!.AsArray().Add(JsonNode.Parse("""{ "from": "n", "to": "customer.name", "transform": "as-is" }"""));
+        map["config"]!["rows"]!.AsArray().Add(JsonNode.Parse("""{ "from": "l", "to": "lines", "transform": "as-is" }"""));
+        Assert.Null(await WarningAsync());
+    }
+
+    [Fact]
     public async Task Save_RejectsStructurallyBrokenDefinitions_AndRequiresIfMatch()
     {
         var id = await CreateWorkflowAsync();
@@ -191,7 +238,7 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
     }
 
     /// <summary>A template with the invoice layout saved in its draft (not published). Returns the draft ETag.</summary>
-    private async Task<(Guid Id, string ETag)> CreateInvoiceTemplateAsync()
+    private async Task<(Guid Id, string ETag)> CreateInvoiceTemplateAsync(JsonNode? dataSchema = null)
     {
         var key = "W" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
         using var create = await _client.PostAsJsonAsync(new Uri("/api/v1/templates", UriKind.Relative), new { key, name = "Commercial invoice" });
@@ -201,7 +248,7 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
         {
             ["pageSettings"] = new JsonObject { ["size"] = "A4", ["orientation"] = "portrait", ["marginsMm"] = new JsonObject { ["top"] = 18, ["right"] = 16, ["bottom"] = 18, ["left"] = 16 } },
             ["layout"] = JsonNode.Parse(Fixture("invoice/layout.json")),
-            ["dataSchema"] = new JsonObject { ["type"] = "object" },
+            ["dataSchema"] = dataSchema ?? new JsonObject { ["type"] = "object" },
             ["sampleData"] = JsonNode.Parse(Fixture("invoice/sample.json")),
         };
         var request = new HttpRequestMessage(HttpMethod.Put, new Uri($"/api/v1/templates/{id}/draft", UriKind.Relative)) { Content = JsonContent.Create(body) };
