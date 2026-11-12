@@ -56,6 +56,7 @@ public sealed partial class MvpScenarioTests(E2EEnvironment env)
         await page.WaitForURLAsync(new Regex("/workflows/[0-9a-f-]{36}$"));
         var canvas = page.GetByLabel("Workflow canvas");
         await canvas.GetByText("API / webhook", new() { Exact = true }).First.ClickAsync(); // card title (the type label below says the same)
+        await page.GetByRole(AriaRole.Button, new() { Name = "Expand all" }).ClickAsync(); // the palette's categories start collapsed
         foreach (var step in new[] { "Validate data", "Generate PDF", "Archive" })
         {
             await page.GetByRole(AriaRole.Button, new() { Name = $"Add {step}", Exact = true }).ClickAsync(); // placed right of the selected step

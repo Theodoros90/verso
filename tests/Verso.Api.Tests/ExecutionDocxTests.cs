@@ -1,4 +1,7 @@
-using System.Net;
+using Microsoft.Extensions.DependencyInjection;
+using Verso.Application;
+using Verso.Application.Documents;
+using Verso.Infrastructure.Persistence;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using Verso.Rendering.Docx;
@@ -17,9 +20,6 @@ public sealed class ExecutionDocxTests(MigratedDatabaseFixture fixture) : IDispo
     private readonly FakeDocxWriter _docx = new();
     private readonly RecordingExecutionJobs _jobs = new();
     private ExecutionTestKit Kit => new(fixture.Factory, _client);
-
-    /// <summary>An API host that serves documents from this test's store.</summary>
-    private HttpClient StoreApi() => fixture.Factory.WithWebHostBuilder(b => b.UseSetting("Documents:RootPath", _store.Root)).CreateClient();
 
     public void Dispose()
     {
@@ -61,13 +61,23 @@ public sealed class ExecutionDocxTests(MigratedDatabaseFixture fixture) : IDispo
         var done = await Kit.GetExecutionAsync(id);
         var documentId = done.GetProperty("documents")[0].GetProperty("id").GetGuid();
 
-        using var api = StoreApi();
-        using var response = await api.GetAsync(new Uri($"/api/v1/documents/{documentId}/content", UriKind.Relative));
+        // Straight to the service with this test's store: a second test host would leave Hangfire's static logger pointing at a
+        // disposed host for later test classes. The attachment and nosniff headers are set for every type by the endpoint and covered by the PDF download test.
+        await using var scope = fixture.Factory.Services.CreateAsyncScope();
+        var service = new DocumentService(scope.ServiceProvider.GetRequiredService<VersoDbContext>(), _store, new TestUser(), TimeProvider.System);
+        var result = await service.OpenContentAsync(documentId, CancellationToken.None);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(DocxType, response.Content.Headers.ContentType!.MediaType);
-        Assert.Equal("INV-2026-003901.docx", response.Content.Headers.ContentDisposition!.FileName);
-        Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
+        Assert.True(result.IsSuccess);
+        Assert.Equal(DocxType, result.Value!.ContentType);
+        Assert.Equal("INV-2026-003901.docx", result.Value.FileName);
+        Assert.StartsWith("PK fake docx", System.Text.Encoding.ASCII.GetString(result.Value.Bytes), StringComparison.Ordinal);
+    }
+
+    private sealed class TestUser : ICurrentUser
+    {
+        public string Id => "test.user";
+        public string Name => "Test User";
+        public IReadOnlyCollection<string> Roles => [];
     }
 
     [Fact]
