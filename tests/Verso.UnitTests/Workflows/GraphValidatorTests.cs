@@ -296,6 +296,27 @@ public sealed class GraphValidatorTests
     }
 
     [Theory]
+    [InlineData("accounts@example.com", "Inbox", true)]
+    [InlineData("accounts@example.com", "Accounts/Invoices", true)]
+    [InlineData("", "Inbox", false)]                              // mailbox is required
+    [InlineData("accounts", "Inbox", false)]                      // not an address
+    [InlineData("Accounts <accounts@example.com>", "Inbox", false)] // no display name
+    [InlineData("accounts@example.com", "", false)]               // folder is required
+    public void EmailInbox_NeedsAMailboxAddressAndAFolder(string mailbox, string folder, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]![0] = new JsonObject
+        {
+            ["id"] = "trigger", ["type"] = "email-inbox", ["title"] = "Email inbox", ["position"] = new JsonObject { ["x"] = 0, ["y"] = 80 },
+            ["config"] = new JsonObject { ["mailbox"] = mailbox, ["folder"] = folder, ["attachments"] = true },
+        };
+
+        var result = Validate(definition);
+
+        Assert.Equal(valid, !result.Issues.Any(i => i.NodeId == "trigger" && i.Severity == GraphValidator.Error));
+    }
+
+    [Theory]
     [InlineData("0 1 * * *", "Europe/Nicosia", true)]
     [InlineData("*/15 8-18 * * 1-5", "UTC", true)]
     [InlineData("0 1 * *", "UTC", false)]            // four fields

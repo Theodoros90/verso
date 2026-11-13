@@ -69,6 +69,20 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { host: '', folder: '/inbound', pattern: '*.xml', poll: 'every-5-minutes' },
   },
   {
+    type: 'email-inbox', label: 'Email inbox', category: 'input', description: 'Starts a run from an incoming email (simulated).',
+    inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        mailbox: { type: 'string', title: 'Mailbox', 'x-widget': 'mono' },
+        folder: { type: 'string', title: 'Folder' },
+        attachments: { type: 'boolean', title: 'Include attachments' },
+      },
+      required: ['mailbox', 'folder'],
+    },
+    defaults: { mailbox: 'accounts@example.com', folder: 'Inbox', attachments: true },
+  },
+  {
     type: 'scheduled-trigger', label: 'Scheduled trigger', category: 'input', description: 'Runs at fixed times.',
     inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
     configSchema: {
@@ -408,6 +422,7 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     expect(screen.getByRole('button', { name: 'Add ERP connector' })).toBeDisabled() // inputs share the one-trigger rule
     expect(screen.getByRole('button', { name: 'Add File upload' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add SFTP folder' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add Email inbox' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add Scheduled trigger' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add Manual trigger' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Add Validate data' }))

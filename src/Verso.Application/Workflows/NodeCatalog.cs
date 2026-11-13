@@ -20,7 +20,7 @@ public sealed record NodeTypeDto(
     JsonElement Defaults);
 
 /// <summary>
-/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, scheduled-trigger and manual-trigger (simulated),
+/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, email-inbox, scheduled-trigger and manual-trigger (simulated),
 /// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
@@ -30,6 +30,7 @@ public static class NodeCatalog
     public const string ErpConnector = "erp-connector";
     public const string FileUpload = "file-upload";
     public const string SftpFolder = "sftp-folder";
+    public const string EmailInbox = "email-inbox";
     public const string ScheduledTrigger = "scheduled-trigger";
     public const string ManualTrigger = "manual-trigger";
     public const string FolderInput = "folder-input";
@@ -155,6 +156,12 @@ public static class NodeCatalog
     private const string FolderPattern =@"^/[A-Za-z0-9._~/ -]*$";
 
     private const string FilePatternPattern = @"^[A-Za-z0-9._*?-]*$";
+
+    /// <summary>A plain mailbox address: no display name, no spaces.</summary>
+    private const string MailboxPattern = @"^[^@\s<>,;]+@[^@\s<>,;]+\.[^@\s<>,;]+$";
+
+    /// <summary>A mail folder name such as Inbox or Accounts/Invoices.</summary>
+    private const string MailFolderPattern = @"^[A-Za-z0-9][A-Za-z0-9 ._/-]*$";
 
     public static readonly IReadOnlyDictionary<string, string> TimeZones = new Dictionary<string, string>
     {
@@ -301,6 +308,20 @@ public static class NodeCatalog
               "required": ["host", "folder", "poll"] }
             """,
             """{ "host": "", "folder": "/inbound", "pattern": "*.xml", "poll": "every-5-minutes" }"""),
+
+        Node(EmailInbox, "Email inbox", "input",
+            "Starts a run from an incoming email and its attachments. Simulated: no mailbox is accessed and no credentials are stored, so runs are submitted to POST /api/v1/workflows/{key}/executions.",
+            [], [new PortDto("out", "Out", true)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "mailbox": { "type": "string", "title": "Mailbox", "minLength": 3, "maxLength": 254, "pattern": "{{Escape(MailboxPattern)}}", "x-widget": "mono",
+                  "description": "The address of the mailbox, such as accounts@example.com. No password." },
+                "folder": { "type": "string", "title": "Folder", "minLength": 1, "maxLength": 100, "pattern": "{{Escape(MailFolderPattern)}}" },
+                "attachments": { "type": "boolean", "title": "Include attachments" } },
+              "required": ["mailbox", "folder"] }
+            """,
+            """{ "mailbox": "accounts@example.com", "folder": "Inbox", "attachments": true }"""),
 
         Node(ScheduledTrigger, "Scheduled trigger", "input",
             "Runs at fixed times. Simulated: nothing in Verso runs on a schedule yet, so runs are submitted to POST /api/v1/workflows/{key}/executions.",
