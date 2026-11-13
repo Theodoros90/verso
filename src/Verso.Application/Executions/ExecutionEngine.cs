@@ -371,6 +371,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.CombinePdfs => CombinePdfsAsync(run, node, ct),
         NodeCatalog.SendEmail => SendEmailAsync(run, node, ct),
         NodeCatalog.PrintQueue => PrintQueueAsync(run, node, ct),
+        NodeCatalog.UploadSftp => Task.FromResult(UploadSftp(node)),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
         _ => throw new StepException("node.unsupported", $"Node type '{node.Type}' can't run in this version of Verso.", retryable: false),
     };
@@ -734,6 +735,13 @@ public sealed partial class ExecutionEngine(
         }
 
         return new Outcome("sent", new { recipients = recipients.Count, attachment = attached, htmlBody = html is not null, messageId, warnings });
+    }
+
+    /// <summary>Upload to SFTP is simulated: nothing connects to a server. The step succeeds and its result says that nothing was uploaded.</summary>
+    private static Outcome UploadSftp(Workflows.WorkflowNode node)
+    {
+        string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        return new Outcome("success", new { simulated = true, uploaded = false, host = Text("host"), folder = Text("folder") });
     }
 
     /// <summary>

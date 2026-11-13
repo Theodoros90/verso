@@ -48,6 +48,7 @@ public static class NodeCatalog
     public const string CombinePdfs = "combine-pdfs";
     public const string SendEmail = "send-email";
     public const string PrintQueue = "print-queue";
+    public const string UploadSftp = "upload-sftp";
     public const string Archive = "archive";
 
     public const string LatestPublished = "latest-published";
@@ -629,6 +630,20 @@ public static class NodeCatalog
               "required": ["queue", "envelope"] }
             """,
             $$"""{ "queue": "", "envelope": "{{Executions.PrintQueues.DefaultEnvelope}}", "duplex": true }"""),
+
+        Node(UploadSftp, "Upload to SFTP", "output",
+            "Puts the generated document on a partner's SFTP server. Simulated: nothing connects to an SFTP server and no credentials are stored, so the step uploads nothing and its result says so.",
+            [In], [new PortDto("success", "Success", true), new PortDto("failed", "Failed", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "host": { "type": "string", "title": "Host", "minLength": 1, "maxLength": 253, "pattern": "{{Escape(HostPattern)}}", "x-widget": "mono",
+                  "description": "A host name such as sftp.example.com. No user name, password or URL." },
+                "folder": { "type": "string", "title": "Folder", "minLength": 1, "maxLength": 300, "pattern": "{{Escape(FolderPattern)}}", "x-widget": "mono",
+                  "description": "The folder on the server, starting with /." } },
+              "required": ["host", "folder"] }
+            """,
+            """{ "host": "", "folder": "/in" }"""),
 
         Node(Archive, "Archive", "output",
             "Stores the document in the Verso archive with metadata and a retention period.",

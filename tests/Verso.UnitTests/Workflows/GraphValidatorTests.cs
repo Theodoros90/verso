@@ -372,6 +372,29 @@ public sealed class GraphValidatorTests
         Assert.Equal(expected is null ? [] : [expected], Codes(result));
     }
 
+    [Theory]
+    [InlineData("sftp.example.com", "/in", true)]
+    [InlineData("", "/in", false)]                                // host is required
+    [InlineData("user:secret@sftp.example.com", "/in", false)]    // no credentials in the host
+    [InlineData("sftp://sftp.example.com", "/in", false)]         // no URL
+    [InlineData("sftp.example.com", "in", false)]                 // folder starts with /
+    [InlineData("sftp.example.com", "", false)]                   // folder is required
+    public void UploadSftp_NeedsAPlainHostAndAFolder(string host, string folder, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]!.AsArray().Add(JsonNode.Parse($$"""
+            { "id": "sftp", "type": "upload-sftp", "title": "Upload to SFTP", "position": { "x": 780, "y": 260 }, "config": { "host": "{{host}}", "folder": "{{folder}}" } }
+            """));
+        var edges = definition["edges"]!.AsArray();
+        edges.Single(e => (string?)e!["id"] == "e3")!["target"] = "sftp";
+        edges.Add(JsonNode.Parse("""{ "id": "e4", "source": "sftp", "sourcePort": "success", "target": "archive", "targetPort": "in" }"""));
+
+        var result = Validate(definition);
+
+        var errors = result.Issues.Where(i => i.Severity == GraphValidator.Error).Select(i => $"{i.NodeId}:{i.Code}").ToList();
+        Assert.True(valid == (errors.Count == 0), string.Join("; ", errors));
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {
@@ -383,7 +406,7 @@ public sealed class GraphValidatorTests
             var expected = type.Type switch
             {
                 NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx => ["templateId"],
-                NodeCatalog.SftpFolder => ["host"],
+                NodeCatalog.SftpFolder or NodeCatalog.UploadSftp => ["host"],
                 NodeCatalog.MergeData => ["key", "lookupKey"],
                 NodeCatalog.IfElse => ["conditions[0].field"],
                 NodeCatalog.SwitchRoute => ["field"],

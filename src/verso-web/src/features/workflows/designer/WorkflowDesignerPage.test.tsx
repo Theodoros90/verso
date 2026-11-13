@@ -201,6 +201,20 @@ const nodeTypes: NodeTypeDto[] = [
     },
     defaults: { queue: '', envelope: 'dl-window', duplex: true },
   },
+  {
+    type: 'upload-sftp', label: 'Upload to SFTP', category: 'output', description: 'Puts the document on a partner’s SFTP server (simulated).',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'success', label: 'Success', required: true }, { id: 'failed', label: 'Failed', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        host: { type: 'string', title: 'Host', 'x-widget': 'mono' },
+        folder: { type: 'string', title: 'Folder', 'x-widget': 'mono' },
+      },
+      required: ['host', 'folder'],
+    },
+    defaults: { host: '', folder: '/in' },
+  },
 ]
 
 const definition = {
@@ -472,6 +486,23 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'print-queue', config: { queue: 'cyprus-print-nightly', envelope: 'c4', duplex: true } })
+  })
+
+  it('adds an Upload to SFTP step with a Host and a Folder', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Upload to SFTP' }))
+
+    expect(await screen.findByRole('heading', { name: 'Upload to SFTP', level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /Folder/ })).toHaveValue('/in')
+    await user.type(screen.getByRole('textbox', { name: /Host/ }), 'sftp.example.com')
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'upload-sftp', config: { host: 'sftp.example.com', folder: '/in' } })
   })
 
   it('adds a Combine PDFs step with its defaults and a page order choice', async () => {
