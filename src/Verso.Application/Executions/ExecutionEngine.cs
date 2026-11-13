@@ -356,7 +356,7 @@ public sealed partial class ExecutionEngine(
     private Task<Outcome> ExecuteNodeAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct) => node.Type switch
     {
         // The payload arrived with the submission (for folder-input, the Worker read the file and submitted it).
-        NodeCatalog.ApiTrigger or NodeCatalog.ErpConnector or NodeCatalog.FileUpload or NodeCatalog.SftpFolder or NodeCatalog.EmailInbox or NodeCatalog.DatabaseQuery or NodeCatalog.ScheduledTrigger
+        NodeCatalog.ApiTrigger or NodeCatalog.ErpConnector or NodeCatalog.FileUpload or NodeCatalog.SftpFolder or NodeCatalog.EmailInbox or NodeCatalog.DatabaseQuery or NodeCatalog.FormSubmission or NodeCatalog.ScheduledTrigger
             or NodeCatalog.ManualTrigger or NodeCatalog.FolderInput => Task.FromResult(new Outcome("out", null)),
         NodeCatalog.ParseContent => Task.FromResult(Parse(run, node)),
         NodeCatalog.MapFields => Task.FromResult(Map(run, node)),

@@ -292,6 +292,15 @@ public static class GraphValidator
 
                 break;
 
+            case NodeCatalog.FormSubmission:
+                if (c.TryGetProperty("sample", out var sample) && sample.ValueKind == JsonValueKind.String
+                    && sample.GetString()!.Trim().Length > 0 && !IsJsonObject(sample.GetString()!))
+                {
+                    yield return new(Error, "config.invalid", "The sample submission must be a JSON object.", NodeId: node.Id, Field: "sample");
+                }
+
+                break;
+
             case NodeCatalog.DatabaseQuery:
                 if (c.TryGetProperty("query", out var query) && query.ValueKind == JsonValueKind.String
                     && query.GetString()!.Trim().Length > 0 && !System.Text.RegularExpressions.Regex.IsMatch(query.GetString()!, @"^\s*SELECT\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))

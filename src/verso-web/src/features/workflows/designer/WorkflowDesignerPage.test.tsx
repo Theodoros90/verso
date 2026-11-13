@@ -97,6 +97,20 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { conn: 'Core banking', query: 'SELECT * FROM customers WHERE customer_id = :customerId', params: '{"customerId":"C-001"}' },
   },
   {
+    type: 'form-submission', label: 'Form submission', category: 'input', description: 'Starts a run from data entered in a form (simulated).',
+    inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', title: 'Form name' },
+        access: { type: 'string', title: 'Access', enum: ['staff', 'portal-customers'], 'x-enumLabels': ['Signed-in staff', 'Portal customers'] },
+        sample: { type: 'string', title: 'Sample submission (JSON)', 'x-widget': 'json' },
+      },
+      required: ['name', 'access', 'sample'],
+    },
+    defaults: { name: 'Agreement request', access: 'staff', sample: '{"customerId":"C-001"}' },
+  },
+  {
     type: 'scheduled-trigger', label: 'Scheduled trigger', category: 'input', description: 'Runs at fixed times.',
     inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
     configSchema: {
@@ -438,6 +452,7 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     expect(screen.getByRole('button', { name: 'Add SFTP folder' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add Email inbox' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add Database query' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add Form submission' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add Scheduled trigger' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add Manual trigger' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Add Validate data' }))

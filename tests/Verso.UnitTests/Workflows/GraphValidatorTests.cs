@@ -296,6 +296,27 @@ public sealed class GraphValidatorTests
     }
 
     [Theory]
+    [InlineData("Agreement request", "staff", "{\"customerId\":\"C-001\"}", true)]
+    [InlineData("Agreement request", "portal-customers", "{}", true)]
+    [InlineData("", "staff", "{}", false)]                  // form name is required
+    [InlineData("Agreement request", "everyone", "{}", false)] // access is one of the listed choices
+    [InlineData("Agreement request", "staff", "{not json", false)]
+    [InlineData("Agreement request", "staff", "[1]", false)]  // a JSON object, not a list
+    public void FormSubmission_NeedsANameAnAccessChoiceAndASampleObject(string name, string access, string sample, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]![0] = new JsonObject
+        {
+            ["id"] = "trigger", ["type"] = "form-submission", ["title"] = "Form submission", ["position"] = new JsonObject { ["x"] = 0, ["y"] = 80 },
+            ["config"] = new JsonObject { ["name"] = name, ["access"] = access, ["sample"] = sample },
+        };
+
+        var result = Validate(definition);
+
+        Assert.Equal(valid, !result.Issues.Any(i => i.NodeId == "trigger" && i.Severity == GraphValidator.Error));
+    }
+
+    [Theory]
     [InlineData("Core banking", "SELECT * FROM customers WHERE customer_id = :customerId", "{\"customerId\":\"C-001\"}", true)]
     [InlineData("Core banking", "  select 1", "{}", true)]
     [InlineData("", "SELECT 1", "{}", false)]                       // connection is required
