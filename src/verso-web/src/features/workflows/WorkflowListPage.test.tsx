@@ -140,3 +140,57 @@ describe('Workflow list: duplicate', () => {
     expect(await screen.findByText('A workflow with this key already exists.')).toBeInTheDocument()
   })
 })
+
+describe('Workflow list: ready-made starters', () => {
+  const nodeType = (type: string, inputs: string[], outputs: string[]) => ({
+    type, label: type, category: 'x', description: '', defaults: {},
+    inputs: inputs.map((id) => ({ id, label: id, required: true })),
+    outputs: outputs.map((id) => ({ id, label: id, required: true })),
+  })
+  const catalog = [
+    nodeType('manual-trigger', [], ['out']), nodeType('validate', ['in'], ['valid', 'invalid']), nodeType('generate-pdf', ['in'], ['success']),
+    nodeType('approval', ['in'], ['approved', 'declined']), nodeType('archive', ['in'], ['success']),
+  ]
+
+  it('creates a workflow from a starter and saves its connected steps as the draft', async () => {
+    const created: unknown[] = []
+    const saved: { definition: { nodes: { type: string }[]; edges: { source: string; sourcePort: string; target: string }[] } }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        if (url === '/api/health') return json({ status: 'Healthy', totalDurationMs: 1, checks: [] })
+        if (url.startsWith('/api/v1/workflows?')) return json({ items: [], page: 1, pageSize: 100, total: 0 })
+        if (url === '/api/v1/node-types') return json(catalog)
+        if (url === '/api/v1/workflows' && init.method === 'POST') {
+          created.push(JSON.parse(init.body as string))
+          return json({ id: 'w5' }, 201)
+        }
+        if (url === '/api/v1/workflows/w5/draft' && init.method === 'PUT') {
+          saved.push(JSON.parse(init.body as string))
+          return json({ id: 'v1' })
+        }
+        if (url === '/api/v1/workflows/w5/draft') return new Response(JSON.stringify({ id: 'v1' }), { status: 200, headers: { 'Content-Type': 'application/json', ETag: '"1"' } })
+        return json({ title: 'Not found' }, 404)
+      }),
+    )
+    open()
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: 'Browse ready-made' }))
+    const gallery = await screen.findByRole('dialog', { name: 'Choose a ready-made workflow' })
+    expect(within(gallery).getByRole('button', { name: 'Continue' })).toBeDisabled()
+    await user.click(within(gallery).getAllByRole('button', { name: 'Preview & select' }).at(-1)!) // Document review & approval
+    await user.click(within(gallery).getByRole('button', { name: 'Continue' }))
+
+    const form = await screen.findByRole('dialog', { name: /New workflow from/ })
+    expect(within(form).getByLabelText('Name')).toHaveValue('Document review & approval')
+    await user.click(within(form).getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(saved).toHaveLength(1))
+    expect(created).toEqual([{ key: 'review', name: 'Document review & approval', description: 'Generate a draft and route it for a human decision before archiving.' }])
+    expect(saved[0]!.definition.nodes.map((n) => n.type)).toEqual(['manual-trigger', 'validate', 'generate-pdf', 'approval', 'archive'])
+    expect(saved[0]!.definition.edges.map((e) => `${e.source}.${e.sourcePort}>${e.target}`)).toEqual([
+      'manual-trigger.out>validate', 'validate.valid>generate-pdf', 'generate-pdf.success>approval', 'approval.approved>archive',
+    ])
+  })
+})
