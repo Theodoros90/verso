@@ -1,6 +1,7 @@
 import {
   Activity,
   Archive,
+  Braces,
   FileText,
   LayoutDashboard,
   PenTool,
@@ -77,6 +78,17 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Connections',
         icon: PlugZap,
         summary: 'Every external system in one place: status, credentials and where it is used.',
+      },
+    ],
+  },
+  {
+    label: 'Resources',
+    items: [
+      {
+        path: '/variables',
+        label: 'Global variables',
+        icon: Braces,
+        summary: 'Named values every workflow can reference as {{name}}.',
       },
     ],
   },
