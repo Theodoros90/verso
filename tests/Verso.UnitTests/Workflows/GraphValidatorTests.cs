@@ -296,6 +296,27 @@ public sealed class GraphValidatorTests
     }
 
     [Theory]
+    [InlineData("Core banking", "SELECT * FROM customers WHERE customer_id = :customerId", "{\"customerId\":\"C-001\"}", true)]
+    [InlineData("Core banking", "  select 1", "{}", true)]
+    [InlineData("", "SELECT 1", "{}", false)]                       // connection is required
+    [InlineData("Core banking", "DELETE FROM customers", "{}", false)] // read-only: SELECT only
+    [InlineData("Core banking", "SELECT 1", "{not json", false)]    // parameters are a JSON object
+    [InlineData("Core banking", "SELECT 1", "[1]", false)]
+    public void DatabaseQuery_NeedsAConnectionAReadOnlyQueryAndJsonParameters(string conn, string query, string args, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]![0] = new JsonObject
+        {
+            ["id"] = "trigger", ["type"] = "database-query", ["title"] = "Database query", ["position"] = new JsonObject { ["x"] = 0, ["y"] = 80 },
+            ["config"] = new JsonObject { ["conn"] = conn, ["query"] = query, ["params"] = args },
+        };
+
+        var result = Validate(definition);
+
+        Assert.Equal(valid, !result.Issues.Any(i => i.NodeId == "trigger" && i.Severity == GraphValidator.Error));
+    }
+
+    [Theory]
     [InlineData("accounts@example.com", "Inbox", true)]
     [InlineData("accounts@example.com", "Accounts/Invoices", true)]
     [InlineData("", "Inbox", false)]                              // mailbox is required

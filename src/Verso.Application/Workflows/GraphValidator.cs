@@ -292,6 +292,21 @@ public static class GraphValidator
 
                 break;
 
+            case NodeCatalog.DatabaseQuery:
+                if (c.TryGetProperty("query", out var query) && query.ValueKind == JsonValueKind.String
+                    && query.GetString()!.Trim().Length > 0 && !System.Text.RegularExpressions.Regex.IsMatch(query.GetString()!, @"^\s*SELECT\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                {
+                    yield return new(Error, "config.invalid", "The query must start with SELECT. Only read-only queries are allowed.", NodeId: node.Id, Field: "query");
+                }
+
+                if (c.TryGetProperty("params", out var args) && args.ValueKind == JsonValueKind.String
+                    && args.GetString()!.Trim().Length > 0 && !IsJsonObject(args.GetString()!))
+                {
+                    yield return new(Error, "config.invalid", "The parameters must be a JSON object.", NodeId: node.Id, Field: "params");
+                }
+
+                break;
+
             case NodeCatalog.Validate:
                 var rules = Count(c, "required") + Count(c, "types");
                 if (rules == 0)

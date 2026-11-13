@@ -83,6 +83,20 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { mailbox: 'accounts@example.com', folder: 'Inbox', attachments: true },
   },
   {
+    type: 'database-query', label: 'Database query', category: 'input', description: 'Starts a run from a read-only query (simulated).',
+    inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        conn: { type: 'string', title: 'Connection' },
+        query: { type: 'string', title: 'Read-only query', 'x-widget': 'multiline' },
+        params: { type: 'string', title: 'Parameters (JSON)', 'x-widget': 'json' },
+      },
+      required: ['conn', 'query', 'params'],
+    },
+    defaults: { conn: 'Core banking', query: 'SELECT * FROM customers WHERE customer_id = :customerId', params: '{"customerId":"C-001"}' },
+  },
+  {
     type: 'scheduled-trigger', label: 'Scheduled trigger', category: 'input', description: 'Runs at fixed times.',
     inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
     configSchema: {
@@ -423,6 +437,7 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     expect(screen.getByRole('button', { name: 'Add File upload' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add SFTP folder' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add Email inbox' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add Database query' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add Scheduled trigger' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add Manual trigger' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Add Validate data' }))

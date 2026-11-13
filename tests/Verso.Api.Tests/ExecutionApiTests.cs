@@ -34,6 +34,7 @@ public sealed class ExecutionApiTests(MigratedDatabaseFixture fixture) : IDispos
     [InlineData("file-upload", """{ "accept": "PDF, XML, CSV", "maxSize": "25mb", "who": "staff" }""")]
     [InlineData("sftp-folder", """{ "host": "sftp.example.com", "folder": "/inbound", "pattern": "*.xml", "poll": "every-5-minutes" }""")]
     [InlineData("email-inbox", """{ "mailbox": "accounts@example.com", "folder": "Inbox", "attachments": true }""")]
+    [InlineData("database-query", """{ "conn": "Core banking", "query": "SELECT * FROM customers WHERE customer_id = :customerId", "params": "{\"customerId\":\"C-001\"}" }""")]
     [InlineData("scheduled-trigger", """{ "cron": "0 1 * * *", "tz": "Europe/Nicosia" }""")]
     [InlineData("manual-trigger", """{ "who": "template-leads", "ask": "Invoice number" }""")]
     public async Task SimulatedInputTriggers_RunSubmittedDataLikeTheApiTrigger(string type, string config)

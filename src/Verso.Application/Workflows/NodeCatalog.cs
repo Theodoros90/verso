@@ -20,7 +20,7 @@ public sealed record NodeTypeDto(
     JsonElement Defaults);
 
 /// <summary>
-/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, email-inbox, scheduled-trigger and manual-trigger (simulated),
+/// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, email-inbox, database-query, scheduled-trigger and manual-trigger (simulated),
 /// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
@@ -31,6 +31,7 @@ public static class NodeCatalog
     public const string FileUpload = "file-upload";
     public const string SftpFolder = "sftp-folder";
     public const string EmailInbox = "email-inbox";
+    public const string DatabaseQuery = "database-query";
     public const string ScheduledTrigger = "scheduled-trigger";
     public const string ManualTrigger = "manual-trigger";
     public const string FolderInput = "folder-input";
@@ -322,6 +323,21 @@ public static class NodeCatalog
               "required": ["mailbox", "folder"] }
             """,
             """{ "mailbox": "accounts@example.com", "folder": "Inbox", "attachments": true }"""),
+
+        Node(DatabaseQuery, "Database query", "input",
+            "Starts a run from the result of a read-only query. Simulated: no database is queried and no credentials are stored, so runs are submitted to POST /api/v1/workflows/{key}/executions.",
+            [], [new PortDto("out", "Out", true)],
+            """
+            { "type": "object",
+              "properties": {
+                "conn": { "type": "string", "title": "Connection", "minLength": 1, "maxLength": 100,
+                  "description": "The name of a shared connection, such as Core banking. No connection string or password." },
+                "query": { "type": "string", "title": "Read-only query", "minLength": 1, "maxLength": 4000, "x-widget": "multiline",
+                  "description": "Must start with SELECT. Nothing is executed in this version." },
+                "params": { "type": "string", "title": "Parameters (JSON)", "minLength": 1, "maxLength": 4000, "x-widget": "json" } },
+              "required": ["conn", "query", "params"] }
+            """,
+            """{ "conn": "Core banking", "query": "SELECT * FROM customers WHERE customer_id = :customerId", "params": "{\"customerId\":\"C-001\"}" }"""),
 
         Node(ScheduledTrigger, "Scheduled trigger", "input",
             "Runs at fixed times. Simulated: nothing in Verso runs on a schedule yet, so runs are submitted to POST /api/v1/workflows/{key}/executions.",
