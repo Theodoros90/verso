@@ -1,6 +1,7 @@
 import type { RouteObject } from 'react-router'
 
 import { AuditPage } from '@/features/audit/AuditPage'
+import { ConnectionsPage } from '@/features/connections/ConnectionsPage'
 import { ArchivePage } from '@/features/executions/ArchivePage'
 import { ExecutionDetailPage } from '@/features/executions/ExecutionDetailPage'
 import { ExecutionListPage } from '@/features/executions/ExecutionListPage'
@@ -18,7 +19,7 @@ import { AuthGate } from './AuthGate'
 import { NAV_ITEMS } from './navigation'
 
 /** Screens that exist; the other navigation entries get the "not built yet" placeholder. */
-const BUILT_PATHS = ['/', '/templates', '/workflows', '/executions', '/archive', '/audit']
+const BUILT_PATHS = ['/', '/templates', '/workflows', '/executions', '/connections', '/archive', '/audit']
 
 export const routes: RouteObject[] = [
   {
@@ -38,6 +39,7 @@ export const routes: RouteObject[] = [
       { path: 'workflows/:id', element: <WorkflowDesignerPage /> },
       { path: 'executions', element: <ExecutionListPage /> },
       { path: 'executions/:id', element: <ExecutionDetailPage /> },
+      { path: 'connections', element: <ConnectionsPage /> },
       { path: 'archive', element: <ArchivePage /> },
       { path: 'audit', element: <AuditPage /> },
       ...NAV_ITEMS.filter((item) => !BUILT_PATHS.includes(item.path)).map((item) => ({

@@ -52,11 +52,14 @@ export function Switch({
   onCheckedChange,
   label,
   disabled,
+  hideLabel,
 }: {
   checked: boolean
   onCheckedChange: (checked: boolean) => void
   label: string
   disabled?: boolean
+  /** Keep the label for assistive technology only. */
+  hideLabel?: boolean
 }) {
   return (
     <label className={cn('inline-flex cursor-pointer items-center gap-[7px] text-[13px] text-ink-2', disabled && 'cursor-default opacity-50')}>
@@ -73,7 +76,7 @@ export function Switch({
           className={cn('absolute top-[3px] left-[3px] size-3.5 rounded-full bg-white transition-transform', checked && 'translate-x-3.5')}
         />
       </button>
-      {label}
+      {hideLabel ? <span className="sr-only">{label}</span> : label}
     </label>
   )
 }
