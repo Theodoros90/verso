@@ -87,3 +87,56 @@ describe('Workflow list: deactivate', () => {
     expect(screen.getByRole('link', { name: /Invoice standard/ })).toBeInTheDocument()
   })
 })
+
+describe('Workflow list: duplicate', () => {
+  it('copies a workflow under a new key and opens the copy', async () => {
+    const bodies: unknown[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        if (url === '/api/health') return json({ status: 'Healthy', totalDurationMs: 1, checks: [] })
+        if (url.startsWith('/api/v1/workflows?')) return json({ items: [summary({})], page: 1, pageSize: 100, total: 1 })
+        if (url === '/api/v1/workflows/w1/duplicate' && init.method === 'POST') {
+          bodies.push(JSON.parse(init.body as string))
+          return json({ id: 'w9' }, 201)
+        }
+        return json({ title: 'Not found' }, 404)
+      }),
+    )
+    open()
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: 'Actions for Invoice standard' }))
+    await user.click(await screen.findByRole('menuitem', { name: /Duplicate/ }))
+    const dialog = await screen.findByRole('dialog', { name: /Duplicate "Invoice standard"/ })
+    expect(within(dialog).getByLabelText('Key')).toHaveValue('invoice-standard-copy')
+    expect(within(dialog).getByLabelText('Name')).toHaveValue('Copy of Invoice standard')
+
+    await user.clear(within(dialog).getByLabelText('Key'))
+    await user.type(within(dialog).getByLabelText('Key'), 'invoice-v2')
+    await user.click(within(dialog).getByRole('button', { name: 'Duplicate' }))
+
+    await waitFor(() => expect(bodies).toEqual([{ key: 'invoice-v2', name: 'Copy of Invoice standard' }]))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('shows a taken key next to the field', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        if (url === '/api/health') return json({ status: 'Healthy', totalDurationMs: 1, checks: [] })
+        if (url.startsWith('/api/v1/workflows?')) return json({ items: [summary({})], page: 1, pageSize: 100, total: 1 })
+        if (url.endsWith('/duplicate') && init.method === 'POST') return json({ title: 'Conflict', status: 409, code: 'workflow.key_taken' }, 409)
+        return json({ title: 'Not found' }, 404)
+      }),
+    )
+    open()
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: 'Actions for Invoice standard' }))
+    await user.click(await screen.findByRole('menuitem', { name: /Duplicate/ }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Duplicate' }))
+
+    expect(await screen.findByText('A workflow with this key already exists.')).toBeInTheDocument()
+  })
+})

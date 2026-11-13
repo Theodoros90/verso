@@ -72,6 +72,11 @@ export interface DevUserDto {
   token: string
 }
 
+export interface DuplicateWorkflowRequest {
+  key: string | null
+  name: string | null
+}
+
 export interface EntraConfigDto {
   authority: string
   clientId: string

@@ -2,6 +2,7 @@
 import { request, type Tagged } from './client'
 import type {
   CreateWorkflowRequest,
+  DuplicateWorkflowRequest,
   NodeTypeDto,
   PageResultOfWorkflowSummaryDto,
   WorkflowDto,
@@ -23,6 +24,9 @@ export const workflowsApi = {
   deactivate: (id: string) => request<WorkflowDto>(`${base}/${id}/deactivate`, { method: 'POST' }).then((r) => r.body),
 
   activate: (id: string) => request<WorkflowDto>(`${base}/${id}/activate`, { method: 'POST' }).then((r) => r.body),
+
+  /** Copies a workflow into a new one (draft with the same graph) under the given key and name. */
+  duplicate: (id: string, body: DuplicateWorkflowRequest) => request<WorkflowDto>(`${base}/${id}/duplicate`, { method: 'POST', body }).then((r) => r.body),
 
   create: (body: CreateWorkflowRequest) => request<WorkflowDto>(base, { method: 'POST', body }).then((r) => r.body),
 

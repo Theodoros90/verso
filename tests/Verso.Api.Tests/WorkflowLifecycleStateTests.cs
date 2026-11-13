@@ -106,6 +106,60 @@ public sealed class WorkflowLifecycleStateTests(MigratedDatabaseFixture fixture)
         Assert.Equal("workflow.not_found", problem.GetProperty("code").GetString());
     }
 
+    private async Task<HttpResponseMessage> DuplicateAsync(Guid id, string? key, string? name) =>
+        await _client.PostAsJsonAsync(new Uri($"/api/v1/workflows/{id}/duplicate", UriKind.Relative), new { key, name });
+
+    [Fact]
+    public async Task Duplicate_CreatesAnActiveDraftWithTheSourceGraph_AndAudits()
+    {
+        var (key, id) = await PublishedWorkflowAsync();
+        var copyKey = $"copy-{Guid.NewGuid():N}"[..20];
+
+        using var response = await DuplicateAsync(id, copyKey, "  Copy of invoice  ");
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var copy = await ExecutionTestKit.ReadAsync(response);
+        var copyId = copy.GetProperty("id").GetGuid();
+        Assert.NotEqual(id, copyId);
+        Assert.Equal(copyKey, copy.GetProperty("key").GetString());
+        Assert.Equal("Copy of invoice", copy.GetProperty("name").GetString());
+        Assert.True(copy.GetProperty("isActive").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, copy.GetProperty("latestPublishedVersion").ValueKind); // versions are not copied
+
+        var (sourceDefinition, copyDefinition) = await Kit.WithDbAsync(async db => (
+            (await db.Workflows.Include(w => w.Versions).SingleAsync(w => w.Id == id)).LatestPublished!.Definition,
+            (await db.Workflows.Include(w => w.Versions).SingleAsync(w => w.Id == copyId)).Draft!.Definition));
+        Assert.Equal(sourceDefinition, copyDefinition);
+        Assert.Contains(key, await ListedKeysAsync(inactive: false));
+        Assert.Contains(copyKey, await ListedKeysAsync(inactive: false));
+
+        var actions = await Kit.WithDbAsync(db => db.AuditEntries.AsNoTracking()
+            .Where(a => a.EntityType == "Workflow" && a.EntityId == copyId.ToString()).Select(a => a.Action).ToListAsync());
+        Assert.Equal(["WorkflowDuplicated"], actions);
+    }
+
+    [Fact]
+    public async Task Duplicate_RejectsATakenOrInvalidKey_AndAnUnknownSource()
+    {
+        var (key, id) = await PublishedWorkflowAsync();
+
+        using (var taken = await DuplicateAsync(id, key, "Same key"))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, taken.StatusCode);
+            Assert.Equal("workflow.key_taken", (await ExecutionTestKit.ReadAsync(taken)).GetProperty("code").GetString());
+        }
+
+        using (var invalid = await DuplicateAsync(id, "Not A Key", ""))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+            var errors = (await ExecutionTestKit.ReadAsync(invalid)).GetProperty("errors");
+            Assert.True(errors.TryGetProperty("key", out _) && errors.TryGetProperty("name", out _));
+        }
+
+        using var missing = await DuplicateAsync(Guid.NewGuid(), "some-copy", "Copy");
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+    }
+
     [Fact]
     public async Task OnlyWorkflowAuthors_MayChangeTheState()
     {

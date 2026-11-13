@@ -13,6 +13,9 @@ namespace Verso.Application.Workflows;
 
 public sealed record CreateWorkflowRequest(string? Key, string? Name, string? Description);
 
+/// <summary>Body of the duplicate endpoint: the key and name of the copy.</summary>
+public sealed record DuplicateWorkflowRequest(string? Key, string? Name);
+
 public sealed record SaveWorkflowDraftRequest(JsonElement? Definition);
 
 /// <summary>Optional body of the validate endpoint: without a definition, the saved draft is validated.</summary>
@@ -40,6 +43,7 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
     public static class Actions
     {
         public const string Created = "WorkflowCreated";
+        public const string Duplicated = "WorkflowDuplicated";
         public const string DraftCreated = "WorkflowDraftCreated";
         public const string DraftSaved = "WorkflowDraftSaved";
         public const string Published = "WorkflowPublished";
@@ -58,19 +62,7 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
 
     public async Task<Result<WorkflowDto>> CreateAsync(CreateWorkflowRequest request, CancellationToken ct)
     {
-        var errors = new Dictionary<string, string[]>();
-        var key = request.Key?.Trim() ?? "";
-        if (key.Length is < 2 or > 48 || !KeyPattern().IsMatch(key))
-        {
-            errors["key"] = ["2–48 characters: lower-case letters, digits and single hyphens, starting with a letter (e.g. invoice-standard)."];
-        }
-
-        var name = request.Name?.Trim() ?? "";
-        if (name.Length is < 1 or > 200)
-        {
-            errors["name"] = ["1–200 characters."];
-        }
-
+        var errors = ValidateIdentity(request.Key, request.Name);
         if (request.Description is { Length: > 1000 })
         {
             errors["description"] = ["At most 1000 characters."];
@@ -81,6 +73,8 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
             return AppError.Validation(errors);
         }
 
+        var key = request.Key!.Trim();
+        var name = request.Name!.Trim();
         if (await db.Workflows.AnyAsync(w => w.Key == key, ct))
         {
             return AppError.Conflict("workflow.key_taken", $"A workflow with key '{key}' already exists.");
@@ -92,6 +86,56 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
         Audit(Actions.Created, workflow.Id, now, new { key });
         await db.SaveChangesAsync(ct);
         return ToDto(workflow);
+    }
+
+    /// <summary>
+    /// Copies a workflow into a new one with its own key and name. The copy starts as a draft holding the source's current
+    /// graph (its draft if it has one, otherwise its latest published version) and is active. Description is copied;
+    /// versions, runs and archive are not, and nothing is shared afterwards.
+    /// </summary>
+    public async Task<Result<WorkflowDto>> DuplicateAsync(Guid id, DuplicateWorkflowRequest request, CancellationToken ct)
+    {
+        if (await LoadAsync(id, ct) is not { } source)
+        {
+            return NotFound(id);
+        }
+
+        var errors = ValidateIdentity(request.Key, request.Name);
+        if (errors.Count > 0)
+        {
+            return AppError.Validation(errors);
+        }
+
+        var key = request.Key!.Trim();
+        if (await db.Workflows.AnyAsync(w => w.Key == key, ct))
+        {
+            return AppError.Conflict("workflow.key_taken", $"A workflow with key '{key}' already exists.");
+        }
+
+        var definition = (source.Draft ?? source.LatestPublished!).Definition;
+        var now = clock.GetUtcNow();
+        var copy = Workflow.Create(key, request.Name!.Trim(), source.Description, definition, user.Id, now);
+        db.Workflows.Add(copy);
+        Audit(Actions.Duplicated, copy.Id, now, new { key, sourceId = source.Id, sourceKey = source.Key });
+        await db.SaveChangesAsync(ct);
+        return ToDto(copy);
+    }
+
+    private static Dictionary<string, string[]> ValidateIdentity(string? rawKey, string? rawName)
+    {
+        var errors = new Dictionary<string, string[]>();
+        var key = rawKey?.Trim() ?? "";
+        if (key.Length is < 2 or > 48 || !KeyPattern().IsMatch(key))
+        {
+            errors["key"] = ["2–48 characters: lower-case letters, digits and single hyphens, starting with a letter (e.g. invoice-standard)."];
+        }
+
+        if ((rawName?.Trim() ?? "").Length is < 1 or > 200)
+        {
+            errors["name"] = ["1–200 characters."];
+        }
+
+        return errors;
     }
 
     /// <summary>The active workflows (<paramref name="inactive"/> false) or, to activate one again, the deactivated ones (true).</summary>

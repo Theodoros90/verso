@@ -264,6 +264,7 @@ A workflow is a graph of steps: a trigger, then steps connected output → input
 | PUT | `/api/v1/workflows/{id}/draft` | 200 `WorkflowVersion` + new `ETag` | Save `{ definition }` (`If-Match`) |
 | POST | `/api/v1/workflows/{id}/draft/validate` | 200 `WorkflowValidation` | Validate `{ definition }` (unsaved edits) or, without a body, the saved draft |
 | POST | `/api/v1/workflows/{id}/draft/publish` | 200 `WorkflowVersion` (published) | Validate and freeze (`If-Match`) |
+| POST | `/api/v1/workflows/{id}/duplicate` | 201 `Workflow`, `Location` | Copy into a new workflow `{ key, name }`: starts as a draft with the source's current graph (its draft, else its latest published version), active; description copied, versions and runs not. 409 `workflow.key_taken`. Audited (`WorkflowDuplicated`) |
 | POST | `/api/v1/workflows/{id}/deactivate` | 200 `Workflow` | Stop accepting new runs and the folder trigger's scanning, and move it to the deactivated list. Nothing is deleted; the key stays reserved; still editable |
 | POST | `/api/v1/workflows/{id}/activate` | 200 `Workflow` | Accept runs again and return to the main list |
 

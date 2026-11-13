@@ -37,6 +37,20 @@ public static class WorkflowEndpoints
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status409Conflict);
 
+        group.MapPost("/{id:guid}/duplicate", async (Guid id, DuplicateWorkflowRequest request, WorkflowService service, CancellationToken ct) =>
+            {
+                var result = await service.DuplicateAsync(id, request, ct);
+                return result.IsSuccess
+                    ? Results.Created($"/api/v1/workflows/{result.Value!.Id}", result.Value)
+                    : result.Error!.ToProblem();
+            })
+            .WithName("DuplicateWorkflow")
+            .RequireAuthorization(Policies.WorkflowAuthoring)
+            .Produces<WorkflowDto>(StatusCodes.Status201Created)
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
         group.MapGet("/{id:guid}", async (Guid id, WorkflowService service, CancellationToken ct) =>
                 (await service.GetAsync(id, ct)).ToResult())
             .WithName("GetWorkflow")

@@ -13,6 +13,7 @@ import type { WorkflowSummaryDto } from '@/lib/api/generated'
 import { workflowsApi } from '@/lib/api/workflows'
 
 import { DeactivateWorkflowDialog } from './DeactivateWorkflowDialog'
+import { DuplicateWorkflowDialog } from './DuplicateWorkflowDialog'
 
 type ListState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; items: WorkflowSummaryDto[] }
 
@@ -25,6 +26,8 @@ export function WorkflowListPage() {
   const [reloads, setReloads] = useState(0)
   const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; message: string } | null>(null)
   const [deactivating, setDeactivating] = useState<WorkflowSummaryDto | null>(null)
+  const [duplicating, setDuplicating] = useState<WorkflowSummaryDto | null>(null)
+  const navigate = useNavigate()
   const canCreate = usePermissions().workflowAuthoring
 
   useEffect(() => {
@@ -116,6 +119,7 @@ export function WorkflowListPage() {
               {canCreate && (
                 <WorkflowMenu
                   workflow={w}
+                  onDuplicate={() => setDuplicating(w)}
                   onDeactivate={() => setDeactivating(w)}
                   onActivate={() => void change(() => workflowsApi.activate(w.id), `“${w.name}” is active again and is back in the list.`)}
                 />
@@ -126,6 +130,14 @@ export function WorkflowListPage() {
       )}
 
       <NewWorkflowDialog open={creating} onOpenChange={setCreating} />
+      {duplicating && (
+        <DuplicateWorkflowDialog
+          workflow={duplicating}
+          open
+          onOpenChange={(open) => !open && setDuplicating(null)}
+          onDone={(copy) => navigate(`/workflows/${copy.id}`)}
+        />
+      )}
       {deactivating && (
         <DeactivateWorkflowDialog
           workflow={deactivating}
@@ -141,8 +153,18 @@ export function WorkflowListPage() {
   )
 }
 
-/** The “⋯” menu of a card: Deactivate (asks first) for an active workflow, Activate for a deactivated one. */
-function WorkflowMenu({ workflow, onDeactivate, onActivate }: { workflow: WorkflowSummaryDto; onDeactivate: () => void; onActivate: () => void }) {
+/** The “⋯” menu of a card: Duplicate, then Deactivate (asks first) for an active workflow, Activate for a deactivated one. */
+function WorkflowMenu({
+  workflow,
+  onDuplicate,
+  onDeactivate,
+  onActivate,
+}: {
+  workflow: WorkflowSummaryDto
+  onDuplicate: () => void
+  onDeactivate: () => void
+  onActivate: () => void
+}) {
   const item = 'cursor-pointer rounded px-2.5 py-1.5 text-[13px] text-ink outline-none data-[highlighted]:bg-surface-2'
   return (
     <DropdownMenu.Root>
@@ -153,6 +175,9 @@ function WorkflowMenu({ workflow, onDeactivate, onActivate }: { workflow: Workfl
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content align="end" sideOffset={4} className="z-50 min-w-44 rounded-lg border border-line bg-surface p-1 shadow-lg">
+          <DropdownMenu.Item className={item} onSelect={onDuplicate}>
+            Duplicate…
+          </DropdownMenu.Item>
           {workflow.isActive ? (
             <DropdownMenu.Item className={item} onSelect={onDeactivate}>
               Deactivate…
