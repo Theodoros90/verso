@@ -358,7 +358,8 @@ public sealed partial class ExecutionEngine(
         // The payload arrived with the submission (for folder-input, the Worker read the file and submitted it).
         NodeCatalog.ApiTrigger or NodeCatalog.ErpConnector or NodeCatalog.FileUpload or NodeCatalog.SftpFolder or NodeCatalog.EmailInbox or NodeCatalog.DatabaseQuery or NodeCatalog.FormSubmission or NodeCatalog.ScheduledTrigger
             or NodeCatalog.ManualTrigger or NodeCatalog.FolderInput => Task.FromResult(new Outcome("out", null)),
-        NodeCatalog.ParseContent => Task.FromResult(Parse(run, node)),
+        NodeCatalog.LookupEnrich => Task.FromResult(LookupEnrich(node)),
+        NodeCatalog.ParseContent =>Task.FromResult(Parse(run, node)),
         NodeCatalog.MapFields => Task.FromResult(Map(run, node)),
         NodeCatalog.TransformData => Task.FromResult(Transform(run, node)),
         NodeCatalog.MergeData => Task.FromResult(Merge(run, node)),
@@ -743,6 +744,13 @@ public sealed partial class ExecutionEngine(
     {
         string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
         return new Outcome("success", new { simulated = true, uploaded = false, host = Text("host"), folder = Text("folder") });
+    }
+
+    /// <summary>Lookup / enrich is simulated: nothing is looked up and the run's data is not changed. The step takes the 'found' path and its result says that nothing was looked up.</summary>
+    private static Outcome LookupEnrich(Workflows.WorkflowNode node)
+    {
+        string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        return new Outcome("found", new { simulated = true, lookedUp = false, conn = Text("conn"), key = Text("key"), destination = Text("destination") });
     }
 
     /// <summary>Deliver via API is simulated: nothing is sent. The step takes the 'delivered' path and its result says that nothing was delivered.</summary>

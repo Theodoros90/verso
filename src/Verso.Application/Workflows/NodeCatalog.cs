@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, email-inbox, database-query, form-submission, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), lookup-enrich (simulated: configures a keyed lookup, nothing is looked up), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -40,6 +40,7 @@ public static class NodeCatalog
     public const string MapFields = "map-fields";
     public const string TransformData = "transform";
     public const string MergeData = "merge-data";
+    public const string LookupEnrich = "lookup-enrich";
     public const string IfElse = "if-else";
     public const string SwitchRoute = "switch";
     public const string ForEach = "for-each";
@@ -141,6 +142,13 @@ public static class NodeCatalog
         ["staff"] = "Signed-in staff",
         ["portal-customers"] = "Portal customers",
         ["anyone-with-link"] = "Anyone with the link",
+    };
+
+    /// <summary>What a Lookup / enrich step does when nothing matches.</summary>
+    public static readonly IReadOnlyDictionary<string, string> LookupMissing = new Dictionary<string, string>
+    {
+        ["continue"] = "Continue with empty result",
+        ["fail"] = "Fail the run",
     };
 
     /// <summary>Who may fill in a Form submission step's form.</summary>
@@ -469,6 +477,21 @@ public static class NodeCatalog
               "required": ["rules"] }
             """,
             """{ "rules": [] }"""),
+
+        Node(LookupEnrich, "Lookup / enrich data", "process",
+            "Looks a record up by a key in the data and adds the result to it. Simulated: no connection is used and no data is changed, so the step takes the 'Found' path and its result says nothing was looked up.",
+            [In], [new PortDto("found", "Found", true), new PortDto("missing", "Not found", false), new PortDto("failed", "Failed", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "conn": { "type": "string", "title": "Connection", "minLength": 1, "maxLength": 100,
+                  "description": "The name of a shared connection, such as Microsoft Dynamics 365. No connection string or password." },
+                "key": { "type": "string", "title": "Lookup key field", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DataPathPattern)}}", "x-widget": "data-path" },
+                "destination": { "type": "string", "title": "Result field", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DataPathPattern)}}", "x-widget": "data-path" },
+                "missing": { "type": "string", "title": "If no match", "enum": {{JsonSerializer.Serialize(LookupMissing.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(LookupMissing.Values)}} } },
+              "required": ["conn", "key", "destination", "missing"] }
+            """,
+            """{ "conn": "Microsoft Dynamics 365", "key": "customer.id", "destination": "customer.profile", "missing": "continue" }"""),
 
         Node(MergeData, "Merge data", "process",
             "Joins the data with a lookup table on a key: each record gets the fields of the lookup row whose key equals the record's. The lookup table is typed into the step (one list of records).",

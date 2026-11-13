@@ -482,6 +482,30 @@ public sealed class GraphValidatorTests
         Assert.True(valid == (errors.Count == 0), string.Join("; ", errors));
     }
 
+    [Theory]
+    [InlineData("Microsoft Dynamics 365", "customer.id", "customer.profile", "continue", true)]
+    [InlineData("Core banking", "customer.id", "customer.profile", "fail", true)]
+    [InlineData("", "customer.id", "customer.profile", "continue", false)]            // connection is required
+    [InlineData("Core banking", "", "customer.profile", "continue", false)]           // key field is required
+    [InlineData("Core banking", "customer id", "customer.profile", "continue", false)] // a field path, not free text
+    [InlineData("Core banking", "customer.id", "", "continue", false)]                // result field is required
+    [InlineData("Core banking", "customer.id", "customer.profile", "ignore", false)]  // one of the listed choices
+    public void LookupEnrich_NeedsAConnectionTwoFieldsAndAMissChoice(string conn, string key, string destination, string missing, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]!.AsArray().Add(JsonNode.Parse($$"""
+            { "id": "lookup", "type": "lookup-enrich", "title": "Lookup / enrich data", "position": { "x": 780, "y": 260 }, "config": { "conn": "{{conn}}", "key": "{{key}}", "destination": "{{destination}}", "missing": "{{missing}}" } }
+            """));
+        var edges = definition["edges"]!.AsArray();
+        edges.Single(e => (string?)e!["id"] == "e3")!["target"] = "lookup";
+        edges.Add(JsonNode.Parse("""{ "id": "e4", "source": "lookup", "sourcePort": "found", "target": "archive", "targetPort": "in" }"""));
+
+        var result = Validate(definition);
+
+        var errors = result.Issues.Where(i => i.Severity == GraphValidator.Error).Select(i => $"{i.NodeId}:{i.Code}").ToList();
+        Assert.True(valid == (errors.Count == 0), string.Join("; ", errors));
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {

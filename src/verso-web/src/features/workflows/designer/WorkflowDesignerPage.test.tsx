@@ -111,6 +111,22 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { name: 'Agreement request', access: 'staff', sample: '{"customerId":"C-001"}' },
   },
   {
+    type: 'lookup-enrich', label: 'Lookup / enrich data', category: 'process', description: 'Looks a record up by a key (simulated).',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'found', label: 'Found', required: true }, { id: 'missing', label: 'Not found', required: false }, { id: 'failed', label: 'Failed', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        conn: { type: 'string', title: 'Connection' },
+        key: { type: 'string', title: 'Lookup key field', 'x-widget': 'data-path' },
+        destination: { type: 'string', title: 'Result field', 'x-widget': 'data-path' },
+        missing: { type: 'string', title: 'If no match', enum: ['continue', 'fail'], 'x-enumLabels': ['Continue with empty result', 'Fail the run'] },
+      },
+      required: ['conn', 'key', 'destination', 'missing'],
+    },
+    defaults: { conn: 'Microsoft Dynamics 365', key: 'customer.id', destination: 'customer.profile', missing: 'continue' },
+  },
+  {
     type: 'scheduled-trigger', label: 'Scheduled trigger', category: 'input', description: 'Runs at fixed times.',
     inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
     configSchema: {
@@ -575,6 +591,22 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'deliver-api', config: { url: 'https://api.partner.com/documents' } })
+  })
+
+  it('adds a Lookup / enrich data step with its defaults and saves them', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Lookup / enrich data' }))
+
+    expect(await screen.findByRole('heading', { name: 'Lookup / enrich data', level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /Connection/ })).toHaveValue('Microsoft Dynamics 365')
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'lookup-enrich', config: { key: 'customer.id', destination: 'customer.profile', missing: 'continue' } })
   })
 
   it('adds a Combine PDFs step with its defaults and a page order choice', async () => {
