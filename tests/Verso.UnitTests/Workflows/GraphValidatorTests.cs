@@ -395,6 +395,30 @@ public sealed class GraphValidatorTests
         Assert.True(valid == (errors.Count == 0), string.Join("; ", errors));
     }
 
+    [Theory]
+    [InlineData("https://api.partner.com/documents", true)]
+    [InlineData("https://api.partner.com:8443/v1/documents", true)]
+    [InlineData("", false)]                                          // required
+    [InlineData("http://api.partner.com/documents", false)]          // https only
+    [InlineData("https://user:secret@api.partner.com/documents", false)] // no credentials in the URL
+    [InlineData("https://api.partner.com/documents?key=abc", false)] // no query string
+    [InlineData("api.partner.com/documents", false)]                 // needs the scheme
+    public void DeliverApi_NeedsAnHttpsAddress(string url, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]!.AsArray().Add(JsonNode.Parse($$"""
+            { "id": "api", "type": "deliver-api", "title": "Deliver via API", "position": { "x": 780, "y": 260 }, "config": { "url": "{{url}}" } }
+            """));
+        var edges = definition["edges"]!.AsArray();
+        edges.Single(e => (string?)e!["id"] == "e3")!["target"] = "api";
+        edges.Add(JsonNode.Parse("""{ "id": "e4", "source": "api", "sourcePort": "delivered", "target": "archive", "targetPort": "in" }"""));
+
+        var result = Validate(definition);
+
+        var errors = result.Issues.Where(i => i.Severity == GraphValidator.Error).Select(i => $"{i.NodeId}:{i.Code}").ToList();
+        Assert.True(valid == (errors.Count == 0), string.Join("; ", errors));
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {
@@ -412,6 +436,7 @@ public sealed class GraphValidatorTests
                 NodeCatalog.SwitchRoute => ["field"],
                 NodeCatalog.ForEach => ["field"],
                 NodeCatalog.PrintQueue => ["queue"],
+                NodeCatalog.DeliverApi => ["url"],
                 _ => Array.Empty<string>(),
             };
             Assert.Equal(expected, errors.Select(e => e.Field).ToArray());

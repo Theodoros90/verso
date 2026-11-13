@@ -49,6 +49,7 @@ public static class NodeCatalog
     public const string SendEmail = "send-email";
     public const string PrintQueue = "print-queue";
     public const string UploadSftp = "upload-sftp";
+    public const string DeliverApi = "deliver-api";
     public const string Archive = "archive";
 
     public const string LatestPublished = "latest-published";
@@ -148,7 +149,10 @@ public static class NodeCatalog
 
     private const string HostPattern = @"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$";
 
-    private const string FolderPattern = @"^/[A-Za-z0-9._~/ -]*$";
+    /// <summary>An https address: a host, an optional port and path. No user name or password, no query string or fragment.</summary>
+    private const string ApiUrlPattern = @"^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9._~/%-]*)?$";
+
+    private const string FolderPattern =@"^/[A-Za-z0-9._~/ -]*$";
 
     private const string FilePatternPattern = @"^[A-Za-z0-9._*?-]*$";
 
@@ -644,6 +648,18 @@ public static class NodeCatalog
               "required": ["host", "folder"] }
             """,
             """{ "host": "", "folder": "/in" }"""),
+
+        Node(DeliverApi, "Deliver via API", "output",
+            "Posts the generated document to another system's API. Simulated: nothing is sent over the network and no credentials are stored, so the step delivers nothing and its result says so.",
+            [In], [new PortDto("delivered", "Delivered", true), new PortDto("failed", "Failed", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "url": { "type": "string", "title": "Endpoint URL", "minLength": 1, "maxLength": 300, "pattern": "{{Escape(ApiUrlPattern)}}", "x-widget": "mono",
+                  "description": "An https address such as https://api.partner.com/documents. No user name, password or query string." } },
+              "required": ["url"] }
+            """,
+            """{ "url": "" }"""),
 
         Node(Archive, "Archive", "output",
             "Stores the document in the Verso archive with metadata and a retention period.",

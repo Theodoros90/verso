@@ -372,6 +372,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.SendEmail => SendEmailAsync(run, node, ct),
         NodeCatalog.PrintQueue => PrintQueueAsync(run, node, ct),
         NodeCatalog.UploadSftp => Task.FromResult(UploadSftp(node)),
+        NodeCatalog.DeliverApi => Task.FromResult(DeliverApi(node)),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
         _ => throw new StepException("node.unsupported", $"Node type '{node.Type}' can't run in this version of Verso.", retryable: false),
     };
@@ -742,6 +743,13 @@ public sealed partial class ExecutionEngine(
     {
         string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
         return new Outcome("success", new { simulated = true, uploaded = false, host = Text("host"), folder = Text("folder") });
+    }
+
+    /// <summary>Deliver via API is simulated: nothing is sent. The step takes the 'delivered' path and its result says that nothing was delivered.</summary>
+    private static Outcome DeliverApi(Workflows.WorkflowNode node)
+    {
+        var url = node.Config.TryGetProperty("url", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        return new Outcome("delivered", new { simulated = true, sent = false, url });
     }
 
     /// <summary>

@@ -215,6 +215,17 @@ const nodeTypes: NodeTypeDto[] = [
     },
     defaults: { host: '', folder: '/in' },
   },
+  {
+    type: 'deliver-api', label: 'Deliver via API', category: 'output', description: 'Posts the document to another system (simulated).',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'delivered', label: 'Delivered', required: true }, { id: 'failed', label: 'Failed', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: { url: { type: 'string', title: 'Endpoint URL', 'x-widget': 'mono' } },
+      required: ['url'],
+    },
+    defaults: { url: '' },
+  },
 ]
 
 const definition = {
@@ -503,6 +514,22 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'upload-sftp', config: { host: 'sftp.example.com', folder: '/in' } })
+  })
+
+  it('adds a Deliver via API step with an Endpoint URL', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Deliver via API' }))
+
+    expect(await screen.findByRole('heading', { name: 'Deliver via API', level: 3 })).toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: /Endpoint URL/ }), 'https://api.partner.com/documents')
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'deliver-api', config: { url: 'https://api.partner.com/documents' } })
   })
 
   it('adds a Combine PDFs step with its defaults and a page order choice', async () => {
