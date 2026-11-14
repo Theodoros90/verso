@@ -1,5 +1,5 @@
 import { GripVertical, Plus } from 'lucide-react'
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -14,12 +14,15 @@ import {
   type Region,
 } from '../model/layout'
 import { clamp, resize, updatePlacement } from '../model/ops'
+import { bodyPerPageMm, paginate } from '../model/pages'
 import type { Draft, Selection } from './designerState'
 import { getPayload, hasPayload, setPayload, type DragPayload } from './dnd'
 import { ElementView, type ViewContext } from './ElementView'
 
 /** CSS pixels per millimetre at 96 dpi (the sheet is drawn in mm and scaled by the zoom). */
 export const MM_PX = 96 / 25.4
+/** Height of the strip drawn between two pages. */
+const PAGE_STRIP_MM = 9
 
 export type DropTarget = { region: 'header' | 'footer'; at: { xMm: number; yMm: number } } | { region: 'body'; index: number }
 
@@ -81,6 +84,8 @@ export function Canvas(props: CanvasProps) {
     return () => ro.disconnect()
   }, [])
 
+  const [pageCount, setPageCount] = useState(1)
+
   return (
     <div
       className="relative min-h-0 flex-1 overflow-auto bg-[var(--stage)] [background-image:radial-gradient(var(--stage-dot)_1px,transparent_1px)] [background-size:16px_16px]"
@@ -118,12 +123,25 @@ export function Canvas(props: CanvasProps) {
           }}
         >
           <FixedBand {...props} region="header" />
-          <BodyArea {...props} />
+          <BodyArea {...props} onPageCount={setPageCount} />
           <FixedBand {...props} region="footer" />
         </div>
       </div>
-      <div className="pointer-events-none absolute right-3 bottom-2 font-mono text-[10.5px] text-ink-3" aria-hidden="true">
-        {page.size} {size.width}×{size.height} mm · content {contentWidthMm(page)} mm wide
+      <div aria-hidden="true" className="pointer-events-none sticky bottom-2 z-20 h-0">
+        <span className="absolute right-3 bottom-0 rounded border border-line bg-surface/90 px-2 py-0.5 font-mono text-[10.5px] text-ink-3">
+        {page.size} {size.width}×{size.height} mm · content {contentWidthMm(page)} mm wide · {pageCount} {pageCount === 1 ? 'page' : 'pages'} (approx.)
+      </span>
+      </div>
+    </div>
+  )
+}
+
+/** The end of a PDF page in the designer: empty space where the block no longer fits, then a strip marking where the next page starts. */
+function PageGap({ emptyMm, next, marginLeft, marginRight }: { emptyMm: number; next: number; marginLeft: number; marginRight: number }) {
+  return (
+    <div aria-hidden="true" data-testid="page-gap" className="pointer-events-none relative" style={{ height: `${emptyMm + PAGE_STRIP_MM}mm`, marginLeft: `-${marginLeft}mm`, marginRight: `-${marginRight}mm` }}>
+      <div className="absolute inset-x-0 bottom-0 flex items-center justify-end border-y border-dashed border-cyan bg-[var(--stage)] px-3" style={{ height: `${PAGE_STRIP_MM}mm` }}>
+        <span className="rounded-full border border-cyan bg-surface px-2 py-px font-sans text-[10.5px] font-medium text-cyan-strong">Page {next} starts here</span>
       </div>
     </div>
   )
@@ -248,13 +266,47 @@ function FixedBand(props: CanvasProps & { region: 'header' | 'footer' }) {
   )
 }
 
-function BodyArea(props: CanvasProps) {
-  const { draft, readOnly, selection } = props
+function BodyArea(props: CanvasProps & { onPageCount: (pages: number) => void }) {
+  const { draft, readOnly, selection, zoom, onPageCount } = props
   const page = draft.pageSettings
   const blocks = draft.layout.body?.blocks ?? []
   const [dropIndex, setDropIndex] = useState<number | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const regionSelected = selection?.kind === 'region' && selection.region === 'body'
+  /** Empty space (mm) left on a page before the block at this index, which has to start the next page. */
+  const [gaps, setGaps] = useState<number[]>([])
+  const capacityMm = bodyPerPageMm(page, draft.layout.header?.heightMm ?? 0, draft.layout.footer?.heightMm ?? 0)
+
+  // Measure the blocks as they are drawn and leave the space the PDF would: a block that doesn't fit on the page moves
+  // to the next one. A block's own height doesn't depend on the gaps before it, so this settles in one pass.
+  const measure = () => {
+    const root = ref.current
+    if (!root || capacityMm < 20) return
+    const wrappers = Array.from(root.querySelectorAll<HTMLElement>(':scope > [data-block-wrap]'))
+    const gapNodes = new Map(Array.from(root.querySelectorAll<HTMLElement>(':scope > [data-page-gap]')).map((n) => [Number(n.dataset.pageGap), n]))
+    const scale = zoom * MM_PX // screen px per mm
+    let previousBottom = root.getBoundingClientRect().top
+    const extents = wrappers.map((w, i) => {
+      const gap = gapNodes.get(i)?.getBoundingClientRect().height ?? 0
+      const bottom = w.getBoundingClientRect().bottom
+      const extent = (bottom - previousBottom - gap) / scale
+      previousBottom = bottom
+      return Math.max(0, extent)
+    })
+    const next = paginate(extents, capacityMm, 0).map((g) => Math.round(g * 10) / 10)
+    setGaps((old) => (old.length === next.length && old.every((g, i) => g === next[i]) ? old : next))
+  }
+  useLayoutEffect(measure)
+  useEffect(() => {
+    const root = ref.current
+    if (!root || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(root)
+    return () => ro.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom, capacityMm])
+  const pages = 1 + gaps.filter((g, i) => g > 0 && i < blocks.length).length
+  useEffect(() => onPageCount(pages), [pages, onPageCount])
 
   const indexAt = (clientY: number) => {
     const nodes = Array.from(ref.current?.querySelectorAll<HTMLElement>('[data-block-id]') ?? [])
@@ -297,12 +349,17 @@ function BodyArea(props: CanvasProps) {
             Body: drop components or data fields here. Blocks stack top to bottom and flow onto more pages.
           </div>
         )}
-        {blocks.map((block, i) => (
-          <div key={block.id}>
-            {dropIndex === i && <DropLine />}
-            <ElementFrame {...props} element={block} region="body" positioned={false} />
-          </div>
-        ))}
+        {blocks.flatMap((block, i) => {
+          const empty = gaps[i] ?? 0
+          const before = gaps.slice(0, i).filter((g) => g > 0).length
+          return [
+            ...(empty > 0 ? [<div key={`gap-${block.id}`} data-page-gap={i}><PageGap emptyMm={empty} next={before + 2} marginLeft={page.marginsMm.left} marginRight={page.marginsMm.right} /></div>] : []),
+            <div key={block.id} data-block-wrap>
+              {dropIndex === i && <DropLine />}
+              <ElementFrame {...props} element={block} region="body" positioned={false} />
+            </div>,
+          ]
+        })}
         {dropIndex === blocks.length && blocks.length > 0 && <DropLine />}
       </div>
     </div>

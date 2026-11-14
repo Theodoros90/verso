@@ -4,6 +4,7 @@ import {
   CircleCheck,
   Eye,
   FilePlus2,
+  FileUp,
   Redo2,
   Ruler,
   Save,
@@ -24,6 +25,7 @@ import { ApiError } from '@/lib/api/client'
 import type { TemplateDto, TemplateVersionDto } from '@/lib/api/generated'
 import { templatesApi } from '@/lib/api/templates'
 
+import type { ImportedDesign } from '../import'
 import { usedPaths } from '../model/bindings'
 import { asLayout, asPageSettings, TYPE_LABELS, type ElementType, type Layout, type PageSettings, type Region } from '../model/layout'
 import {
@@ -44,6 +46,7 @@ import { inferSchema, isEmptySchema, rowFields, schemaFields, type SchemaField }
 import { elementIdForServerPath, validateDesign, type DesignIssue } from '../model/validate'
 import { Canvas, type DropTarget } from './Canvas'
 import { DataJsonDialog } from './DataJsonDialog'
+import { ImportDocumentDialog } from './ImportDocumentDialog'
 import { useDesignerState, type Draft } from './designerState'
 import { humanize, type DragPayload } from './dnd'
 import { PreviewPane } from './PreviewPane'
@@ -149,6 +152,7 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
   const [banner, setBanner] = useState<Banner>(flash ? { tone: 'ok', message: flash } : null)
   const [serverIssues, setServerIssues] = useState<DesignIssue[]>([])
   const [jsonOpen, setJsonOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [issuesOpen, setIssuesOpen] = useState(false)
   const [savedAt, setSavedAt] = useState<Date | null>(null)
   const [announcement, setAnnouncement] = useState('')
@@ -237,6 +241,14 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
   const onAddType = (type: ElementType) => {
     const t = targetFor(type)
     place((l, page) => addElement(l, page, t.region, type, { index: t.index }), typeLabel(type))
+  }
+
+  /** Replaces the page with an imported Word / RTF design: one undo step, nothing saved until Save draft. */
+  const applyImport = (design: ImportedDesign, fileName: string) => {
+    actions.edit((d) => ({ ...d, layout: design.layout, pageSettings: { ...d.pageSettings, orientation: design.pageSettings.orientation, marginsMm: design.pageSettings.marginsMm } }), { select: null })
+    setImportOpen(false)
+    setBanner({ tone: 'ok', message: `Imported ${fileName}. Review it, map the data fields, then save the draft.` })
+    setAnnouncement(`${fileName} imported.`)
   }
 
   const onAddField = (field: SchemaField) => {
@@ -481,6 +493,11 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
             <ZoomIn />
           </Button>
           <Sep />
+          {canEdit && !readOnly && (
+            <Button size="sm" onClick={() => setImportOpen(true)} title="Start from a Word (.docx) or RTF document">
+              <FileUp /> Import document
+            </Button>
+          )}
           <Switch label="Sample data" checked={showSample} onCheckedChange={setShowSample} />
           <Switch label="Grid" checked={showGrid} onCheckedChange={setShowGrid} />
           <div className="flex-1" />
@@ -638,6 +655,8 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
           }}
         />
       </aside>
+
+      <ImportDocumentDialog open={importOpen} onOpenChange={setImportOpen} hasContent={allElements(draft.layout).length > 0} onApply={applyImport} />
 
       <DataJsonDialog
         open={jsonOpen}
