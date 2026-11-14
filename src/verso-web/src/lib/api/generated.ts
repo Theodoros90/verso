@@ -46,6 +46,32 @@ export interface AuthConfigDto {
   devUsers: DevUserDto[] | null
 }
 
+export interface ConfigurationExportRequest {
+  templateIds: string[] | null
+  workflowIds: string[] | null
+  environment: string | null
+}
+
+export interface ConfigurationImportRequest {
+  package: null | ConfigurationPackage
+  includeWorkflows?: boolean
+}
+
+export interface ConfigurationImportResult {
+  dryRun: boolean
+  items: ImportItemResult[]
+  warnings: string[]
+}
+
+export interface ConfigurationPackage {
+  product: string | null
+  schemaVersion: number
+  environment: string | null
+  exportedAt: string | null
+  templates: PackageTemplate[] | null
+  workflows: PackageWorkflow[] | null
+}
+
 export interface CreateTemplateRequest {
   key: string | null
   name: string | null
@@ -277,6 +303,14 @@ export interface HttpValidationProblemDetails {
   errors?: Record<string, string[]>
 }
 
+export interface ImportItemResult {
+  kind: string
+  key: string
+  name: string
+  outcome: string
+  message: string | null
+}
+
 export type JsonElement = unknown
 
 export interface MarginsDto {
@@ -302,6 +336,25 @@ export interface NodeTypeDto {
   outputs: PortDto[]
   configSchema: JsonElement
   defaults: JsonElement
+}
+
+export interface PackageTemplate {
+  key: string | null
+  name: string | null
+  description: string | null
+  documentType: string | null
+  published: boolean
+  pageSettings: null | PageSettingsDto
+  layout: null | JsonElement
+  dataSchema: null | JsonElement
+  sampleData: null | JsonElement
+}
+
+export interface PackageWorkflow {
+  key: string | null
+  name: string | null
+  description: string | null
+  definition: null | JsonElement
 }
 
 export interface PageResultOfArchivedDocumentDto {

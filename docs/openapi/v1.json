@@ -1841,6 +1841,106 @@
         }
       }
     },
+    "/api/v1/configuration/export": {
+      "post": {
+        "tags": [
+          "Configuration"
+        ],
+        "operationId": "ExportConfiguration",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationPackage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/configuration/import": {
+      "post": {
+        "tags": [
+          "Configuration"
+        ],
+        "operationId": "ImportConfiguration",
+        "parameters": [
+          {
+            "name": "dryRun",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationImportResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/executions": {
       "get": {
         "tags": [
@@ -2760,6 +2860,147 @@
             ],
             "items": {
               "$ref": "#/components/schemas/DevUserDto"
+            }
+          }
+        }
+      },
+      "ConfigurationExportRequest": {
+        "required": [
+          "templateIds",
+          "workflowIds",
+          "environment"
+        ],
+        "type": "object",
+        "properties": {
+          "templateIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "workflowIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "environment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ConfigurationImportRequest": {
+        "required": [
+          "package"
+        ],
+        "type": "object",
+        "properties": {
+          "package": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigurationPackage"
+              }
+            ]
+          },
+          "includeWorkflows": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "ConfigurationImportResult": {
+        "required": [
+          "dryRun",
+          "items",
+          "warnings"
+        ],
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportItemResult"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ConfigurationPackage": {
+        "required": [
+          "product",
+          "schemaVersion",
+          "environment",
+          "exportedAt",
+          "templates",
+          "workflows"
+        ],
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "schemaVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "environment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "exportedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "templates": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PackageTemplate"
+            }
+          },
+          "workflows": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PackageWorkflow"
             }
           }
         }
@@ -3876,6 +4117,36 @@
           }
         }
       },
+      "ImportItemResult": {
+        "required": [
+          "kind",
+          "key",
+          "name",
+          "outcome",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "message": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "JsonElement": {},
       "MarginsDto": {
         "required": [
@@ -3988,6 +4259,128 @@
           },
           "defaults": {
             "$ref": "#/components/schemas/JsonElement"
+          }
+        }
+      },
+      "PackageTemplate": {
+        "required": [
+          "key",
+          "name",
+          "description",
+          "documentType",
+          "published",
+          "pageSettings",
+          "layout",
+          "dataSchema",
+          "sampleData"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "documentType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "published": {
+            "type": "boolean"
+          },
+          "pageSettings": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PageSettingsDto"
+              }
+            ]
+          },
+          "layout": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            ]
+          },
+          "dataSchema": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            ]
+          },
+          "sampleData": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            ]
+          }
+        }
+      },
+      "PackageWorkflow": {
+        "required": [
+          "key",
+          "name",
+          "description",
+          "definition"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "definition": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            ]
           }
         }
       },
@@ -5126,6 +5519,9 @@
     },
     {
       "name": "Previews"
+    },
+    {
+      "name": "Configuration"
     },
     {
       "name": "Documents"

@@ -47,6 +47,7 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | 409 | `workflow.inactive` | Submission to a workflow that is deactivated |
 | 409 | `execution.not_retryable` | Retry of an execution that isn't `Failed` (Rejected runs need corrected data, not a retry) |
 | 404 | `folder_access_test.not_found` | Unknown access test id (or deleted after 24 hours) |
+| 404 | `configuration.item_not_found` | Export of a template or workflow id that doesn't exist |
 
 ## Sign-in and roles
 
@@ -81,6 +82,8 @@ Every endpoint names a policy; one with no policy would still require a Verso ro
 | Audit trail (`/audit`, `/audit/actions`) |  |  |  |  | ✓ | ✓ |
 | Approved folder locations, a workflow's folder activity (`/folder-locations`, `/workflows/{id}/folder-input`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Folder "Test access" (`/folder-access-tests`) |  |  |  | ✓ |  | ✓ |
+| Export a configuration package (`/configuration/export`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Import a configuration package (`/configuration/import`) |  |  |  |  |  | ✓ |
 
 ## Health
 
@@ -228,6 +231,52 @@ Errors: 400 `validation`, 404 `template.not_found`, 409 `template.no_draft`, 409
 `200 application/pdf` with `Content-Disposition: inline`, `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`. Errors: 404 `preview.not_found`, 409 `preview.not_ready`, 409 `preview.failed`.
 
 Previews are temporary: the Worker deletes them 24 hours after they were requested.
+
+## Configuration
+
+The gear in the top bar opens the Configuration drawer: Connections, Global variables and **Export / import**. The server's part is moving **templates and workflows** between environments as a package; connections and global variables are frontend-only and travel in the same file, handled by the SPA. Design and rules: [ADR 0010](adr/0010-configuration-packages.md).
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| POST | `/api/v1/configuration/export` | 200 `ConfigurationPackage` | The selected templates and workflows. Any Verso role. Audited (`ConfigurationExported`) |
+| POST | `/api/v1/configuration/import?dryRun=false` | 200 `ConfigurationImportResult` | Apply a package in one transaction; `dryRun=true` reports what it would do and changes nothing. **Admin only** |
+
+### Export
+
+```json
+{ "templateIds": ["…"], "workflowIds": ["…"], "environment": "Test" }
+```
+
+All three are optional; `environment` is `Development`, `Test` or `Production` (a label; 400 `validation` otherwise); at most 200 ids of each kind. An unknown id is 404 `configuration.item_not_found`. The response is:
+
+```json
+{ "product": "Verso configuration package", "schemaVersion": 1, "environment": "Test", "exportedAt": "…",
+  "templates": [ { "key": "INV-STD", "name": "Commercial invoice", "description": null, "documentType": "Invoice", "published": true,
+                   "pageSettings": { … }, "layout": { … }, "dataSchema": { … }, "sampleData": { … } } ],
+  "workflows": [ { "key": "invoice-standard", "name": "Invoice standard", "description": null,
+                   "definition": { "nodes": [ { "id": "pdf", "type": "generate-pdf", "config": { "templateKey": "INV-STD", … } } ], "edges": [ … ] } } ] }
+```
+
+A template carries its latest published version (`published: true`) or, when nothing is published, its draft (`published: false`). A workflow carries its latest published version or its draft. In workflow definitions `config.templateId` is replaced by `config.templateKey`, because template ids differ between environments.
+
+### Import
+
+Body: `{ "package": { …the export… }, "includeWorkflows": true }` (`includeWorkflows` defaults to true; the `connections` and `variables` sections of the SPA's file are ignored here). The whole package is validated first, with the same rules as creating and saving templates and workflows (400 `validation`, errors keyed like `package.templates[0].layout…` or `package.workflows[1].key`; a foreign file, an unsupported `schemaVersion`, duplicate keys and more than 200 items of a kind are also refused), and nothing is applied unless everything is valid.
+
+```json
+{ "dryRun": false,
+  "items": [ { "kind": "template", "key": "INV-STD", "name": "Commercial invoice", "outcome": "created", "message": "Published as version 1." } ],
+  "warnings": [ "Workflow 'x' uses template 'Y', which does not exist here. Choose a template in that step." ] }
+```
+
+| `outcome` | Template | Workflow |
+|---|---|---|
+| `created` | New key: created, and published as version 1 when the package carried a published version, else a draft | New key: created as a **draft** |
+| `updated` | Changed content: published as the next version (or saved as a draft) | Saved into a new draft of the existing workflow |
+| `unchanged` | Same content hash as its latest published version | Same graph as its latest published version |
+| `skipped` | The existing item has an unpublished draft: never overwritten | The same |
+
+Workflows are never published by an import, are matched and remapped by key (`templateKey` → the local template's id; an unknown key is a warning and the step is left without a template), and existing names and descriptions are not changed. Nothing is deleted. Every created or changed item is audited with its usual action and `viaImport: true`, plus one `ConfigurationImported` entry.
 
 ## Real-time notifications (SignalR)
 
@@ -549,6 +598,8 @@ Append-only log, oldest first unless `newestFirst=true` (`sequence` is the autho
 | `WorkflowDraftSaved` | `{ versionId }` |
 | `WorkflowDraftCreated` | `{ versionId, fromVersion }` |
 | `WorkflowPublished` | `{ versionId, versionNumber, contentHash }` |
+| `ConfigurationExported` | `{ environment, templates, workflows }` (counts; entity `Configuration`) |
+| `ConfigurationImported` | `{ environment, templates, workflows, skipped }` (counts of created or changed items) |
 | `ExecutionSubmitted` | `{ workflowKey, workflowVersion, inputHash, correlationId }` (never the payload) |
 | `ExecutionRetryRequested` | `{ attempt }` |
 | `ExecutionApprovalRequested` | `{ nodeId, step, approver, iteration }` (by the Worker) |

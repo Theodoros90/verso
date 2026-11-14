@@ -5,21 +5,20 @@ import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 
+import { newLocalId, useVariables } from '../configuration/stores'
 import { VariableDialog } from './VariableDialog'
-import { MASK, placeholder, seedVariables, type GlobalVariable, type VariableDraft } from './variables'
+import { MASK, placeholder, type GlobalVariable, type VariableDraft } from './variables'
 
-let nextId = 1
-
-/** Global variables (design reference): named values every workflow can reference as {{name}}. Simulated and frontend-only. */
-export function GlobalVariablesPage() {
-  const [variables, setVariables] = useState<GlobalVariable[]>(seedVariables)
+/** Global variables tab of the Configuration drawer (design reference): named values every workflow can reference as {{name}}. Simulated and frontend-only. */
+export function VariablesPanel() {
+  const [variables, setVariables] = useVariables()
   const [editing, setEditing] = useState<GlobalVariable | 'new' | null>(null)
   const [deleting, setDeleting] = useState<GlobalVariable | null>(null)
   const [notice, setNotice] = useState('')
 
   const save = (draft: VariableDraft) => {
     if (editing === 'new') {
-      setVariables((list) => [...list, { ...draft, id: `local-${nextId++}`, updated: 'Just now' }])
+      setVariables((list) => [...list, { ...draft, id: newLocalId(), updated: 'Just now' }])
       setNotice(`Variable ${placeholder(draft.name)} created.`)
     } else if (editing) {
       const id = editing.id
@@ -36,9 +35,8 @@ export function GlobalVariablesPage() {
   }
 
   return (
-    <div className="max-w-[1440px] px-4 pt-6 pb-10 md:px-7">
+    <div className="px-5 py-4">
       <p className="mb-4 max-w-3xl text-ink-2">
-        <b className="text-[15.5px] font-semibold text-ink">Global variables</b>{' '}
         <span className="text-ink-3">
           Named values every workflow can reference with {'{{double braces}}'}, for example {'{{companyName}}'} or {'{{vatRate}}'}. Sensitive values are referenced but never printed into documents.
         </span>
@@ -137,7 +135,7 @@ export function GlobalVariablesPage() {
         </Dialog>
       )}
 
-      <p className="mt-6 text-xs text-ink-3">Prototype: these variables are synthetic, kept in this page only and reset on reload.</p>
+      <p className="mt-6 text-xs text-ink-3">Prototype: these variables are synthetic, kept in this browser only.</p>
     </div>
   )
 }

@@ -1,32 +1,26 @@
-import { Download, Plus, Upload } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { Plus } from 'lucide-react'
+import { useState } from 'react'
 
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/form'
 
+import { newLocalId, useConnections } from '../configuration/stores'
 import { ConnectionDialog, type ConnectionDraft } from './ConnectionDialog'
 import {
   abbreviate,
   CONNECTION_GROUPS,
   displayStatus,
-  parseConnections,
-  seedConnections,
-  serializeConnections,
   type Connection,
 } from './connections'
 
 const groupId = (name: string) => `grp-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
 
-let nextId = 1
-const newId = () => `local-${nextId++}`
-
-/** Connections (design reference): every external system in one place, grouped, with status and where it is used. Simulated and frontend-only. */
-export function ConnectionsPage() {
-  const [connections, setConnections] = useState<Connection[]>(seedConnections)
+/** Connections tab of the Configuration drawer (design reference): every external system in one place, grouped, with status and where it is used. Simulated and frontend-only. */
+export function ConnectionsPanel() {
+  const [connections, setConnections] = useConnections()
   const [editing, setEditing] = useState<Connection | 'new' | null>(null)
   const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null)
-  const fileInput = useRef<HTMLInputElement>(null)
 
   const toggle = (id: string, enabled: boolean) => {
     setConnections((list) => list.map((c) => (c.id === id ? { ...c, enabled } : c)))
@@ -38,7 +32,7 @@ export function ConnectionsPage() {
     if (editing === 'new') {
       setConnections((list) => [
         ...list,
-        { ...draft, id: newId(), health: 'ok', last: 'Not tested yet', enabled: true, usedBySteps: 0, color: '#5B6773', abbr: abbreviate(draft.name) },
+        { ...draft, id: newLocalId(), health: 'ok', last: 'Not tested yet', enabled: true, usedBySteps: 0, color: '#5B6773', abbr: abbreviate(draft.name) },
       ])
       setNotice({ tone: 'ok', text: `Connection “${draft.name}” created.` })
     } else if (editing) {
@@ -49,58 +43,13 @@ export function ConnectionsPage() {
     setEditing(null)
   }
 
-  const exportFile = () => {
-    const url = URL.createObjectURL(new Blob([serializeConnections(connections)], { type: 'application/json' }))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'verso-connections.json'
-    a.click()
-    URL.revokeObjectURL(url)
-    setNotice({ tone: 'ok', text: 'Exported the connection settings. Secrets are never included.' })
-  }
-
-  const importFile = async (file: File) => {
-    const parsed = parseConnections(await file.text())
-    if ('error' in parsed) {
-      setNotice({ tone: 'err', text: parsed.error })
-      return
-    }
-    const known = new Set(connections.map((c) => c.name.toLowerCase()))
-    const fresh = parsed.items.filter((i) => !known.has(i.name.toLowerCase()))
-    const duplicates = parsed.items.length - fresh.length
-    setConnections((list) => [...list, ...fresh.map((i) => ({ ...i, id: newId() }))])
-    const extra = [duplicates && `${duplicates} already existed`, parsed.skipped && `${parsed.skipped} invalid`].filter(Boolean).join(', ')
-    setNotice({ tone: 'ok', text: `Imported ${fresh.length} connection${fresh.length === 1 ? '' : 's'}${extra ? ` (${extra})` : ''}.` })
-  }
-
   return (
-    <div className="max-w-[1440px] px-4 pt-6 pb-10 md:px-7">
+    <div className="px-5 py-4">
       <div className="mb-2 flex flex-wrap items-start gap-3">
         <p className="max-w-3xl min-w-64 flex-1 text-ink-2">
-          <b className="text-[15.5px] font-semibold text-ink">Connections</b>{' '}
           <span className="text-ink-3">Every external system in one place: what it does, its credentials, and where it’s used. Workflow steps reference a connection by name — secrets never enter a workflow.</span>
         </p>
         <div className="flex gap-2">
-          <Button type="button" onClick={exportFile}>
-            <Download />
-            Export
-          </Button>
-          <Button type="button" onClick={() => fileInput.current?.click()}>
-            <Upload />
-            Import
-          </Button>
-          <input
-            ref={fileInput}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            aria-label="Import connections file"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              e.target.value = ''
-              if (file) void importFile(file)
-            }}
-          />
           <Button type="button" variant="primary" onClick={() => setEditing('new')}>
             <Plus />
             New connection
@@ -163,7 +112,7 @@ export function ConnectionsPage() {
         )
       })}
 
-      <p className="mt-8 text-xs text-ink-3">Prototype: these connections are synthetic, kept in this page only, and the test is simulated. No external service is contacted and no secret is stored.</p>
+      <p className="mt-6 text-xs text-ink-3">Prototype: these connections are synthetic, kept in this browser only, and the test is simulated. No external service is contacted and no secret is stored.</p>
 
       {editing && (
         <ConnectionDialog

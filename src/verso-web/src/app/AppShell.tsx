@@ -1,8 +1,9 @@
-import { LogOut, Menu, Moon, Sun, X } from 'lucide-react'
+import { LogOut, Menu, Moon, Settings, Sun, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { ConfigurationDrawer } from '@/features/configuration/ConfigurationDrawer'
 import { HealthIndicator } from '@/features/health/HealthIndicator'
 import { cn } from '@/lib/utils'
 
@@ -91,6 +92,7 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
 export function AppShell() {
   const { resolved, toggle } = useTheme()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [configOpen, setConfigOpen] = useState(false)
   const location = useLocation()
   const current = NAV_ITEMS.find((i) => (i.path === '/' ? location.pathname === '/' : location.pathname.startsWith(i.path)))
 
@@ -130,6 +132,9 @@ export function AppShell() {
           <h1 className="m-0 truncate text-base font-semibold tracking-[-0.005em]">{current?.label ?? 'Not found'}</h1>
           <div className="ml-auto flex items-center gap-2">
             <HealthIndicator />
+            <Button variant="ghost" size="icon" onClick={() => setConfigOpen(true)} aria-label="Configuration: connections, variables, export and import" title="Configuration">
+              <Settings />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -145,6 +150,7 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+      <ConfigurationDrawer open={configOpen} onOpenChange={setConfigOpen} />
     </div>
   )
 }

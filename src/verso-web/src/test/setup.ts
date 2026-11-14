@@ -3,6 +3,7 @@ import { cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
 
 import type { MeDto } from '@/lib/api/generated'
+import { resetConfigurationStores } from '@/features/configuration/stores'
 import { setSession } from '@/lib/auth'
 
 afterEach(() => cleanup())
@@ -14,6 +15,8 @@ export const testAdmin: MeDto = {
   roles: ['Admin'],
   permissions: { read: true, templateAuthoring: true, workflowAuthoring: true, operate: true, readPayload: true, readAudit: true, administer: true },
 }
+
+beforeEach(() => resetConfigurationStores())
 
 beforeEach(() => setSession({ mode: 'Development', me: testAdmin, getToken: async () => 'dev:dev.admin', signOut: () => undefined }))
 

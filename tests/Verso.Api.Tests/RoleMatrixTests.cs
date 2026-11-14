@@ -78,6 +78,9 @@ public sealed class RoleMatrixTests(MigratedDatabaseFixture fixture)
         { "GET", "/api/v1/documents/{id:guid}", $"/api/v1/documents/{Id}", AnyRole },
         { "GET", "/api/v1/documents/{id:guid}/content", $"/api/v1/documents/{Id}/content", AnyRole },
 
+        { "POST", "/api/v1/configuration/export", "/api/v1/configuration/export", AnyRole },
+        { "POST", "/api/v1/configuration/import", "/api/v1/configuration/import", "X" },
+
         { "GET", "/api/v1/audit/", "/api/v1/audit", "AX" },
         { "GET", "/api/v1/audit/actions", "/api/v1/audit/actions", "AX" },
 

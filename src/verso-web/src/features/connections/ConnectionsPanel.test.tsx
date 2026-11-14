@@ -1,24 +1,17 @@
-import { render, screen, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { createMemoryRouter, RouterProvider } from 'react-router'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { routes } from '@/app/routes'
+import { openConfiguration } from '@/test/configuration'
 
-import { abbreviate, parseConnections, seedConnections, serializeConnections } from './connections'
+import { abbreviate, readConnections, seedConnections, toExported } from './connections'
 
-const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+const renderPage = () => openConfiguration('Connections')
 
-function renderPage() {
-  vi.stubGlobal('fetch', vi.fn(async () => json({ status: 'Healthy', totalDurationMs: 1, checks: [] })))
-  render(<RouterProvider router={createMemoryRouter(routes, { initialEntries: ['/connections'] })} />)
-}
-
-describe('Connections page', () => {
-  it('is in the navigation and groups the connections with their status', async () => {
-    renderPage()
-    const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getByRole('link', { name: 'Connections' })).toHaveAttribute('aria-current', 'page')
+describe('Connections tab', () => {
+  it('lives in the gear drawer (not the sidebar) and groups the connections with their status', async () => {
+    await renderPage()
+    expect(screen.queryByRole('link', { name: 'Connections', hidden: true })).not.toBeInTheDocument() // the modal drawer hides the sidebar
 
     for (const group of ['Data sources', 'Delivery channels', 'Signing & storage']) {
       expect(await screen.findByRole('heading', { level: 2, name: group })).toBeInTheDocument()
@@ -34,17 +27,17 @@ describe('Connections page', () => {
   })
 
   it('turns a connection on and off', async () => {
-    renderPage()
+    await renderPage()
     const sw = await screen.findByRole('switch', { name: 'Enable Salesforce' })
     await userEvent.click(sw)
     expect(sw).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByRole('status')).toHaveTextContent('Salesforce turned on.')
+    expect(within(screen.getByRole('dialog', { name: 'Configuration' })).getByRole('status')).toHaveTextContent('Salesforce turned on.')
     const card = screen.getByRole('heading', { name: 'Salesforce' }).closest('li')!
     expect(within(card).getByText('Connected')).toBeInTheDocument()
   })
 
   it('creates a connection, rejecting a missing endpoint and a duplicate name', async () => {
-    renderPage()
+    await renderPage()
     await userEvent.click(await screen.findByRole('button', { name: 'New connection' }))
     const dialog = screen.getByRole('dialog', { name: 'New connection' })
 
@@ -59,14 +52,14 @@ describe('Connections page', () => {
     await userEvent.selectOptions(within(dialog).getByLabelText('Group'), 'Delivery channels')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Create connection' }))
 
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'New connection' })).not.toBeInTheDocument()
     const card = screen.getByRole('heading', { name: 'Finance API' }).closest('li')!
     expect(within(card).getByText(/https:\/\/finance\.example\.test/)).toBeInTheDocument()
     expect(card.closest('section')).toHaveAccessibleName('Delivery channels')
   })
 
   it('configures a connection and runs a simulated test, with no secret field', async () => {
-    renderPage()
+    await renderPage()
     await userEvent.click(await screen.findByRole('button', { name: 'Configure SMTP relay' }))
     const dialog = screen.getByRole('dialog', { name: 'SMTP relay' })
 
@@ -77,50 +70,27 @@ describe('Connections page', () => {
     await userEvent.clear(within(dialog).getByLabelText('Endpoint / host'))
     await userEvent.type(within(dialog).getByLabelText('Endpoint / host'), 'smtp.new.example.test:25')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save settings' }))
-    expect(screen.getByRole('status')).toHaveTextContent('Settings saved for SMTP relay.')
+    expect(within(screen.getByRole('dialog', { name: 'Configuration' })).getByRole('status')).toHaveTextContent('Settings saved for SMTP relay.')
     expect(screen.getByText(/smtp\.new\.example\.test:25/)).toBeInTheDocument()
   })
 
-  it('imports a connections file, skipping duplicates and invalid entries', async () => {
-    renderPage()
-    const file = new File(
-      [
-        JSON.stringify({
-          format: 'verso-connections',
-          version: 1,
-          connections: [
-            { name: 'Treasury API', group: 'Data sources', endpoint: 'https://treasury.example.test', auth: 'API key' },
-            { name: 'Kafka', group: 'Data sources', endpoint: 'x' },
-            { name: 'No endpoint', group: 'Data sources' },
-          ],
-        }),
-      ],
-      'c.json',
-      { type: 'application/json' },
-    )
-    await userEvent.upload(await screen.findByLabelText('Import connections file'), file)
-
-    expect(await screen.findByRole('heading', { name: 'Treasury API' })).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('Imported 1 connection (1 already existed, 1 invalid).')
-  })
-
-  it('rejects a file that is not a connections export', async () => {
-    renderPage()
-    await userEvent.upload(await screen.findByLabelText('Import connections file'), new File(['{"hello":1}'], 'x.json', { type: 'application/json' }))
-    expect(await screen.findByText('That file is not a Verso connections export.')).toBeInTheDocument()
-  })
 })
 
 describe('connections model', () => {
   it('exports configuration only: no secret and no internal id', () => {
-    const text = serializeConnections(seedConnections())
+    const text = JSON.stringify(seedConnections().map(toExported))
     expect(text).not.toMatch(/secret|password|"id"/i)
-    const parsed = parseConnections(text)
-    expect('items' in parsed && parsed.items).toHaveLength(seedConnections().length)
   })
 
-  it('reports invalid JSON', () => {
-    expect(parseConnections('nope')).toEqual({ error: 'That file is not valid JSON.' })
+  it('reads the connections of a package and skips invalid entries', () => {
+    const { items, skipped } = readConnections([
+      { name: 'Treasury API', group: 'Data sources', endpoint: 'https://treasury.example.test', auth: 'API key' },
+      { name: 'No endpoint', group: 'Data sources' },
+      { name: 'Bad group', group: 'Nope', endpoint: 'x' },
+    ])
+    expect(items.map((i) => i.name)).toEqual(['Treasury API'])
+    expect(items[0]).toMatchObject({ enabled: true, health: 'ok', usedBySteps: 0, abbr: 'TA' })
+    expect(skipped).toBe(2)
   })
 
   it('derives logo letters from the name', () => {

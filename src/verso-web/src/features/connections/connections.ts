@@ -97,30 +97,17 @@ export function simulateTest(c: Pick<Connection, 'name' | 'health'>): SimulatedT
   return { ok: true, message: `Simulated: connected in ${ms} ms. Authentication and permissions look correct.` }
 }
 
-type Exported = Omit<Connection, 'id'>
-
-/** Export format: configuration only. There is no secret field to leak. */
-export function serializeConnections(connections: Connection[]): string {
-  const items: Exported[] = connections.map(({ id: _id, ...rest }) => rest)
-  return JSON.stringify({ format: 'verso-connections', version: 1, connections: items }, null, 2)
-}
-
 const isGroup = (v: unknown): v is ConnectionGroup => CONNECTION_GROUPS.some((g) => g.name === v)
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 
-/** Parses an export file. Returns the valid items and how many entries were skipped. */
-export function parseConnections(text: string): { items: Omit<Connection, 'id'>[]; skipped: number } | { error: string } {
-  let data: unknown
-  try {
-    data = JSON.parse(text)
-  } catch {
-    return { error: 'That file is not valid JSON.' }
-  }
-  const list = (data as { format?: unknown; connections?: unknown } | null)?.connections
-  if ((data as { format?: unknown } | null)?.format !== 'verso-connections' || !Array.isArray(list)) {
-    return { error: 'That file is not a Verso connections export.' }
-  }
-  const items: Omit<Connection, 'id'>[] = []
+/** What a configuration package carries for a connection: its settings, no id and never a secret (there is no secret field). */
+export type ExportedConnection = Omit<Connection, 'id'>
+
+export const toExported = ({ id: _id, ...rest }: Connection): ExportedConnection => rest
+
+/** Reads the connections of a package. Returns the valid ones and how many entries were skipped. */
+export function readConnections(list: unknown[]): { items: ExportedConnection[]; skipped: number } {
+  const items: ExportedConnection[] = []
   let skipped = 0
   for (const raw of list as Record<string, unknown>[]) {
     const name = str(raw?.name)

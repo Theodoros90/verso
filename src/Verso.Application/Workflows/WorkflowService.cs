@@ -121,7 +121,7 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
         return ToDto(copy);
     }
 
-    private static Dictionary<string, string[]> ValidateIdentity(string? rawKey, string? rawName)
+    internal static Dictionary<string, string[]> ValidateIdentity(string? rawKey, string? rawName)
     {
         var errors = new Dictionary<string, string[]>();
         var key = rawKey?.Trim() ?? "";

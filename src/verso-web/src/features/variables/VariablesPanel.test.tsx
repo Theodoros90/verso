@@ -1,24 +1,19 @@
-import { render, screen, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { createMemoryRouter, RouterProvider } from 'react-router'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { routes } from '@/app/routes'
+import { openConfiguration } from '@/test/configuration'
 
 import { seedVariables, validateVariable, type VariableDraft } from './variables'
 
-function renderPage() {
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 'Healthy', totalDurationMs: 1, checks: [] }), { status: 200 })))
-  render(<RouterProvider router={createMemoryRouter(routes, { initialEntries: ['/variables'] })} />)
-}
+const renderPage = () => openConfiguration('Global variables')
 
 const row = (name: string) => screen.getByText(`{{${name}}}`).closest('tr')!
 
-describe('Global variables page', () => {
-  it('is in the navigation and lists variables, masking sensitive values', async () => {
-    renderPage()
-    const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getByRole('link', { name: 'Global variables' })).toHaveAttribute('aria-current', 'page')
+describe('Global variables tab', () => {
+  it('lives in the gear drawer (not the sidebar) and lists variables, masking sensitive values', async () => {
+    await renderPage()
+    expect(screen.queryByRole('link', { name: 'Global variables', hidden: true })).not.toBeInTheDocument() // the modal drawer hides the sidebar
 
     expect(await screen.findByText('6 variables')).toBeInTheDocument()
     expect(within(row('vatRate')).getByText('19')).toBeInTheDocument()
@@ -28,7 +23,7 @@ describe('Global variables page', () => {
   })
 
   it('creates a variable, validating the name and value', async () => {
-    renderPage()
+    await renderPage()
     await userEvent.click(await screen.findByRole('button', { name: 'New variable' }))
     const dialog = screen.getByRole('dialog', { name: 'New variable' })
 
@@ -47,14 +42,14 @@ describe('Global variables page', () => {
     await userEvent.type(within(dialog).getByLabelText('Value'), 'help@example.test')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Create variable' }))
 
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'New variable' })).not.toBeInTheDocument()
     expect(within(row('supportEmail')).getByText('help@example.test')).toBeInTheDocument()
     expect(screen.getByText('7 variables')).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('Variable {{supportEmail}} created.')
+    expect(within(screen.getByRole('dialog', { name: 'Configuration' })).getByRole('status')).toHaveTextContent('Variable {{supportEmail}} created.')
   })
 
   it('edits a variable', async () => {
-    renderPage()
+    await renderPage()
     await userEvent.click(await screen.findByRole('button', { name: 'Edit {{vatRate}}' }))
     const dialog = screen.getByRole('dialog', { name: '{{vatRate}}' })
     await userEvent.clear(within(dialog).getByLabelText('Value'))
@@ -66,7 +61,7 @@ describe('Global variables page', () => {
   })
 
   it('never asks for a secret value: marking a variable sensitive replaces the value field', async () => {
-    renderPage()
+    await renderPage()
     await userEvent.click(await screen.findByRole('button', { name: 'Edit {{companyName}}' }))
     const dialog = screen.getByRole('dialog', { name: '{{companyName}}' })
     await userEvent.click(within(dialog).getByRole('switch'))
@@ -81,14 +76,14 @@ describe('Global variables page', () => {
   })
 
   it('deletes a variable after confirmation', async () => {
-    renderPage()
+    await renderPage()
     await userEvent.click(await screen.findByRole('button', { name: 'Delete {{vatRate}}' }))
     const dialog = screen.getByRole('dialog', { name: 'Delete {{vatRate}}?' })
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     expect(screen.getByText('{{vatRate}}')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete {{vatRate}}' }))
-    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete variable' }))
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Delete {{vatRate}}?' })).getByRole('button', { name: 'Delete variable' }))
     expect(screen.queryByText('{{vatRate}}')).not.toBeInTheDocument()
     expect(screen.getByText('5 variables')).toBeInTheDocument()
   })

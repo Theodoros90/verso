@@ -1,11 +1,9 @@
 import {
   Activity,
   Archive,
-  Braces,
   FileText,
   LayoutDashboard,
   PenTool,
-  PlugZap,
   ShieldCheck,
   Workflow,
   type LucideIcon,
@@ -72,23 +70,6 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: Activity,
         milestone: 'M7–M8',
         summary: 'Submitted invoices, their steps and live progress.',
-      },
-      {
-        path: '/connections',
-        label: 'Connections',
-        icon: PlugZap,
-        summary: 'Every external system in one place: status, credentials and where it is used.',
-      },
-    ],
-  },
-  {
-    label: 'Resources',
-    items: [
-      {
-        path: '/variables',
-        label: 'Global variables',
-        icon: Braces,
-        summary: 'Named values every workflow can reference as {{name}}.',
       },
     ],
   },

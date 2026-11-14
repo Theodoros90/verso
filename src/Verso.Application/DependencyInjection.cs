@@ -18,6 +18,7 @@ public static class DependencyInjection
         services.AddScoped<TemplatePreview>();
         services.AddScoped<PdfPreviews>();
         services.AddScoped<WorkflowService>();
+        services.AddScoped<Configuration.ConfigurationService>();
         services.AddScoped<ExecutionService>();
         services.AddScoped<ExecutionQueries>();
         services.AddScoped<DocumentService>();
