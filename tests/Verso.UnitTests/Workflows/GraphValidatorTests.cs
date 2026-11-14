@@ -598,6 +598,91 @@ public sealed class GraphValidatorTests
         Assert.Contains("fork2:parallel.multiple", Codes(result));
     }
 
+    /// <summary>trigger → validate → fork; Branch A → pdf → join:Branch A; Branch B → pdf2 → join:Branch B; join → archive.</summary>
+    private static JsonObject WithJoin()
+    {
+        var definition = WithFork();
+        var nodes = definition["nodes"]!.AsArray();
+        var edges = definition["edges"]!.AsArray();
+        nodes.Remove(nodes.Single(n => (string?)n!["id"] == "archive2"));
+        nodes.Add(JsonNode.Parse("""{ "id": "join", "type": "wait-branches", "title": "Wait for branches", "position": { "x": 900, "y": 80 }, "config": { "name": "Both paths done" } }"""));
+        edges.Remove(edges.Single(e => (string?)e!["id"] == "e3"));
+        edges.Remove(edges.Single(e => (string?)e!["id"] == "f3"));
+        edges.Add(JsonNode.Parse("""{ "id": "j1", "source": "pdf", "sourcePort": "success", "target": "join", "targetPort": "branch-a" }"""));
+        edges.Add(JsonNode.Parse("""{ "id": "j2", "source": "pdf2", "sourcePort": "success", "target": "join", "targetPort": "branch-b" }"""));
+        edges.Add(JsonNode.Parse("""{ "id": "j3", "source": "join", "sourcePort": "out", "target": "archive", "targetPort": "in" }"""));
+        return definition;
+    }
+
+    [Fact]
+    public void WaitForBranches_JoiningBothPaths_IsValid()
+    {
+        var result = Validate(WithJoin());
+
+        Assert.Empty(Codes(result));
+    }
+
+    [Fact]
+    public void WaitForBranches_PathsOnTheWrongInputs_IsAnError()
+    {
+        var definition = WithJoin();
+        var edges = definition["edges"]!.AsArray();
+        edges.Single(e => (string?)e!["id"] == "j1")!["targetPort"] = "branch-b";
+        edges.Single(e => (string?)e!["id"] == "j2")!["targetPort"] = "branch-a";
+
+        var result = Validate(definition);
+
+        Assert.Contains("join:join.wrong_input", Codes(result));
+    }
+
+    [Fact]
+    public void WaitForBranches_NeedsBothInputsConnected()
+    {
+        var definition = WithJoin();
+        var edges = definition["edges"]!.AsArray();
+        edges.Remove(edges.Single(e => (string?)e!["id"] == "j2"));
+
+        var result = Validate(definition);
+
+        Assert.Contains("join:join.input_unconnected", Codes(result));
+    }
+
+    [Fact]
+    public void WaitForBranches_WithoutAParallelBranchesStep_IsAnError()
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]!.AsArray().Add(JsonNode.Parse("""{ "id": "join", "type": "wait-branches", "title": "Wait for branches", "position": { "x": 600, "y": 300 }, "config": {} }"""));
+
+        var result = Validate(definition);
+
+        Assert.Contains("join:join.no_fork", Codes(result));
+    }
+
+    [Theory]
+    [InlineData("signature.completed", "document.id", "7d", "received", true)]
+    [InlineData("payment-received_v2", "invoice.number", "1h", "timeout", true)]
+    [InlineData("", "document.id", "7d", "received", false)]                    // event name is required
+    [InlineData("signature completed", "document.id", "7d", "received", false)] // no spaces in the name
+    [InlineData("signature.completed", "", "7d", "received", false)]            // correlation key is required
+    [InlineData("signature.completed", "document id", "7d", "received", false)] // a field path, not free text
+    [InlineData("signature.completed", "document.id", "2d", "received", false)] // one of the listed waits
+    [InlineData("signature.completed", "document.id", "7d", "maybe", false)]    // one of the listed outcomes
+    public void WaitEvent_NeedsANameAKeyFieldAndListedChoices(string name, string correlation, string timeout, string preview, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]!.AsArray().Add(JsonNode.Parse($$"""
+            { "id": "wait", "type": "wait-event", "title": "Wait for event", "position": { "x": 780, "y": 260 }, "config": { "event": "{{name}}", "correlation": "{{correlation}}", "timeout": "{{timeout}}", "preview": "{{preview}}" } }
+            """));
+        var edges = definition["edges"]!.AsArray();
+        edges.Single(e => (string?)e!["id"] == "e3")!["target"] = "wait";
+        edges.Add(JsonNode.Parse("""{ "id": "e4", "source": "wait", "sourcePort": "received", "target": "archive", "targetPort": "in" }"""));
+
+        var result = Validate(definition);
+
+        var errors = result.Issues.Where(i => i.Severity == GraphValidator.Error).Select(i => $"{i.NodeId}:{i.Code}").ToList();
+        Assert.True(valid == (errors.Count == 0), string.Join("; ", errors));
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {

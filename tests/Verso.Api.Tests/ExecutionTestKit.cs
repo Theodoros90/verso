@@ -41,7 +41,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null, JsonNode? combineConfig = null, JsonNode? sendConfig = null, JsonNode? printConfig = null, bool parallelBranches = false)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null, JsonNode? combineConfig = null, JsonNode? sendConfig = null, JsonNode? printConfig = null, bool parallelBranches = false, bool joinBranches = false)
     {
         var templateId = await PublishInvoiceTemplateAsync();
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -238,6 +238,17 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
             edges.Add(JsonNode.Parse("""{ "id": "f1", "source": "fork", "sourcePort": "branch-a", "target": "pdf", "targetPort": "in" }""")!);
             edges.Add(JsonNode.Parse("""{ "id": "f2", "source": "fork", "sourcePort": "branch-b", "target": "pdf2", "targetPort": "in" }""")!);
             edges.Add(JsonNode.Parse("""{ "id": "f3", "source": "pdf2", "sourcePort": "success", "target": "archive2", "targetPort": "in" }""")!);
+            if (joinBranches)
+            {
+                // … and the paths meet: pdf → join:Branch A, pdf2 → join:Branch B, join → archive (archive2 is dropped).
+                nodes.Remove(nodes.Single(n => (string?)n!["id"] == "archive2"));
+                nodes.Add(JsonNode.Parse("""{ "id": "join", "type": "wait-branches", "title": "Wait for branches", "position": { "x": 900, "y": 80 }, "config": { "name": "Both paths done" } }""")!);
+                edges.Remove(edges.Single(e => (string?)e!["id"] == "e3"));
+                edges.Remove(edges.Single(e => (string?)e!["id"] == "f3"));
+                edges.Add(JsonNode.Parse("""{ "id": "j1", "source": "pdf", "sourcePort": "success", "target": "join", "targetPort": "branch-a" }""")!);
+                edges.Add(JsonNode.Parse("""{ "id": "j2", "source": "pdf2", "sourcePort": "success", "target": "join", "targetPort": "branch-b" }""")!);
+                edges.Add(JsonNode.Parse("""{ "id": "j3", "source": "join", "sourcePort": "out", "target": "archive", "targetPort": "in" }""")!);
+            }
         }
 
         using var draft = await client.GetAsync(new Uri($"/api/v1/workflows/{workflowId}/draft", UriKind.Relative));

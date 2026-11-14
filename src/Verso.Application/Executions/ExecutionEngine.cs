@@ -198,17 +198,23 @@ public sealed partial class ExecutionEngine(
     {
         var baseData = run.Data;
         var baseDocument = run.Document;
-        foreach (var path in Fanout.Paths)
+
+        // Walks a path from its first step. Stops before a Wait for branches step when asked (the path has arrived at the join).
+        // Ok false: the run ended or stopped.
+        async Task<(bool Ok, Workflows.WorkflowNode? Join)> WalkAsync(Workflows.WorkflowNode? first, bool stopAtJoin)
         {
-            run.Data = baseData;
-            run.Document = baseDocument;
-            var current = run.Plan.Next(fork.Id, path);
+            var current = first;
             while (current is not null)
             {
+                if (stopAtJoin && current.Type == NodeCatalog.WaitBranches)
+                {
+                    return (true, current);
+                }
+
                 var step = await StepAsync(run, current, timeoutToken, shutdown);
                 if (step is null)
                 {
-                    return false;
+                    return (false, null);
                 }
 
                 var next = step.Port is null ? null : run.Plan.Next(current.Id, step.Port);
@@ -216,11 +222,38 @@ public sealed partial class ExecutionEngine(
                 if (Rejects(current.Type, step.Port) && (current.Type != NodeCatalog.ApprovalStep || next is null))
                 {
                     await FinishAsync(run, current, step, shutdown);
-                    return false;
+                    return (false, null);
                 }
 
                 current = next;
             }
+
+            return (true, null);
+        }
+
+        Workflows.WorkflowNode? join = null;
+        var arrived = 0;
+        foreach (var path in Fanout.Paths)
+        {
+            run.Data = baseData;
+            run.Document = baseDocument;
+            var (ok, reached) = await WalkAsync(run.Plan.Next(fork.Id, path), stopAtJoin: true);
+            if (!ok)
+            {
+                return false;
+            }
+
+            if (reached is not null)
+            {
+                join = reached;
+                arrived++;
+            }
+        }
+
+        if (join is not null && arrived == Fanout.Paths.Count)
+        {
+            // Both paths arrived: the join and what follows it run from the state the second path left (it ran last).
+            return (await WalkAsync(join, stopAtJoin: false)).Ok;
         }
 
         run.Data = baseData;
@@ -411,6 +444,8 @@ public sealed partial class ExecutionEngine(
             or NodeCatalog.ManualTrigger or NodeCatalog.FolderInput => Task.FromResult(new Outcome("out", null)),
         NodeCatalog.LookupEnrich => Task.FromResult(LookupEnrich(node)),
         NodeCatalog.Deduplicate => Task.FromResult(Deduplicate(node)),
+        NodeCatalog.WaitBranches => Task.FromResult(new Outcome("out", new { branches = Fanout.Paths.Count })),
+        NodeCatalog.WaitEvent => Task.FromResult(WaitEvent(node)),
         NodeCatalog.ParseContent =>Task.FromResult(Parse(run, node)),
         NodeCatalog.MapFields => Task.FromResult(Map(run, node)),
         NodeCatalog.TransformData => Task.FromResult(Transform(run, node)),
@@ -797,6 +832,14 @@ public sealed partial class ExecutionEngine(
     {
         string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
         return new Outcome("success", new { simulated = true, uploaded = false, host = Text("host"), folder = Text("folder") });
+    }
+
+    /// <summary>Wait for event is simulated: nothing is awaited. The step takes the path chosen in 'preview' ('received' unless set to 'timeout').</summary>
+    private static Outcome WaitEvent(Workflows.WorkflowNode node)
+    {
+        string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        var timedOut = Text("preview") == "timeout";
+        return new Outcome(timedOut ? "timeout" : "received", new { simulated = true, waited = false, outcome = timedOut ? "timeout" : "received", @event = Text("event"), correlation = Text("correlation") });
     }
 
     /// <summary>Deduplicate is simulated: nothing is stored or compared. The step takes the path chosen in 'preview' ('unique' unless set to 'duplicate').</summary>

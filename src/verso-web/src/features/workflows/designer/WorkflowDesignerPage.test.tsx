@@ -150,6 +150,29 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { name: 'Independent tasks' },
   },
   {
+    type: 'wait-branches', label: 'Wait for branches', category: 'logic', description: 'Joins the two paths of a Parallel branches step.',
+    inputs: [{ id: 'branch-a', label: 'Branch A', required: true }, { id: 'branch-b', label: 'Branch B', required: true }],
+    outputs: [{ id: 'out', label: 'Continue', required: true }],
+    configSchema: { type: 'object', properties: { name: { type: 'string', title: 'Join name' } }, required: [] },
+    defaults: { name: 'Both paths done' },
+  },
+  {
+    type: 'wait-event', label: 'Wait for event', category: 'logic', description: 'Waits for an event (simulated).',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'received', label: 'Received', required: true }, { id: 'timeout', label: 'Timed out', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        event: { type: 'string', title: 'Event name', 'x-widget': 'mono' },
+        correlation: { type: 'string', title: 'Correlation key field', 'x-widget': 'data-path' },
+        timeout: { type: 'string', title: 'Maximum wait', enum: ['1h', '24h', '7d', '30d'], 'x-enumLabels': ['1 hour', '24 hours', '7 days', '30 days'] },
+        preview: { type: 'string', title: 'Preview outcome', enum: ['received', 'timeout'], 'x-enumLabels': ['Received', 'Timed out'] },
+      },
+      required: ['event', 'correlation', 'timeout', 'preview'],
+    },
+    defaults: { event: 'signature.completed', correlation: 'document.id', timeout: '7d', preview: 'received' },
+  },
+  {
     type: 'scheduled-trigger', label: 'Scheduled trigger', category: 'input', description: 'Runs at fixed times.',
     inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
     configSchema: {
@@ -661,6 +684,37 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'parallel-branches', config: { name: 'Independent tasks' } })
+  })
+
+  it('adds a Wait for branches step with a Branch A and a Branch B input', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Wait for branches' }))
+
+    expect(await screen.findByRole('heading', { name: 'Wait for branches', level: 3 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'wait-branches', config: { name: 'Both paths done' } })
+  })
+
+  it('adds a Wait for event step with its defaults and saves them', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Wait for event' }))
+
+    expect(await screen.findByRole('heading', { name: 'Wait for event', level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /Event name/ })).toHaveValue('signature.completed')
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'wait-event', config: { event: 'signature.completed', correlation: 'document.id', timeout: '7d', preview: 'received' } })
   })
 
   it('adds a Combine PDFs step with its defaults and a page order choice', async () => {

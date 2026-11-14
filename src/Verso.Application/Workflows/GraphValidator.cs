@@ -164,17 +164,52 @@ public static class GraphValidator
             }
         }
 
-        foreach (var fork in forks)
+        // Wait for branches (ADR 0009): the one place the two paths may meet. One join, and only after a Parallel branches step.
+        var joins = definition.Nodes.Where(n => n.Type == NodeCatalog.WaitBranches).ToList();
+        foreach (var join in joins.Skip(1))
+        {
+            issues.Add(new(Error, "join.multiple", "A workflow can have one Wait for branches step.", NodeId: join.Id));
+        }
+
+        if (forks.Count == 0)
+        {
+            foreach (var join in joins)
+            {
+                issues.Add(new(Error, "join.no_fork", "Wait for branches joins the two paths of a Parallel branches step; add one before it.", NodeId: join.Id));
+            }
+        }
+
+        foreach (var fork in forks.Take(1))
         {
             var known = definition.Edges.Where(e => nodes.ContainsKey(e.Source) && nodes.ContainsKey(e.Target)).ToList();
+            var join = joins.FirstOrDefault();
             HashSet<string> Path(string port) =>
                 known.FirstOrDefault(e => e.Source == fork.Id && e.SourcePort == port) is { } start
-                    ? LoopAnalysis.Reach(start.Target, known, _ => false, includeStart: true)
+                    ? LoopAnalysis.Reach(start.Target, known, id => id == join?.Id, includeStart: true) // a path stops at the join
                     : [];
             var a = Path(Executions.Fanout.A);
-            foreach (var shared in Path(Executions.Fanout.B).Where(a.Contains))
+            var b = Path(Executions.Fanout.B);
+            foreach (var shared in b.Where(id => a.Contains(id) && id != join?.Id))
             {
-                issues.Add(new(Error, "parallel.shared_step", $"'{nodes[shared].Title}' can be reached from both branches; each branch must end on its own (paths can't rejoin in this version).", NodeId: shared));
+                issues.Add(new(Error, "parallel.shared_step", $"'{nodes[shared].Title}' can be reached from both branches; each branch must end on its own or meet at a Wait for branches step.", NodeId: shared));
+            }
+
+            if (join is not null)
+            {
+                foreach (var port in Executions.Fanout.Paths)
+                {
+                    var into = known.Where(e => e.Target == join.Id && e.TargetPort == port).ToList();
+                    if (into.Count == 0)
+                    {
+                        issues.Add(new(Error, "join.input_unconnected", $"Connect the end of {(port == Executions.Fanout.A ? "Branch A" : "Branch B")} to the '{(port == Executions.Fanout.A ? "Branch A" : "Branch B")}' input.", NodeId: join.Id, Port: port));
+                    }
+
+                    var own = port == Executions.Fanout.A ? a : b;
+                    foreach (var edge in into.Where(e => !own.Contains(e.Source)))
+                    {
+                        issues.Add(new(Error, "join.wrong_input", $"'{nodes[edge.Source].Title}' isn't on {(port == Executions.Fanout.A ? "Branch A" : "Branch B")}; connect each path to its own input.", NodeId: join.Id, EdgeId: edge.Id, Port: port));
+                    }
+                }
             }
         }
 
@@ -280,6 +315,7 @@ public static class GraphValidator
         (NodeCatalog.ApprovalStep, "rejected") => "A declined approval will end the run as Rejected.",
         (NodeCatalog.ForEach, "empty") => "An empty list ends the run here: nothing is repeated.",
         (NodeCatalog.Deduplicate, "duplicate") => "Duplicate records end the run here.",
+        (NodeCatalog.WaitEvent, "timeout") => "A wait that times out ends the run here.",
         (NodeCatalog.IfElse, "yes") => "Records that meet the condition end the run here.",
         (NodeCatalog.IfElse, "no") => "Records that don't meet the condition end the run here.",
         (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail, "failed") => "Data that can't make a complete document will end the run as Rejected.",

@@ -25,3 +25,12 @@ The engine followed exactly one path per run: every step chose one output port a
 - Two branches each end in their own place (for example one archives a PDF and the other sends an email), and nothing merges their results.
 - Parallel branches can't be used with a For each in this version. Nested forks are not allowed.
 - If true concurrency or a join is wanted later, it is a further decision: it needs per-branch state, a join step and a way to show concurrent steps in history.
+
+## Addendum, 2026-11-14: Wait for branches (the join)
+
+The product owner asked for the prototype's **Wait for branches** step, and chose a real join that waits for both paths (not the prototype's "Continue after any" policy or a timeout, which mean nothing while the paths run one after the other).
+
+1. **New step `wait-branches`** (category `logic`): two inputs, `branch-a` and `branch-b`, one output `out`, and one optional setting, `name`. It is the only place the two paths may meet.
+2. **Execution.** Each path runs until its end or until it reaches the join, where it stops. If both paths arrived, the join and the steps after it run, from the data and document as Branch B left them (it ran last; nothing is reset). If a path ended before the join (for example at an If / else with no path connected) the join doesn't run and the run ends when both paths have ended. Resume works as before, from the step rows.
+3. **Validator** (errors). There is one join per workflow (`join.multiple`) and only after a Parallel branches step (`join.no_fork`); both inputs are connected (`join.input_unconnected`); each input is fed only by its own branch (`join.wrong_input`). The rule that no step is reachable from both branches (`parallel.shared_step`) doesn't apply to the join and what follows it.
+4. **What the join does not do.** It doesn't merge data: the steps after it see Branch B's data and document. It has no policy and no timeout. Neither can be enforced with sequential paths, and they can be added if real concurrency is ever built.

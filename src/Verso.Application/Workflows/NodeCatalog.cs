@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, email-inbox, database-query, form-submission, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), lookup-enrich (simulated: configures a keyed lookup, nothing is looked up), deduplicate (simulated: the outcome is the one chosen in the step, nothing is stored), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), parallel-branches (real: runs two paths one after the other, ADR 0009), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), lookup-enrich (simulated: configures a keyed lookup, nothing is looked up), deduplicate (simulated: the outcome is the one chosen in the step, nothing is stored), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), parallel-branches (real: runs two paths one after the other, ADR 0009), wait-branches (real: the join of the two paths, ADR 0009), wait-event (simulated: nothing is awaited), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -46,6 +46,8 @@ public static class NodeCatalog
     public const string SwitchRoute = "switch";
     public const string ForEach = "for-each";
     public const string ParallelBranches = "parallel-branches";
+    public const string WaitBranches = "wait-branches";
+    public const string WaitEvent = "wait-event";
     public const string ApprovalStep = "approval";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
@@ -146,6 +148,22 @@ public static class NodeCatalog
         ["anyone-with-link"] = "Anyone with the link",
     };
 
+    /// <summary>Wait for event step: the longest it would wait.</summary>
+    public static readonly IReadOnlyDictionary<string, string> EventWaits = new Dictionary<string, string>
+    {
+        ["1h"] = "1 hour",
+        ["24h"] = "24 hours",
+        ["7d"] = "7 days",
+        ["30d"] = "30 days",
+    };
+
+    /// <summary>Wait for event step: the outcome the simulated step produces.</summary>
+    public static readonly IReadOnlyDictionary<string, string> EventOutcomes = new Dictionary<string, string>
+    {
+        ["received"] = "Received",
+        ["timeout"] = "Timed out",
+    };
+
     /// <summary>Deduplicate step: how far duplicates are looked for.</summary>
     public static readonly IReadOnlyDictionary<string, string> DedupScopes = new Dictionary<string, string>
     {
@@ -200,6 +218,9 @@ public static class NodeCatalog
     private const string FilePatternPattern = @"^[A-Za-z0-9._*?-]*$";
 
     /// <summary>A plain mailbox address: no display name, no spaces.</summary>
+    /// <summary>An event name such as signature.completed.</summary>
+    private const string EventNamePattern = @"^[A-Za-z][A-Za-z0-9._-]*$";
+
     private const string MailboxPattern = @"^[^@\s<>,;]+@[^@\s<>,;]+\.[^@\s<>,;]+$";
 
     /// <summary>A mail folder name such as Inbox or Accounts/Invoices.</summary>
@@ -616,6 +637,34 @@ public static class NodeCatalog
               "required": ["name"] }
             """,
             """{ "name": "Independent tasks" }"""),
+
+        Node(WaitBranches, "Wait for branches", "logic",
+            "Joins the two paths of a Parallel branches step. Connect the end of Branch A to its 'Branch A' input and the end of Branch B to 'Branch B'; the steps after it run once both paths have arrived. Branch B runs last, so the steps after the join see the data and document as Branch B left them.",
+            [new PortDto(Executions.Fanout.A, "Branch A", true), new PortDto(Executions.Fanout.B, "Branch B", true)], [new PortDto("out", "Continue", true)],
+            """
+            { "type": "object",
+              "properties": {
+                "name": { "type": "string", "title": "Join name", "maxLength": 100,
+                  "description": "Optional. A path that ends before it reaches the join stops there, and the join does not run." } },
+              "required": [] }
+            """,
+            """{ "name": "Both paths done" }"""),
+
+        Node(WaitEvent, "Wait for event", "logic",
+            "Waits for an event from another system, matched by a key in the data. Simulated: nothing is awaited and no listener or timer exists, so the step takes the path chosen in 'Preview outcome'.",
+            [In], [new PortDto("received", "Received", true), new PortDto("timeout", "Timed out", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "event": { "type": "string", "title": "Event name", "minLength": 1, "maxLength": 100, "pattern": "{{Escape(EventNamePattern)}}", "x-widget": "mono",
+                  "description": "For example signature.completed." },
+                "correlation": { "type": "string", "title": "Correlation key field", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DataPathPattern)}}", "x-widget": "data-path" },
+                "timeout": { "type": "string", "title": "Maximum wait", "enum": {{JsonSerializer.Serialize(EventWaits.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(EventWaits.Values)}} },
+                "preview": { "type": "string", "title": "Preview outcome", "enum": {{JsonSerializer.Serialize(EventOutcomes.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(EventOutcomes.Values)}},
+                  "description": "The path every run takes while this step is simulated." } },
+              "required": ["event", "correlation", "timeout", "preview"] }
+            """,
+            """{ "event": "signature.completed", "correlation": "document.id", "timeout": "7d", "preview": "received" }"""),
 
         Node(ForEach, "For each", "logic",
             "Repeats the steps after it for every item of a list in the data. Mode 'each' keeps the whole record and adds the current item; mode 'split' makes each item its own record. One step of the loop may connect back into this step to finish an item. An empty list leaves by 'No items'.",

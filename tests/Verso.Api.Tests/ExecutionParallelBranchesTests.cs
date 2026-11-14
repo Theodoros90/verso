@@ -63,4 +63,44 @@ public sealed class ExecutionParallelBranchesTests(MigratedDatabaseFixture fixtu
             Assert.Equal("Succeeded", Step(done, node).GetProperty("status").GetString());
         }
     }
+
+    [Fact]
+    public async Task JoinedPaths_RunBothThenTheStepsAfterTheJoin()
+    {
+        var key = await Kit.PublishInvoiceWorkflowAsync(parallelBranches: true, joinBranches: true);
+        var id = await Kit.SubmitNewAsync(key, ExecutionTestKit.Sample);
+
+        await Kit.RunEngineAsync(id, _printer, _store, _jobs);
+
+        var e = await Kit.GetExecutionAsync(id);
+        Assert.Equal("Succeeded", e.GetProperty("status").GetString());
+        foreach (var node in new[] { "pdf", "pdf2", "join", "archive" })
+        {
+            Assert.Equal("Succeeded", Step(e, node).GetProperty("status").GetString());
+        }
+
+        Assert.Equal("out", Step(e, "join").GetProperty("outputPort").GetString());
+        var documents = e.GetProperty("documents").EnumerateArray().ToList();
+        Assert.Equal(2, documents.Count);
+        // Branch B ran last, so the archive step after the join stored its document and Branch A's stays unarchived.
+        var archived = documents.Single(d => d.GetProperty("archive").ValueKind == JsonValueKind.Object);
+        Assert.Equal("pdf2", archived.GetProperty("nodeId").GetString());
+    }
+
+    [Fact]
+    public async Task JoinedPaths_ResumedRun_DoesNotRepeatFinishedSteps()
+    {
+        var key = await Kit.PublishInvoiceWorkflowAsync(parallelBranches: true, joinBranches: true);
+        var id = await Kit.SubmitNewAsync(key, ExecutionTestKit.Sample);
+        _store.FailWrites = true;
+
+        await Kit.RunEngineAsync(id, _printer, _store, _jobs); // the first PDF step fails once and a retry is scheduled
+        _store.FailWrites = false;
+        await Kit.RunEngineAsync(id, _printer, _store, _jobs);
+
+        var done = await Kit.GetExecutionAsync(id);
+        Assert.Equal("Succeeded", done.GetProperty("status").GetString());
+        Assert.Equal(1, Step(done, "join").GetProperty("attempt").GetInt32());
+        Assert.Equal("Succeeded", Step(done, "archive").GetProperty("status").GetString());
+    }
 }

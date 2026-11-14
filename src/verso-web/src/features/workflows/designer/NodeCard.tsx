@@ -1,5 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { Archive, ArrowLeftRight, CalendarClock, Circle, CopyCheck, Database, DatabaseZap, ClipboardList, FileCode, Files, FilePenLine, FileText, LayoutTemplate, FolderInput, FolderSync, GitBranch, GitFork, Inbox, Merge, Mail, MousePointerClick, Printer, Repeat, Send, Server, Shuffle, ShieldCheck, Search, Split, Upload, UserCheck, Webhook, type LucideIcon } from 'lucide-react'
+import { Archive, ArrowLeftRight, CalendarClock, Circle, Clock, CopyCheck, Database, DatabaseZap, ClipboardList, FileCode, Files, FilePenLine, FileText, LayoutTemplate, FolderInput, FolderSync, GitBranch, GitFork, GitMerge, Inbox, Merge, Mail, MousePointerClick, Printer, Repeat, Send, Server, Shuffle, ShieldCheck, Search, Split, Upload, UserCheck, Webhook, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NodeTypeDto, WorkflowIssueDto } from '@/lib/api/generated'
@@ -46,6 +46,8 @@ export const NODE_ICONS: Record<string, LucideIcon> = {
   switch: Split,
   'for-each': Repeat,
   'parallel-branches': GitFork,
+  'wait-branches': GitMerge,
+  'wait-event': Clock,
   validate: ShieldCheck,
   'generate-pdf': FileText,
   'generate-docx': FilePenLine,
