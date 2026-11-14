@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, email-inbox, database-query, form-submission, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), lookup-enrich (simulated: configures a keyed lookup, nothing is looked up), deduplicate (simulated: the outcome is the one chosen in the step, nothing is stored), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), parallel-branches (real: runs two paths one after the other, ADR 0009), wait-branches (real: the join of the two paths, ADR 0009), wait-event (simulated: nothing is awaited), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), lookup-enrich (simulated: configures a keyed lookup, nothing is looked up), deduplicate (simulated: the outcome is the one chosen in the step, nothing is stored), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), parallel-branches (real: runs two paths one after the other, ADR 0009), wait-branches (real: the join of the two paths, ADR 0009), wait-event (simulated: nothing is awaited), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), request-signature (simulated: nothing is sent to a signing provider), archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -58,6 +58,7 @@ public static class NodeCatalog
     public const string PrintQueue = "print-queue";
     public const string UploadSftp = "upload-sftp";
     public const string DeliverApi = "deliver-api";
+    public const string RequestSignature = "request-signature";
     public const string Archive = "archive";
 
     public const string LatestPublished = "latest-published";
@@ -148,6 +149,21 @@ public static class NodeCatalog
         ["anyone-with-link"] = "Anyone with the link",
     };
 
+    /// <summary>Request e-signature step: the order signers would sign in.</summary>
+    public static readonly IReadOnlyDictionary<string, string> SignOrders = new Dictionary<string, string>
+    {
+        ["sequential"] = "Sequential",
+        ["any"] = "Any order",
+    };
+
+    /// <summary>Request e-signature step: how long a request would stay open.</summary>
+    public static readonly IReadOnlyDictionary<string, string> SignExpiries = new Dictionary<string, string>
+    {
+        ["3d"] = "3 days",
+        ["7d"] = "7 days",
+        ["30d"] = "30 days",
+    };
+
     /// <summary>Wait for event step: the longest it would wait.</summary>
     public static readonly IReadOnlyDictionary<string, string> EventWaits = new Dictionary<string, string>
     {
@@ -219,6 +235,9 @@ public static class NodeCatalog
 
     /// <summary>A plain mailbox address: no display name, no spaces.</summary>
     /// <summary>An event name such as signature.completed.</summary>
+    /// <summary>A document reference such as agreement.pdf: a plain name, no path.</summary>
+    private const string DocumentRefPattern = @"^[A-Za-z0-9][A-Za-z0-9._ -]*$";
+
     private const string EventNamePattern = @"^[A-Za-z][A-Za-z0-9._-]*$";
 
     private const string MailboxPattern = @"^[^@\s<>,;]+@[^@\s<>,;]+\.[^@\s<>,;]+$";
@@ -843,6 +862,24 @@ public static class NodeCatalog
               "required": ["url"] }
             """,
             """{ "url": "" }"""),
+
+        Node(RequestSignature, "Request e-signature", "output",
+            "Asks people to sign a document through a shared signing connection. Simulated: nothing is sent to a signing provider and no credentials are stored, so the step takes the 'Submitted' path and its result says so.",
+            [In], [new PortDto("submitted", "Submitted", true), new PortDto("failed", "Failed", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "conn": { "type": "string", "title": "Signing provider", "minLength": 1, "maxLength": 100,
+                  "description": "The name of a shared connection, such as Qualified e-signature. No connection string or password." },
+                "document": { "type": "string", "title": "Document reference", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DocumentRefPattern)}}", "x-widget": "mono",
+                  "description": "A file name such as agreement.pdf. Nothing is sent in this version." },
+                "signers": { "type": "string", "title": "Signer emails", "minLength": 1, "maxLength": 500,
+                  "description": "Up to 10 addresses separated by commas." },
+                "order": { "type": "string", "title": "Signing order", "enum": {{JsonSerializer.Serialize(SignOrders.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(SignOrders.Values)}} },
+                "expires": { "type": "string", "title": "Expires after", "enum": {{JsonSerializer.Serialize(SignExpiries.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(SignExpiries.Values)}} } },
+              "required": ["conn", "document", "signers", "order", "expires"] }
+            """,
+            """{ "conn": "Qualified e-signature", "document": "agreement.pdf", "signers": "customer@example.com", "order": "sequential", "expires": "7d" }"""),
 
         Node(Archive, "Archive", "output",
             "Stores the document in the Verso archive with metadata and a retention period.",

@@ -683,6 +683,35 @@ public sealed class GraphValidatorTests
         Assert.True(valid == (errors.Count == 0), string.Join("; ", errors));
     }
 
+    [Theory]
+    [InlineData("Qualified e-signature", "agreement.pdf", "customer@example.com", "sequential", "7d", true)]
+    [InlineData("Qualified e-signature", "terms v2.pdf", "a@example.com, b@example.com", "any", "30d", true)]
+    [InlineData("", "agreement.pdf", "customer@example.com", "sequential", "7d", false)]          // provider is required
+    [InlineData("Qualified e-signature", "", "customer@example.com", "sequential", "7d", false)]  // document is required
+    [InlineData("Qualified e-signature", "../agreement.pdf", "customer@example.com", "sequential", "7d", false)] // a name, not a path
+    [InlineData("Qualified e-signature", "agreement.pdf", "", "sequential", "7d", false)]         // at least one signer
+    [InlineData("Qualified e-signature", "agreement.pdf", "not-an-address", "sequential", "7d", false)]
+    [InlineData("Qualified e-signature", "agreement.pdf", "Customer <c@example.com>", "sequential", "7d", false)] // no display names
+    [InlineData("Qualified e-signature", "agreement.pdf", "customer@example.com", "random", "7d", false)]  // one of the listed orders
+    [InlineData("Qualified e-signature", "agreement.pdf", "customer@example.com", "sequential", "1y", false)] // one of the listed expiries
+    public void RequestSignature_NeedsAProviderADocumentAndSigners(string conn, string document, string signers, string order, string expires, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]!.AsArray().Add(new JsonObject
+        {
+            ["id"] = "sign", ["type"] = "request-signature", ["title"] = "Request e-signature", ["position"] = new JsonObject { ["x"] = 780, ["y"] = 260 },
+            ["config"] = new JsonObject { ["conn"] = conn, ["document"] = document, ["signers"] = signers, ["order"] = order, ["expires"] = expires },
+        });
+        var edges = definition["edges"]!.AsArray();
+        edges.Single(e => (string?)e!["id"] == "e3")!["target"] = "sign";
+        edges.Add(JsonNode.Parse("""{ "id": "e4", "source": "sign", "sourcePort": "submitted", "target": "archive", "targetPort": "in" }"""));
+
+        var result = Validate(definition);
+
+        var errors = result.Issues.Where(i => i.Severity == GraphValidator.Error).Select(i => $"{i.NodeId}:{i.Code}").ToList();
+        Assert.True(valid == (errors.Count == 0), string.Join("; ", errors));
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {

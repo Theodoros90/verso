@@ -462,6 +462,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.PrintQueue => PrintQueueAsync(run, node, ct),
         NodeCatalog.UploadSftp => Task.FromResult(UploadSftp(node)),
         NodeCatalog.DeliverApi => Task.FromResult(DeliverApi(node)),
+        NodeCatalog.RequestSignature => Task.FromResult(RequestSignature(node)),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
         _ => throw new StepException("node.unsupported", $"Node type '{node.Type}' can't run in this version of Verso.", retryable: false),
     };
@@ -832,6 +833,13 @@ public sealed partial class ExecutionEngine(
     {
         string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
         return new Outcome("success", new { simulated = true, uploaded = false, host = Text("host"), folder = Text("folder") });
+    }
+
+    /// <summary>Request e-signature is simulated: nothing is sent to a signing provider. The step takes the 'submitted' path; its result holds no addresses, only how many signers there would be.</summary>
+    private static Outcome RequestSignature(Workflows.WorkflowNode node)
+    {
+        string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        return new Outcome("submitted", new { simulated = true, sent = false, document = Text("document"), signers = EmailAddresses.Parse(Text("signers")).Addresses.Count, order = Text("order") });
     }
 
     /// <summary>Wait for event is simulated: nothing is awaited. The step takes the path chosen in 'preview' ('received' unless set to 'timeout').</summary>

@@ -458,6 +458,15 @@ public static class GraphValidator
 
                 break;
 
+            case NodeCatalog.RequestSignature:
+                var signers = c.TryGetProperty("signers", out var signersElement) && signersElement.ValueKind == JsonValueKind.String ? signersElement.GetString()!.Trim() : "";
+                if (signers.Length > 0 && Executions.EmailAddresses.Parse(signers).Problem is { } signersProblem)
+                {
+                    yield return new(Error, "config.invalid", signersProblem, NodeId: node.Id, Field: "signers");
+                }
+
+                break;
+
             case NodeCatalog.GenerateEmail:
                 string EmailText(string name) => c.TryGetProperty(name, out var s) && s.ValueKind == JsonValueKind.String ? s.GetString()!.Trim() : "";
                 var buttonLabel = EmailText("buttonLabel");

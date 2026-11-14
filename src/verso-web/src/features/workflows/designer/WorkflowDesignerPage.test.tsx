@@ -320,6 +320,23 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { host: '', folder: '/in' },
   },
   {
+    type: 'request-signature', label: 'Request e-signature', category: 'output', description: 'Asks people to sign a document (simulated).',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'submitted', label: 'Submitted', required: true }, { id: 'failed', label: 'Failed', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        conn: { type: 'string', title: 'Signing provider' },
+        document: { type: 'string', title: 'Document reference', 'x-widget': 'mono' },
+        signers: { type: 'string', title: 'Signer emails' },
+        order: { type: 'string', title: 'Signing order', enum: ['sequential', 'any'], 'x-enumLabels': ['Sequential', 'Any order'] },
+        expires: { type: 'string', title: 'Expires after', enum: ['3d', '7d', '30d'], 'x-enumLabels': ['3 days', '7 days', '30 days'] },
+      },
+      required: ['conn', 'document', 'signers', 'order', 'expires'],
+    },
+    defaults: { conn: 'Qualified e-signature', document: 'agreement.pdf', signers: 'customer@example.com', order: 'sequential', expires: '7d' },
+  },
+  {
     type: 'deliver-api', label: 'Deliver via API', category: 'output', description: 'Posts the document to another system (simulated).',
     inputs: [{ id: 'in', label: 'In', required: true }],
     outputs: [{ id: 'delivered', label: 'Delivered', required: true }, { id: 'failed', label: 'Failed', required: false }],
@@ -715,6 +732,22 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'wait-event', config: { event: 'signature.completed', correlation: 'document.id', timeout: '7d', preview: 'received' } })
+  })
+
+  it('adds a Request e-signature step with its defaults and saves them', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Request e-signature' }))
+
+    expect(await screen.findByRole('heading', { name: 'Request e-signature', level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /Document reference/ })).toHaveValue('agreement.pdf')
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'request-signature', config: { conn: 'Qualified e-signature', document: 'agreement.pdf', signers: 'customer@example.com', order: 'sequential', expires: '7d' } })
   })
 
   it('adds a Combine PDFs step with its defaults and a page order choice', async () => {
