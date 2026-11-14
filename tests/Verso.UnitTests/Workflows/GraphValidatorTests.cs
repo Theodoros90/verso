@@ -506,6 +506,30 @@ public sealed class GraphValidatorTests
         Assert.True(valid == (errors.Count == 0), string.Join("; ", errors));
     }
 
+    [Theory]
+    [InlineData("invoice.number", "current-batch", "30d", "unique", true)]
+    [InlineData("invoice.number", "across-runs", "90d", "duplicate", true)]
+    [InlineData("", "current-batch", "30d", "unique", false)]               // business key is required
+    [InlineData("invoice number", "current-batch", "30d", "unique", false)] // a field path, not free text
+    [InlineData("invoice.number", "forever", "30d", "unique", false)]       // one of the listed scopes
+    [InlineData("invoice.number", "across-runs", "1y", "unique", false)]    // one of the listed retentions
+    [InlineData("invoice.number", "current-batch", "30d", "maybe", false)]  // one of the listed outcomes
+    public void Deduplicate_NeedsAKeyFieldAndListedChoices(string key, string scope, string retention, string preview, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]!.AsArray().Add(JsonNode.Parse($$"""
+            { "id": "dedup", "type": "deduplicate", "title": "Deduplicate", "position": { "x": 780, "y": 260 }, "config": { "key": "{{key}}", "scope": "{{scope}}", "retention": "{{retention}}", "preview": "{{preview}}" } }
+            """));
+        var edges = definition["edges"]!.AsArray();
+        edges.Single(e => (string?)e!["id"] == "e3")!["target"] = "dedup";
+        edges.Add(JsonNode.Parse("""{ "id": "e4", "source": "dedup", "sourcePort": "unique", "target": "archive", "targetPort": "in" }"""));
+
+        var result = Validate(definition);
+
+        var errors = result.Issues.Where(i => i.Severity == GraphValidator.Error).Select(i => $"{i.NodeId}:{i.Code}").ToList();
+        Assert.True(valid == (errors.Count == 0), string.Join("; ", errors));
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {

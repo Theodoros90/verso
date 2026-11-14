@@ -250,6 +250,7 @@ public static class GraphValidator
         (NodeCatalog.MergeData, "failed") => "A record that can't be merged will end the run as Rejected.",
         (NodeCatalog.ApprovalStep, "rejected") => "A declined approval will end the run as Rejected.",
         (NodeCatalog.ForEach, "empty") => "An empty list ends the run here: nothing is repeated.",
+        (NodeCatalog.Deduplicate, "duplicate") => "Duplicate records end the run here.",
         (NodeCatalog.IfElse, "yes") => "Records that meet the condition end the run here.",
         (NodeCatalog.IfElse, "no") => "Records that don't meet the condition end the run here.",
         (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail, "failed") => "Data that can't make a complete document will end the run as Rejected.",

@@ -18,7 +18,7 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
         using var response = await _client.GetAsync(new Uri("/api/v1/node-types", UriKind.Relative));
         var types = (await ReadAsync(response)).EnumerateArray().ToList();
 
-        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "email-inbox", "database-query", "form-submission", "scheduled-trigger", "manual-trigger", "folder-input", "parse", "map-fields", "transform", "lookup-enrich", "merge-data", "if-else", "switch", "for-each", "approval", "validate", "generate-pdf", "generate-docx", "generate-email", "combine-pdfs", "send-email", "print-queue", "upload-sftp", "deliver-api", "archive"], types.Select(t => t.GetProperty("type").GetString()));
+        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "email-inbox", "database-query", "form-submission", "scheduled-trigger", "manual-trigger", "folder-input", "parse", "map-fields", "transform", "lookup-enrich", "deduplicate", "merge-data", "if-else", "switch", "for-each", "approval", "validate", "generate-pdf", "generate-docx", "generate-email", "combine-pdfs", "send-email", "print-queue", "upload-sftp", "deliver-api", "archive"], types.Select(t => t.GetProperty("type").GetString()));
         var validate = types.Single(t => t.GetProperty("type").GetString() == "validate");
         Assert.Equal("process", validate.GetProperty("category").GetString());
         Assert.Equal(["valid", "invalid"], validate.GetProperty("outputs").EnumerateArray().Select(p => p.GetProperty("id").GetString()));

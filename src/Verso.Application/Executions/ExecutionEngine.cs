@@ -359,6 +359,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.ApiTrigger or NodeCatalog.ErpConnector or NodeCatalog.FileUpload or NodeCatalog.SftpFolder or NodeCatalog.EmailInbox or NodeCatalog.DatabaseQuery or NodeCatalog.FormSubmission or NodeCatalog.ScheduledTrigger
             or NodeCatalog.ManualTrigger or NodeCatalog.FolderInput => Task.FromResult(new Outcome("out", null)),
         NodeCatalog.LookupEnrich => Task.FromResult(LookupEnrich(node)),
+        NodeCatalog.Deduplicate => Task.FromResult(Deduplicate(node)),
         NodeCatalog.ParseContent =>Task.FromResult(Parse(run, node)),
         NodeCatalog.MapFields => Task.FromResult(Map(run, node)),
         NodeCatalog.TransformData => Task.FromResult(Transform(run, node)),
@@ -744,6 +745,14 @@ public sealed partial class ExecutionEngine(
     {
         string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
         return new Outcome("success", new { simulated = true, uploaded = false, host = Text("host"), folder = Text("folder") });
+    }
+
+    /// <summary>Deduplicate is simulated: nothing is stored or compared. The step takes the path chosen in 'preview' ('unique' unless set to 'duplicate').</summary>
+    private static Outcome Deduplicate(Workflows.WorkflowNode node)
+    {
+        string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        var duplicate = Text("preview") == "duplicate";
+        return new Outcome(duplicate ? "duplicate" : "unique", new { simulated = true, checkedAgainstStore = false, outcome = duplicate ? "duplicate" : "unique", key = Text("key"), scope = Text("scope") });
     }
 
     /// <summary>Lookup / enrich is simulated: nothing is looked up and the run's data is not changed. The step takes the 'found' path and its result says that nothing was looked up.</summary>

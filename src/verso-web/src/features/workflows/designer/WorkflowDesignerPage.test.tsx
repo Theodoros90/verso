@@ -127,6 +127,22 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { conn: 'Microsoft Dynamics 365', key: 'customer.id', destination: 'customer.profile', missing: 'continue' },
   },
   {
+    type: 'deduplicate', label: 'Deduplicate', category: 'process', description: 'Detects duplicate records (simulated).',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'unique', label: 'Unique', required: true }, { id: 'duplicate', label: 'Duplicate', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', title: 'Business key field', 'x-widget': 'data-path' },
+        scope: { type: 'string', title: 'Scope', enum: ['current-batch', 'across-runs'], 'x-enumLabels': ['Current batch', 'Across runs'] },
+        retention: { type: 'string', title: 'Across-run retention', enum: ['1d', '7d', '30d', '90d'], 'x-enumLabels': ['1 day', '7 days', '30 days', '90 days'] },
+        preview: { type: 'string', title: 'Preview outcome', enum: ['unique', 'duplicate'], 'x-enumLabels': ['Unique', 'Duplicate'] },
+      },
+      required: ['key', 'scope', 'retention', 'preview'],
+    },
+    defaults: { key: 'invoice.number', scope: 'current-batch', retention: '30d', preview: 'unique' },
+  },
+  {
     type: 'scheduled-trigger', label: 'Scheduled trigger', category: 'input', description: 'Runs at fixed times.',
     inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
     configSchema: {
@@ -607,6 +623,21 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'lookup-enrich', config: { key: 'customer.id', destination: 'customer.profile', missing: 'continue' } })
+  })
+
+  it('adds a Deduplicate step with its defaults and saves them', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Deduplicate' }))
+
+    expect(await screen.findByRole('heading', { name: 'Deduplicate', level: 3 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'deduplicate', config: { key: 'invoice.number', scope: 'current-batch', retention: '30d', preview: 'unique' } })
   })
 
   it('adds a Combine PDFs step with its defaults and a page order choice', async () => {

@@ -1,5 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { Archive, ArrowLeftRight, CalendarClock, Circle, Database, DatabaseZap, ClipboardList, FileCode, Files, FilePenLine, FileText, LayoutTemplate, FolderInput, FolderSync, GitBranch, Inbox, Merge, Mail, MousePointerClick, Printer, Repeat, Send, Server, Shuffle, ShieldCheck, Search, Split, Upload, UserCheck, Webhook, type LucideIcon } from 'lucide-react'
+import { Archive, ArrowLeftRight, CalendarClock, Circle, CopyCheck, Database, DatabaseZap, ClipboardList, FileCode, Files, FilePenLine, FileText, LayoutTemplate, FolderInput, FolderSync, GitBranch, Inbox, Merge, Mail, MousePointerClick, Printer, Repeat, Send, Server, Shuffle, ShieldCheck, Search, Split, Upload, UserCheck, Webhook, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NodeTypeDto, WorkflowIssueDto } from '@/lib/api/generated'
@@ -39,6 +39,7 @@ export const NODE_ICONS: Record<string, LucideIcon> = {
   'map-fields': ArrowLeftRight,
   transform: Shuffle,
   'lookup-enrich': Search,
+  'deduplicate': CopyCheck,
   'merge-data': Merge,
   approval: UserCheck,
   'if-else': GitBranch,

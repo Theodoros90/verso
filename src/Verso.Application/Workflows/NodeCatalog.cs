@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, email-inbox, database-query, form-submission, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), lookup-enrich (simulated: configures a keyed lookup, nothing is looked up), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), lookup-enrich (simulated: configures a keyed lookup, nothing is looked up), deduplicate (simulated: the outcome is the one chosen in the step, nothing is stored), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -41,6 +41,7 @@ public static class NodeCatalog
     public const string TransformData = "transform";
     public const string MergeData = "merge-data";
     public const string LookupEnrich = "lookup-enrich";
+    public const string Deduplicate = "deduplicate";
     public const string IfElse = "if-else";
     public const string SwitchRoute = "switch";
     public const string ForEach = "for-each";
@@ -142,6 +143,29 @@ public static class NodeCatalog
         ["staff"] = "Signed-in staff",
         ["portal-customers"] = "Portal customers",
         ["anyone-with-link"] = "Anyone with the link",
+    };
+
+    /// <summary>Deduplicate step: how far duplicates are looked for.</summary>
+    public static readonly IReadOnlyDictionary<string, string> DedupScopes = new Dictionary<string, string>
+    {
+        ["current-batch"] = "Current batch",
+        ["across-runs"] = "Across runs",
+    };
+
+    /// <summary>Deduplicate step: how long an Across runs step remembers keys.</summary>
+    public static readonly IReadOnlyDictionary<string, string> DedupRetentions = new Dictionary<string, string>
+    {
+        ["1d"] = "1 day",
+        ["7d"] = "7 days",
+        ["30d"] = "30 days",
+        ["90d"] = "90 days",
+    };
+
+    /// <summary>Deduplicate step: the outcome the simulated step produces.</summary>
+    public static readonly IReadOnlyDictionary<string, string> DedupOutcomes = new Dictionary<string, string>
+    {
+        ["unique"] = "Unique",
+        ["duplicate"] = "Duplicate",
     };
 
     /// <summary>What a Lookup / enrich step does when nothing matches.</summary>
@@ -492,6 +516,22 @@ public static class NodeCatalog
               "required": ["conn", "key", "destination", "missing"] }
             """,
             """{ "conn": "Microsoft Dynamics 365", "key": "customer.id", "destination": "customer.profile", "missing": "continue" }"""),
+
+        Node(Deduplicate, "Deduplicate", "process",
+            "Detects duplicate records by a business key and routes them. Simulated: nothing is stored or compared, so the step takes the path chosen in 'Preview outcome'.",
+            [In], [new PortDto("unique", "Unique", true), new PortDto("duplicate", "Duplicate", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "key": { "type": "string", "title": "Business key field", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DataPathPattern)}}", "x-widget": "data-path" },
+                "scope": { "type": "string", "title": "Scope", "enum": {{JsonSerializer.Serialize(DedupScopes.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(DedupScopes.Values)}} },
+                "retention": { "type": "string", "title": "Across-run retention", "enum": {{JsonSerializer.Serialize(DedupRetentions.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(DedupRetentions.Values)}},
+                  "description": "Applies only to Across runs. No deduplication store exists in this version." },
+                "preview": { "type": "string", "title": "Preview outcome", "enum": {{JsonSerializer.Serialize(DedupOutcomes.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(DedupOutcomes.Values)}},
+                  "description": "The path every run takes while this step is simulated." } },
+              "required": ["key", "scope", "retention", "preview"] }
+            """,
+            """{ "key": "invoice.number", "scope": "current-batch", "retention": "30d", "preview": "unique" }"""),
 
         Node(MergeData, "Merge data", "process",
             "Joins the data with a lookup table on a key: each record gets the fields of the lookup row whose key equals the record's. The lookup table is typed into the step (one list of records).",
