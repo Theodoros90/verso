@@ -337,6 +337,22 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { conn: 'Qualified e-signature', document: 'agreement.pdf', signers: 'customer@example.com', order: 'sequential', expires: '7d' },
   },
   {
+    type: 'assemble-pack', label: 'Assemble document pack', category: 'doc', description: 'Puts documents into one package (simulated).',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'success', label: 'Success', required: true }, { id: 'failed', label: 'Failed', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', title: 'Pack name' },
+        files: { type: 'string', title: 'Files in order (one per line)', 'x-widget': 'multiline' },
+        format: { type: 'string', title: 'Output format', enum: ['zip', 'pdf'], 'x-enumLabels': ['ZIP package', 'Combined PDF'] },
+        filename: { type: 'string', title: 'Output file name', 'x-widget': 'mono' },
+      },
+      required: ['name', 'files', 'format', 'filename'],
+    },
+    defaults: { name: 'Agreement pack', files: 'agreement.pdf\nterms.pdf', format: 'zip', filename: 'agreement-pack.zip' },
+  },
+  {
     type: 'deliver-api', label: 'Deliver via API', category: 'output', description: 'Posts the document to another system (simulated).',
     inputs: [{ id: 'in', label: 'In', required: true }],
     outputs: [{ id: 'delivered', label: 'Delivered', required: true }, { id: 'failed', label: 'Failed', required: false }],
@@ -748,6 +764,22 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'request-signature', config: { conn: 'Qualified e-signature', document: 'agreement.pdf', signers: 'customer@example.com', order: 'sequential', expires: '7d' } })
+  })
+
+  it('adds an Assemble document pack step with its defaults and saves them', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Assemble document pack' }))
+
+    expect(await screen.findByRole('heading', { name: 'Assemble document pack', level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /Output file name/ })).toHaveValue('agreement-pack.zip')
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'assemble-pack', config: { name: 'Agreement pack', format: 'zip', filename: 'agreement-pack.zip' } })
   })
 
   it('adds a Combine PDFs step with its defaults and a page order choice', async () => {

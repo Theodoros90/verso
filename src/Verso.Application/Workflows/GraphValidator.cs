@@ -458,6 +458,27 @@ public static class GraphValidator
 
                 break;
 
+            case NodeCatalog.AssemblePack:
+                var packFiles = (c.TryGetProperty("files", out var filesElement) && filesElement.ValueKind == JsonValueKind.String ? filesElement.GetString()! : "")
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (packFiles.Length > NodeCatalog.MaxPackFiles)
+                {
+                    yield return new(Error, "config.invalid", $"A pack lists at most {NodeCatalog.MaxPackFiles} files.", NodeId: node.Id, Field: "files");
+                }
+                else if (packFiles.FirstOrDefault(f => !NodeCatalog.IsPlainFileName(f)) is { } badFile)
+                {
+                    yield return new(Error, "config.invalid", $"'{badFile}' isn't a plain file name; list one file name per line, with no folders.", NodeId: node.Id, Field: "files");
+                }
+
+                var packFormat = c.TryGetProperty("format", out var formatElement) && formatElement.ValueKind == JsonValueKind.String ? formatElement.GetString()! : "";
+                var packName = c.TryGetProperty("filename", out var nameElement) && nameElement.ValueKind == JsonValueKind.String ? nameElement.GetString()!.Trim() : "";
+                if (packName.Length > 0 && NodeCatalog.PackFormats.ContainsKey(packFormat) && !packName.EndsWith("." + packFormat, StringComparison.OrdinalIgnoreCase))
+                {
+                    yield return new(Error, "config.invalid", $"The output file name must end in .{packFormat}.", NodeId: node.Id, Field: "filename");
+                }
+
+                break;
+
             case NodeCatalog.RequestSignature:
                 var signers = c.TryGetProperty("signers", out var signersElement) && signersElement.ValueKind == JsonValueKind.String ? signersElement.GetString()!.Trim() : "";
                 if (signers.Length > 0 && Executions.EmailAddresses.Parse(signers).Problem is { } signersProblem)

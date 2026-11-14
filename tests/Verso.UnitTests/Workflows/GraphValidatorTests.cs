@@ -712,6 +712,51 @@ public sealed class GraphValidatorTests
         Assert.True(valid == (errors.Count == 0), string.Join("; ", errors));
     }
 
+    [Theory]
+    [InlineData("Agreement pack", "agreement.pdf\nterms.pdf", "zip", "agreement-pack.zip", true)]
+    [InlineData("Agreement pack", "agreement.pdf\r\nterms.pdf", "pdf", "pack.pdf", true)]
+    [InlineData("", "agreement.pdf", "zip", "pack.zip", false)]                  // pack name is required
+    [InlineData("Agreement pack", "", "zip", "pack.zip", false)]                 // at least one file
+    [InlineData("Agreement pack", "docs/agreement.pdf", "zip", "pack.zip", false)] // plain file names, no folders
+    [InlineData("Agreement pack", "agreement.pdf", "zip", "pack.pdf", false)]    // the name's extension matches the format
+    [InlineData("Agreement pack", "agreement.pdf", "pdf", "pack.zip", false)]
+    [InlineData("Agreement pack", "agreement.pdf", "docx", "pack.docx", false)]  // one of the listed formats
+    public void AssemblePack_NeedsANameFilesAndAMatchingOutputName(string name, string files, string format, string filename, bool valid)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]!.AsArray().Add(new JsonObject
+        {
+            ["id"] = "pack", ["type"] = "assemble-pack", ["title"] = "Assemble document pack", ["position"] = new JsonObject { ["x"] = 780, ["y"] = 260 },
+            ["config"] = new JsonObject { ["name"] = name, ["files"] = files, ["format"] = format, ["filename"] = filename },
+        });
+        var edges = definition["edges"]!.AsArray();
+        edges.Single(e => (string?)e!["id"] == "e3")!["target"] = "pack";
+        edges.Add(JsonNode.Parse("""{ "id": "e4", "source": "pack", "sourcePort": "success", "target": "archive", "targetPort": "in" }"""));
+
+        var result = Validate(definition);
+
+        var errors = result.Issues.Where(i => i.Severity == GraphValidator.Error).Select(i => $"{i.NodeId}:{i.Code}").ToList();
+        Assert.True(valid == (errors.Count == 0), string.Join("; ", errors));
+    }
+
+    [Fact]
+    public void AssemblePack_ListsAtMostTwentyFiles()
+    {
+        var definition = InvoiceStandard(TemplateId);
+        definition["nodes"]!.AsArray().Add(new JsonObject
+        {
+            ["id"] = "pack", ["type"] = "assemble-pack", ["title"] = "Assemble document pack", ["position"] = new JsonObject { ["x"] = 780, ["y"] = 260 },
+            ["config"] = new JsonObject { ["name"] = "Big pack", ["files"] = string.Join('\n', Enumerable.Range(1, 21).Select(i => $"doc{i}.pdf")), ["format"] = "zip", ["filename"] = "big.zip" },
+        });
+        var edges = definition["edges"]!.AsArray();
+        edges.Single(e => (string?)e!["id"] == "e3")!["target"] = "pack";
+        edges.Add(JsonNode.Parse("""{ "id": "e4", "source": "pack", "sourcePort": "success", "target": "archive", "targetPort": "in" }"""));
+
+        var result = Validate(definition);
+
+        Assert.Contains("pack:config.invalid", Codes(result));
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {

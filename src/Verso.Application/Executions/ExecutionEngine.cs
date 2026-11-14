@@ -463,6 +463,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.UploadSftp => Task.FromResult(UploadSftp(node)),
         NodeCatalog.DeliverApi => Task.FromResult(DeliverApi(node)),
         NodeCatalog.RequestSignature => Task.FromResult(RequestSignature(node)),
+        NodeCatalog.AssemblePack => Task.FromResult(AssemblePack(node)),
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
         _ => throw new StepException("node.unsupported", $"Node type '{node.Type}' can't run in this version of Verso.", retryable: false),
     };
@@ -833,6 +834,14 @@ public sealed partial class ExecutionEngine(
     {
         string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
         return new Outcome("success", new { simulated = true, uploaded = false, host = Text("host"), folder = Text("folder") });
+    }
+
+    /// <summary>Assemble document pack is simulated: nothing is assembled and no file is made. The step takes the 'success' path; its result holds counts and names from the step's settings, no document content.</summary>
+    private static Outcome AssemblePack(Workflows.WorkflowNode node)
+    {
+        string Text(string name) => node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+        var files = Text("files").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
+        return new Outcome("success", new { simulated = true, assembled = false, files, format = Text("format"), fileName = Text("filename") });
     }
 
     /// <summary>Request e-signature is simulated: nothing is sent to a signing provider. The step takes the 'submitted' path; its result holds no addresses, only how many signers there would be.</summary>

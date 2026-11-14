@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, email-inbox, database-query, form-submission, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), lookup-enrich (simulated: configures a keyed lookup, nothing is looked up), deduplicate (simulated: the outcome is the one chosen in the step, nothing is stored), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), parallel-branches (real: runs two paths one after the other, ADR 0009), wait-branches (real: the join of the two paths, ADR 0009), wait-event (simulated: nothing is awaited), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), request-signature (simulated: nothing is sent to a signing provider), archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), lookup-enrich (simulated: configures a keyed lookup, nothing is looked up), deduplicate (simulated: the outcome is the one chosen in the step, nothing is stored), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), parallel-branches (real: runs two paths one after the other, ADR 0009), wait-branches (real: the join of the two paths, ADR 0009), wait-event (simulated: nothing is awaited), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), request-signature (simulated: nothing is sent to a signing provider), assemble-pack (simulated: nothing is assembled), archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -54,6 +54,7 @@ public static class NodeCatalog
     public const string GenerateDocx = "generate-docx";
     public const string GenerateEmail = "generate-email";
     public const string CombinePdfs = "combine-pdfs";
+    public const string AssemblePack = "assemble-pack";
     public const string SendEmail = "send-email";
     public const string PrintQueue = "print-queue";
     public const string UploadSftp = "upload-sftp";
@@ -148,6 +149,19 @@ public static class NodeCatalog
         ["portal-customers"] = "Portal customers",
         ["anyone-with-link"] = "Anyone with the link",
     };
+
+    /// <summary>Assemble document pack step: the format of the pack and the extension its file name must end in.</summary>
+    public static readonly IReadOnlyDictionary<string, string> PackFormats = new Dictionary<string, string>
+    {
+        ["zip"] = "ZIP package",
+        ["pdf"] = "Combined PDF",
+    };
+
+    /// <summary>Most files a pack may list.</summary>
+    public const int MaxPackFiles = 20;
+
+    /// <summary>Whether a document reference or output name is a plain file name (no path).</summary>
+    public static bool IsPlainFileName(string name) => System.Text.RegularExpressions.Regex.IsMatch(name, DocumentRefPattern);
 
     /// <summary>Request e-signature step: the order signers would sign in.</summary>
     public static readonly IReadOnlyDictionary<string, string> SignOrders = new Dictionary<string, string>
@@ -804,6 +818,22 @@ public static class NodeCatalog
               "required": ["order", "bookmarks", "fileName"] }
             """,
             """{ "order": "generated", "bookmarks": true, "fileName": "{{invoice.number}}-pack.pdf" }"""),
+
+        Node(AssemblePack, "Assemble document pack", "doc",
+            "Puts an ordered list of documents into one ZIP package or combined PDF. Simulated: the file names are examples, nothing is assembled and no file is made, so the step takes the 'Success' path and its result says so.",
+            [In], [new PortDto("success", "Success", true), new PortDto("failed", "Failed", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "name": { "type": "string", "title": "Pack name", "minLength": 1, "maxLength": 100 },
+                "files": { "type": "string", "title": "Files in order (one per line)", "minLength": 1, "maxLength": 2000, "x-widget": "multiline",
+                  "description": "Plain file names, such as agreement.pdf; up to 20. They are examples: nothing is assembled in this version." },
+                "format": { "type": "string", "title": "Output format", "enum": {{JsonSerializer.Serialize(PackFormats.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(PackFormats.Values)}} },
+                "filename": { "type": "string", "title": "Output file name", "minLength": 1, "maxLength": 200, "pattern": "{{Escape(DocumentRefPattern)}}", "x-widget": "mono",
+                  "description": "Ends in .zip for a ZIP package and .pdf for a combined PDF." } },
+              "required": ["name", "files", "format", "filename"] }
+            """,
+            """{ "name": "Agreement pack", "files": "agreement.pdf\nterms.pdf\nsupporting-evidence.pdf", "format": "zip", "filename": "agreement-pack.zip" }"""),
 
         Node(SendEmail, "Send email", "output",
             "Emails a message to the recipients through the bank's SMTP relay (set up by the administrator, ADR 0006), optionally with the generated document attached. A generated HTML email becomes the message body.",
