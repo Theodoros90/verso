@@ -149,6 +149,35 @@ public static class GraphValidator
             }
         }
 
+        // Parallel branches (ADR 0009): one per workflow, not together with a For each, and the two paths never rejoin.
+        var forks = definition.Nodes.Where(n => n.Type == NodeCatalog.ParallelBranches).ToList();
+        foreach (var extra in forks.Skip(1))
+        {
+            issues.Add(new(Error, "parallel.multiple", "A workflow can have one Parallel branches step.", NodeId: extra.Id));
+        }
+
+        if (forks.Count > 0 && loops.Count > 0)
+        {
+            foreach (var fork in forks)
+            {
+                issues.Add(new(Error, "parallel.with_loop", "Parallel branches can't be used in a workflow that has a For each.", NodeId: fork.Id));
+            }
+        }
+
+        foreach (var fork in forks)
+        {
+            var known = definition.Edges.Where(e => nodes.ContainsKey(e.Source) && nodes.ContainsKey(e.Target)).ToList();
+            HashSet<string> Path(string port) =>
+                known.FirstOrDefault(e => e.Source == fork.Id && e.SourcePort == port) is { } start
+                    ? LoopAnalysis.Reach(start.Target, known, _ => false, includeStart: true)
+                    : [];
+            var a = Path(Executions.Fanout.A);
+            foreach (var shared in Path(Executions.Fanout.B).Where(a.Contains))
+            {
+                issues.Add(new(Error, "parallel.shared_step", $"'{nodes[shared].Title}' can be reached from both branches; each branch must end on its own (paths can't rejoin in this version).", NodeId: shared));
+            }
+        }
+
         // Cycles (depth-first search, three colours)
         var state = new Dictionary<string, int>(StringComparer.Ordinal);
         var reportedCycle = false;

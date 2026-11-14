@@ -118,6 +118,18 @@ public sealed partial class ExecutionEngine(
                 return;
             }
 
+            if (node.Type == NodeCatalog.ParallelBranches)
+            {
+                // Both paths run, A then B; the run is over when the second one ends (ADR 0009).
+                if (!await RunBranchesAsync(run, node, timeout.Token, ct))
+                {
+                    return;
+                }
+
+                await FinishAsync(run, node, step, ct);
+                return;
+            }
+
             var next = port is null ? null : plan.Next(node.Id, port);
             if (next is null)
             {
@@ -174,6 +186,45 @@ public sealed partial class ExecutionEngine(
         run.Iteration = 0;
         run.Document = null;
         run.Data = baseData;
+        return true;
+    }
+
+    /// <summary>
+    /// Runs the two paths of a Parallel branches step one after the other (ADR 0009), each from the data and document as they were at the fork.
+    /// A path ends where its steps end. The first step that is rejected or fails ends the whole run (the other path doesn't run if it hadn't yet).
+    /// Steps already done are found again by their rows and skipped over, so a retried or redelivered run resumes in the right path. False when the run ended or stopped.
+    /// </summary>
+    private async Task<bool> RunBranchesAsync(Run run, Workflows.WorkflowNode fork, CancellationToken timeoutToken, CancellationToken shutdown)
+    {
+        var baseData = run.Data;
+        var baseDocument = run.Document;
+        foreach (var path in Fanout.Paths)
+        {
+            run.Data = baseData;
+            run.Document = baseDocument;
+            var current = run.Plan.Next(fork.Id, path);
+            while (current is not null)
+            {
+                var step = await StepAsync(run, current, timeoutToken, shutdown);
+                if (step is null)
+                {
+                    return false;
+                }
+
+                var next = step.Port is null ? null : run.Plan.Next(current.Id, step.Port);
+                // A declined approval with a path connected continues down it; every other rejecting output ends the run.
+                if (Rejects(current.Type, step.Port) && (current.Type != NodeCatalog.ApprovalStep || next is null))
+                {
+                    await FinishAsync(run, current, step, shutdown);
+                    return false;
+                }
+
+                current = next;
+            }
+        }
+
+        run.Data = baseData;
+        run.Document = baseDocument;
         return true;
     }
 
@@ -367,6 +418,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.IfElse => Task.FromResult(Branch(run, node)),
         NodeCatalog.SwitchRoute => Task.FromResult(Route(run, node)),
         NodeCatalog.ForEach => Task.FromResult(Repeat(run, node)),
+        NodeCatalog.ParallelBranches => Task.FromResult(new Outcome(Fanout.A, new { branches = Fanout.Paths.Count, name = node.Config.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : "" })),
         NodeCatalog.Validate => Task.FromResult(Validate(run, node)),
         NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx => GenerateDocumentAsync(run, node, ct),
         NodeCatalog.GenerateEmail => GenerateEmailAsync(run, node, ct),

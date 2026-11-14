@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, email-inbox, database-query, form-submission, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), lookup-enrich (simulated: configures a keyed lookup, nothing is looked up), deduplicate (simulated: the outcome is the one chosen in the step, nothing is stored), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), lookup-enrich (simulated: configures a keyed lookup, nothing is looked up), deduplicate (simulated: the outcome is the one chosen in the step, nothing is stored), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), parallel-branches (real: runs two paths one after the other, ADR 0009), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -45,6 +45,7 @@ public static class NodeCatalog
     public const string IfElse = "if-else";
     public const string SwitchRoute = "switch";
     public const string ForEach = "for-each";
+    public const string ParallelBranches = "parallel-branches";
     public const string ApprovalStep = "approval";
     public const string Validate = "validate";
     public const string GeneratePdf = "generate-pdf";
@@ -603,6 +604,18 @@ public static class NodeCatalog
             { "field": "", "op": "equals", "other": true,
               "branches": [ { "id": "branch-1", "label": "Branch 1", "compare": "value", "value": "" }, { "id": "branch-2", "label": "Branch 2", "compare": "value", "value": "" } ] }
             """),
+
+        Node(ParallelBranches, "Parallel branches", "logic",
+            "Fans out to two independent paths, Branch A and Branch B. They run one after the other (A first), each from the same data; a step that rejects or fails in either path ends the run. Paths can't rejoin.",
+            [In], [new PortDto(Executions.Fanout.A, "Branch A", true), new PortDto(Executions.Fanout.B, "Branch B", true)],
+            """
+            { "type": "object",
+              "properties": {
+                "name": { "type": "string", "title": "Branch group name", "minLength": 1, "maxLength": 100,
+                  "description": "Both paths run, one after the other. A step that rejects or fails ends the whole run." } },
+              "required": ["name"] }
+            """,
+            """{ "name": "Independent tasks" }"""),
 
         Node(ForEach, "For each", "logic",
             "Repeats the steps after it for every item of a list in the data. Mode 'each' keeps the whole record and adds the current item; mode 'split' makes each item its own record. One step of the loop may connect back into this step to finish an item. An empty list leaves by 'No items'.",

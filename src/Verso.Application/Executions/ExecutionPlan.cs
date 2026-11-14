@@ -5,7 +5,7 @@ namespace Verso.Application.Executions;
 
 /// <summary>
 /// How a published (validated) workflow definition runs: steps in run order, and which node follows an output port.
-/// A node's handler chooses exactly one output port and each port has at most one edge, so a run follows one path.
+/// A node's handler chooses one output port and each port has at most one edge, so a run follows one path, except after a Parallel branches step, which runs its two paths one after the other (ADR 0009).
 /// </summary>
 public sealed class ExecutionPlan
 {

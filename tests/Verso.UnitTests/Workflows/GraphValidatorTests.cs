@@ -530,6 +530,74 @@ public sealed class GraphValidatorTests
         Assert.True(valid == (errors.Count == 0), string.Join("; ", errors));
     }
 
+    /// <summary>trigger → validate → fork; Branch A → pdf → archive; Branch B → pdf2 → archive2 (or, when <paramref name="shareArchive"/>, → pdf2 → the same archive).</summary>
+    private static JsonObject WithFork(bool shareArchive = false)
+    {
+        var definition = InvoiceStandard(TemplateId);
+        var nodes = definition["nodes"]!.AsArray();
+        var edges = definition["edges"]!.AsArray();
+        nodes.Add(JsonNode.Parse("""{ "id": "fork", "type": "parallel-branches", "title": "Parallel branches", "position": { "x": 400, "y": 80 }, "config": { "name": "Independent tasks" } }"""));
+        var pdf2 = nodes.Single(n => (string?)n!["id"] == "pdf")!.DeepClone();
+        pdf2["id"] = "pdf2";
+        nodes.Add(pdf2);
+        edges.Single(e => (string?)e!["id"] == "e2")!["target"] = "fork";
+        edges.Add(JsonNode.Parse("""{ "id": "f1", "source": "fork", "sourcePort": "branch-a", "target": "pdf", "targetPort": "in" }"""));
+        edges.Add(JsonNode.Parse("""{ "id": "f2", "source": "fork", "sourcePort": "branch-b", "target": "pdf2", "targetPort": "in" }"""));
+        if (shareArchive)
+        {
+            edges.Add(JsonNode.Parse("""{ "id": "f3", "source": "pdf2", "sourcePort": "success", "target": "archive", "targetPort": "in" }"""));
+        }
+        else
+        {
+            var archive2 = nodes.Single(n => (string?)n!["id"] == "archive")!.DeepClone();
+            archive2["id"] = "archive2";
+            nodes.Add(archive2);
+            edges.Add(JsonNode.Parse("""{ "id": "f3", "source": "pdf2", "sourcePort": "success", "target": "archive2", "targetPort": "in" }"""));
+        }
+
+        return definition;
+    }
+
+    [Fact]
+    public void ParallelBranches_WithTwoSeparatePaths_IsValid()
+    {
+        var result = Validate(WithFork());
+
+        Assert.Empty(Codes(result));
+    }
+
+    [Fact]
+    public void ParallelBranches_BothPathsRejoining_IsAnError()
+    {
+        var result = Validate(WithFork(shareArchive: true));
+
+        Assert.Contains("archive:parallel.shared_step", Codes(result));
+        Assert.False(result.Valid);
+    }
+
+    [Fact]
+    public void ParallelBranches_NeedsBothBranchesConnected()
+    {
+        var definition = WithFork();
+        var edges = definition["edges"]!.AsArray();
+        edges.Remove(edges.Single(e => (string?)e!["id"] == "f2"));
+
+        var result = Validate(definition);
+
+        Assert.Contains("fork:port.unconnected", Codes(result));
+    }
+
+    [Fact]
+    public void ParallelBranches_ASecondForkIsAnError()
+    {
+        var definition = WithFork();
+        definition["nodes"]!.AsArray().Add(JsonNode.Parse("""{ "id": "fork2", "type": "parallel-branches", "title": "More branches", "position": { "x": 400, "y": 200 }, "config": { "name": "Again" } }"""));
+
+        var result = Validate(definition);
+
+        Assert.Contains("fork2:parallel.multiple", Codes(result));
+    }
+
     [Fact]
     public void Catalog_DefaultsSatisfyTheirOwnSchemas_ExceptRequiredUserInput()
     {

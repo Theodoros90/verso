@@ -143,6 +143,13 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { key: 'invoice.number', scope: 'current-batch', retention: '30d', preview: 'unique' },
   },
   {
+    type: 'parallel-branches', label: 'Parallel branches', category: 'logic', description: 'Fans out to two independent paths.',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'branch-a', label: 'Branch A', required: true }, { id: 'branch-b', label: 'Branch B', required: true }],
+    configSchema: { type: 'object', properties: { name: { type: 'string', title: 'Branch group name' } }, required: ['name'] },
+    defaults: { name: 'Independent tasks' },
+  },
+  {
     type: 'scheduled-trigger', label: 'Scheduled trigger', category: 'input', description: 'Runs at fixed times.',
     inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
     configSchema: {
@@ -638,6 +645,22 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'deduplicate', config: { key: 'invoice.number', scope: 'current-batch', retention: '30d', preview: 'unique' } })
+  })
+
+  it('adds a Parallel branches step with its two required outputs', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Parallel branches' }))
+
+    expect(await screen.findByRole('heading', { name: 'Parallel branches', level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /Branch group name/ })).toHaveValue('Independent tasks')
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'parallel-branches', config: { name: 'Independent tasks' } })
   })
 
   it('adds a Combine PDFs step with its defaults and a page order choice', async () => {
