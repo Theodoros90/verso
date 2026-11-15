@@ -705,6 +705,14 @@ pre.log.json{max-height:280px;overflow:auto;margin:0;font-size:11px;line-height:
   .print-target{position:fixed!important;left:0!important;top:0!important;transform:none!important;box-shadow:none!important}
   @page{size:A4;margin:0}
 }
+.drawer.cfg-wide{width:min(680px,100%)}#cfgSelList{display:grid;gap:12px}.cfg-security{padding:12px;border-radius:10px;background:var(--cyan-soft);color:var(--cyan);font-size:12px}.cfg-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px}.cfg-group{border:1px solid var(--line);border-radius:12px;overflow:hidden}.cfg-group summary{cursor:pointer;padding:14px 16px;font-size:13px;font-weight:600}.cfg-group summary span{float:right;font-size:11px;color:var(--ink-3)}.cfg-group-toggle{display:flex;gap:10px;padding:10px 16px;background:var(--surface-2);font-size:12px}.cfg-item{display:flex;align-items:center;gap:12px;padding:12px 16px;font-size:13px;cursor:pointer}.cfg-item+.cfg-item{border-top:1px solid var(--line)}.cfg-item:hover{background:var(--surface-2)}.cfg-item span{overflow-wrap:anywhere;min-width:0}.cfg-item small{display:block;font-size:12px;color:var(--ink-3);margin-top:4px}#cfgSelList input[type=checkbox]{width:16px;height:16px;accent-color:var(--cyan);flex-shrink:0}#cfgSelList [hidden]{display:none!important}.cfg-wide .drawer-f{background:var(--surface)}
+
+.cfg-nav{display:flex;gap:4px;border:1px solid var(--line);background:var(--surface-2);padding:4px;border-radius:9px;margin-bottom:16px}.cfg-nav button{flex:1;border:0;background:none;color:var(--ink-3);padding:9px 6px;border-radius:6px;font:inherit;font-size:12px;cursor:pointer}.cfg-nav button[aria-selected=true]{background:var(--surface);color:var(--cyan);font-weight:600}#drawer [id^=cfgPanel][hidden],#cfgExportBtn[hidden],#cfgConnectionContent [hidden]{display:none!important}#cfgConnectionContent>.pad,#cfgVariableContent>.pad{padding:0}#cfgConnectionContent .int-grid{grid-template-columns:1fr}#cfgConnectionContent .int-foot{flex-wrap:wrap}#cfgConnectionContent dd{overflow-wrap:anywhere}#cfgVariableContent table{min-width:780px}#cfgVariableContent .panel-h{flex-wrap:wrap;gap:10px}#configSearch{margin-bottom:16px}
+#flowStudio{width:calc(100vw - 36px);max-width:1800px;height:calc(100vh - 36px);max-height:1100px;border:1px solid var(--line);border-radius:14px;padding:0;background:var(--surface);color:var(--ink);box-shadow:var(--pop-shadow)}#flowStudio[open]{display:flex;flex-direction:column}#flowStudio::backdrop{background:#14273899;backdrop-filter:blur(3px)}.flow-head{padding:16px 22px;display:flex;justify-content:space-between;align-items:center;gap:14px;border-bottom:1px solid var(--line)}.flow-head h2{font-size:19px;margin:0 0 3px}.flow-head p{font-size:12px;margin:0;color:var(--ink-3)}.flow-toolbar{padding:11px 18px;display:flex;gap:9px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line)}.flow-toolbar label{font-size:12px;display:flex;align-items:center;gap:5px}.flow-layout{display:grid;grid-template-columns:220px minmax(0,1fr) 285px;flex:1;min-height:0}.flow-outline,.flow-properties{padding:16px;overflow:auto;background:var(--surface)}.flow-outline{border-right:1px solid var(--line)}.flow-properties{border-left:1px solid var(--line)}.flow-aside-title{font-size:12px;font-weight:600;margin-bottom:13px}.flow-layer{display:block;width:100%;background:none;border:0;border-radius:6px;padding:10px;text-align:left;font:inherit;font-size:12px;color:var(--ink-2);cursor:pointer;overflow-wrap:anywhere}.flow-layer.selected{background:var(--cyan-soft);color:var(--cyan)}.flow-info,#flowReport p{font-size:11px;line-height:1.6;padding:10px;border:1px solid var(--line);background:var(--surface-2);border-radius:7px;margin:15px 0;color:var(--ink-3)}.flow-outline details{font-size:12px}.flow-outline textarea{width:100%;min-height:160px;margin:10px 0;border:1px solid var(--line);border-radius:7px;padding:8px;background:var(--surface);color:var(--ink);font-size:11px}.flow-stage{padding:20px;overflow:auto;background:var(--stage)}.flow-page-label{text-align:center;font-size:11px;color:var(--ink-2);margin-bottom:13px}#flowPaper{width:658px;max-width:100%;min-height:930px;margin:0 auto;padding:45px 40px;background:white;color:#172f40;box-shadow:var(--sheet-shadow);font-family:Arial,sans-serif;line-height:1.5}#flowPaper p{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 12px}#flowPaper table{width:100%;table-layout:fixed;border-collapse:collapse;margin:14px 0 18px}#flowPaper td,#flowPaper th{border:1px solid #cbd6df;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;vertical-align:top;line-height:1.5;height:auto;max-height:none}#flowPaper [data-flow-block]{cursor:pointer}#flowPaper [data-flow-block]:hover{outline:1px dashed #1686a5;outline-offset:3px}#flowPaper td:hover,#flowPaper th:hover{outline:2px solid #1686a5;outline-offset:-2px}#flowPaper figure{margin:12px 0}.flow-properties h3{font-size:13px;margin:0 0 15px}.flow-properties label{display:block;font-size:11px;font-weight:500;margin:12px 0}.flow-properties input,.flow-properties select,.flow-properties textarea{display:block;width:100%;font:inherit;border:1px solid var(--line);border-radius:6px;padding:8px;background:var(--surface);color:var(--ink);margin-top:5px}.flow-properties input[type=color]{height:36px;padding:3px}.flow-properties textarea{min-height:90px;resize:vertical}.flow-properties small{display:block;font-size:11px;color:var(--ink-3);line-height:1.6}.flow-properties hr{border:0;border-top:1px solid var(--line);margin:20px 0}.flow-prop-actions{display:flex;gap:5px;flex-wrap:wrap}.flow-status{padding:10px 18px;background:var(--surface-2);border-top:1px solid var(--line);font-size:11px;line-height:1.6}#flowStudio :focus-visible{outline:2px solid #1686a5;outline-offset:2px}@media(max-width:1100px){.flow-layout{grid-template-columns:165px minmax(0,1fr) 240px}.flow-stage{padding:12px}#flowPaper{padding:30px 24px}.flow-toolbar .btn{font-size:11px}}@media(max-width:760px){#flowStudio{width:calc(100vw - 12px);height:calc(100vh - 12px)}.flow-layout{display:flex;flex-direction:column;overflow:auto}.flow-outline{max-height:150px;overflow:auto;flex-shrink:0}.flow-stage{overflow:visible}.flow-properties{overflow:visible;border:0}.flow-head{padding:12px}.flow-toolbar{padding:10px}.flow-head h2{font-size:16px}#flowPaper{min-height:500px;padding:25px 18px}.flow-status{max-height:90px;overflow:auto;flex-shrink:0}}
+
+
+.r14-data{margin:18px 0;border-top:1px solid var(--line);padding-top:16px}.r14-data-actions{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}.r14-data small{font-size:10px;line-height:1.6;color:var(--ink-3)}#flowDataTree{margin:10px 0;max-height:340px;overflow:auto}.r14-field{display:flex;flex-direction:column;width:100%;padding:7px;border:0;border-bottom:1px solid var(--line);background:none;color:var(--ink-2);text-align:left;font:inherit;cursor:grab}.r14-field:hover{background:var(--cyan-soft)}.r14-field span{font:11px var(--mono);overflow-wrap:anywhere}.r14-field small{font-size:10px;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.r14-array{margin:10px 0;padding:7px;border:1px solid var(--line);border-radius:7px}.r14-array summary{font-size:11px;color:var(--cyan);overflow-wrap:anywhere;cursor:pointer}.r14-array .btn{font-size:10px;padding:5px 7px;margin:8px 0}.r14-unsupported{font-size:10px;color:var(--warn);padding:8px}.r14-preview{height:100%;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 340px}.r14-preview-main{display:flex;min-height:0;flex-direction:column}.r14-frame-stage{background:var(--stage);padding:20px;flex:1;min-height:0;display:flex;justify-content:center;overflow:auto}#r14Frame{background:white;border:0;box-shadow:var(--sheet-shadow);width:min(830px,100%);height:100%;min-height:400px}.r14-preview-side{overflow:auto;border-left:1px solid var(--line);background:var(--surface)}.r14-preview-side .btn{margin:5px 2px 8px 0}.r14-preview-side textarea{width:100%;font-size:11px;resize:vertical;min-height:200px}.r14-good{padding:12px;background:var(--ok-soft);color:var(--ok);border-radius:7px;font-size:12px;line-height:1.6}.r14-bad{padding:12px;background:var(--err-soft);color:var(--err);border-radius:7px;font-size:12px;overflow-wrap:anywhere}.r14-bad h3{color:inherit}.r14-bad p{margin:8px 0}.r14-warning{font-size:11px;color:var(--warn);line-height:1.6;margin:12px 0}.r14-error-empty{padding:30px;max-width:550px;background:var(--surface);border:1px solid var(--line);border-radius:10px;align-self:flex-start;color:var(--ink-2);font-size:13px;line-height:1.7}@media(max-width:900px){.r14-preview{grid-template-columns:1fr;overflow:auto;display:block}.r14-preview-main{min-height:650px}.r14-frame-stage{height:550px;flex:none}.r14-preview-side{border-left:0}#r14Frame{height:100%}}
+
 </style>
 </head>
 <body>
@@ -723,10 +731,6 @@ pre.log.json{max-height:280px;overflow:auto;margin:0;font-size:11px;line-height:
       <a href="#assistant" data-view="assistant" class="ai"><i data-lucide="sparkles"></i>Assistant</a>
       <div class="nav-group">Run</div>
       <a href="#jobs" data-view="jobs"><i data-lucide="activity"></i>Jobs &amp; delivery<span class="count" id="navFailCount">2</span></a>
-      <a href="#integrations" data-view="integrations"><i data-lucide="plug"></i>Integrations</a>
-      <div class="nav-group">Resources</div>
-      <a href="#connections" data-view="connections"><i data-lucide="plug-zap"></i>Global connections</a>
-      <a href="#variables" data-view="variables"><i data-lucide="braces"></i>Global variables</a>
       <div class="nav-group">Govern</div>
       <a href="#archive" data-view="archive"><i data-lucide="archive"></i>Archive</a>
       <a href="#audit" data-view="audit"><i data-lucide="shield-check"></i>Audit trail</a>
@@ -734,7 +738,7 @@ pre.log.json{max-height:280px;overflow:auto;margin:0;font-size:11px;line-height:
     <div class="side-foot">
       <div class="avatar" style="background:#0A6E8A">EP</div>
       <div><div class="who">Elena Pavlou</div><div class="org">Template lead</div></div>
-      <button class="icon-btn" style="margin-left:auto" aria-label="Settings"><i data-lucide="settings"></i></button>
+      <button class="icon-btn" style="margin-left:auto" id="cfgBtn" aria-label="Configuration: export and import" title="Export / import configuration"><i data-lucide="settings"></i></button>
     </div>
   </aside>
 
@@ -759,7 +763,6 @@ pre.log.json{max-height:280px;overflow:auto;margin:0;font-size:11px;line-height:
     <main class="view" id="view-assistant" hidden style="overflow:hidden"></main>
     <main class="view" id="view-jobs" hidden></main>
     <main class="view" id="view-integrations" hidden></main>
-    <main class="view" id="view-connections" hidden></main>
     <main class="view" id="view-variables" hidden></main>
     <main class="view" id="view-archive" hidden></main>
     <main class="view" id="view-audit" hidden></main>
@@ -1070,14 +1073,14 @@ const VIEWS = {
   preview:{ title:'Document preview', crumb:'Rendered with live sample data' },
   assistant:{ title:'Assistant', crumb:'Grounded in your templates, data and jobs' },
   jobs:{ title:'Jobs & delivery', crumb:'Live, refreshes every 2 seconds' },
-  integrations:{ title:'Integrations', crumb:'Data sources, channels and APIs' },
-  connections:{ title:'Global connections', crumb:'Shared credentials and endpoints, managed by admins' },
+  integrations:{ title:'Connections', crumb:'Services, credentials and where they are used' },
   variables:{ title:'Global variables', crumb:'Reusable values for every workflow' },
   archive:{ title:'Archive', crumb:'2.4M documents, WORM storage' },
   audit:{ title:'Audit trail', crumb:'Tamper-evident event log' }
 };
 const rendered = {};
 function go(view) {
+ if(view==='integrations'||view==='variables'){const tab=view==='integrations'?'connections':'variables';history.replaceState(null,'','#workflow');go('workflow');cfgDrawer(tab);return;}
   if (!VIEWS[view]) view = 'workflow';
   $$('.view').forEach(v => v.hidden = v.id !== 'view-' + view);
   $$('#nav a').forEach(a => a.dataset.view === view ? a.setAttribute('aria-current','page') : a.removeAttribute('aria-current'));
@@ -1123,9 +1126,10 @@ $('#bellBtn').onclick = () => toast('2 jobs need attention, 1 connector secret e
 
 /* Drawer & modal */
 function openDrawer({ title, sub = '', icon = '', body, foot = '' }) {
+ $('#drawer .drawer-h [data-close]').onclick=null;
   $('#drawerTitle').textContent = title; $('#drawerSub').textContent = sub;
   $('#drawerIcon').innerHTML = icon; $('#drawerBody').innerHTML = body; $('#drawerFoot').innerHTML = foot;
-  $('#drawer').classList.add('open'); $('#drawer').setAttribute('aria-hidden','false'); $('#scrim').classList.add('open'); icons();
+  $('#drawer').classList.remove('cfg-wide'); $('#drawer').classList.add('open'); $('#drawer').setAttribute('aria-hidden','false'); $('#scrim').classList.add('open'); icons();
   setTimeout(() => $('#drawer [data-close]').focus(), 50);
 }
 function openModal({ title, sub = '', body }) {
@@ -1333,7 +1337,7 @@ function renderDesigner() {
       </aside>
       <section class="dz-center">
         <div class="dz-toolbar">
-          <span class="tname">Commercial invoice</span><span class="pill warn">Draft v14</span>
+          <span class="tname">Commercial invoice</span><span class="pill warn">Draft v14</span><button class="btn sm" type="button" data-flow-open="import">Import DOCX</button><button class="btn sm" type="button" data-flow-open="edit">Flow / dynamic tables</button>
           <span class="sep"></span>
           <button class="icon-btn" id="dzUndo" aria-label="Undo" title="Undo (Ctrl Z)"><i data-lucide="undo-2"></i></button>
           <button class="icon-btn" id="dzOut" aria-label="Zoom out"><i data-lucide="zoom-out"></i></button>
@@ -1549,7 +1553,7 @@ function wireDesigner() {
    Preview
    ========================================================= */
 const PV = { kind:'invoice', idx:0, zoom:0.8, channel:'PDF/A-3' };
-function renderPreview() {
+function renderLegacyPreview() {
   const v = $('#view-preview');
   const d = PV.kind === 'invoice' ? INVOICES[PV.idx] : STATEMENTS[PV.idx];
   const html = PV.kind === 'invoice' ? invoiceHTML(d) : statementHTML(d);
@@ -1570,7 +1574,7 @@ function renderPreview() {
   v.innerHTML = `<div class="preview">
     <section class="pv-stage">
       <div class="dz-toolbar">
-        <div class="seg" role="group" aria-label="Document type">
+        <button class="btn sm" type="button" data-r14-live>Flow template</button><div class="seg" role="group" aria-label="Document type">
           <button data-kind="invoice" aria-pressed="${PV.kind === 'invoice'}"><i data-lucide="receipt"></i>Invoice</button>
           <button data-kind="statement" aria-pressed="${PV.kind === 'statement'}"><i data-lucide="landmark"></i>Statement</button>
         </div>
@@ -1816,34 +1820,55 @@ setInterval(() => {
 /* =========================================================
    Integrations
    ========================================================= */
-const INTEGRATIONS = [
-  { g:'Data sources', n:'SAP S/4HANA', c:'OData v4', d:'Billing documents and customer master data for invoices.', s:'ok', last:'Synced 4 min ago', col:'#0A6EB4', ab:'SAP', on:true },
-  { g:'Data sources', n:'Microsoft Dynamics 365', c:'Dataverse Web API', d:'Accounts, contacts and invoice lines for the commercial invoice.', s:'warn', last:'12 records with missing fields', col:'#5E3BB0', ab:'D365', on:true },
-  { g:'Data sources', n:'Core banking', c:'ISO 20022 camt.053', d:'Daily account statements and transaction history.', s:'ok', last:'Synced 01:12 today', col:'#1A3442', ab:'CB', on:true },
-  { g:'Data sources', n:'Kafka', c:'Topic billing.events', d:'Real-time trigger for single documents such as instant receipts.', s:'ok', last:'1,204 events in the last hour', col:'#231F20', ab:'K', on:true },
-  { g:'Data sources', n:'Salesforce', c:'REST API', d:'Opportunity data for quotes and proposals.', s:'off', last:'Not connected', col:'#00A1E0', ab:'SF', on:false },
-  { g:'Delivery channels', n:'SMTP relay', c:'Email', d:'Sends HTML email with PDF attachments from billing@halcyon-energy.cy.', s:'err', last:'37 rejections today', col:'#BE3D37', ab:'@', on:true },
-  { g:'Delivery channels', n:'Print house SFTP', c:'PCL 6 batches', d:'Nightly print and post files to Cyprus Print Services.', s:'warn', last:'Key expires in 6 days', col:'#5B6773', ab:'SFTP', on:true },
-  { g:'Delivery channels', n:'Customer portal', c:'Webhook', d:'Publishes documents to the self-service portal and notifies customers.', s:'ok', last:'Delivered 2 min ago', col:'#0A6E8A', ab:'WEB', on:true },
-  { g:'Delivery channels', n:'Peppol e-invoicing', c:'Access point', d:'UBL 2.1 invoices for EU business customers.', s:'ok', last:'48 sent today', col:'#2F7D4F', ab:'PEP', on:true },
-  { g:'Delivery channels', n:'SMS gateway', c:'Secure links', d:'Text message with a one-time link to the document.', s:'off', last:'Not connected', col:'#B7791F', ab:'SMS', on:false },
-  { g:'Signing & storage', n:'Qualified e-signature', c:'eIDAS QES', d:'Seals statements and certificates with a qualified certificate.', s:'ok', last:'Certificate valid to Mar 2028', col:'#A82E6B', ab:'QES', on:true },
-  { g:'Signing & storage', n:'Long-term archive', c:'S3 Object Lock (WORM)', d:'Immutable storage with retention rules per document type.', s:'ok', last:'2.4M documents', col:'#E8B30F', ab:'S3', on:true },
-  { g:'Signing & storage', n:'SharePoint Online', c:'Microsoft Graph', d:'Copies customer correspondence into account folders.', s:'ok', last:'Synced 1 h ago', col:'#03787C', ab:'SP', on:true }
+/* =========================================================
+   Connections — one merged screen
+   Business services and their credentials live together:
+   the card shows what the service does, the drawer holds the
+   secret endpoint and auth, and workflow steps pick by name.
+   ========================================================= */
+const CONN_KINDS = ['API / HTTP endpoint', 'SQL database', 'SFTP', 'SMTP email', 'Vault / secrets', 'Identity (OIDC)', 'AI provider', 'SOAP web service', 'Archive storage'];
+const CONN_AUTH = { 'API / HTTP endpoint':['OAuth 2.0 client credentials','API key','Bearer token','Mutual TLS'], 'SQL database':['SQL authentication','Windows integrated','Managed identity'], 'SFTP':['SSH key','Username and password'], 'SMTP email':['SMTP credentials','OAuth 2.0'], 'Vault / secrets':['Service principal','Managed identity'], 'Identity (OIDC)':['Client credentials','Authorization code'], 'AI provider':['API key'], 'SOAP web service':['WS-Security username','Mutual TLS'], 'Archive storage':['Managed identity','Storage account key'] };
+const CONNECTIONS = [
+  { g:'Data sources', name:'SAP S/4HANA', kind:'API / HTTP endpoint', tech:'OData v4', desc:'Billing documents and customer master data for invoices.', status:'ok', last:'Synced 4 min ago', col:'#0A6EB4', ab:'SAP', on:true, auth:'OAuth 2.0 client credentials', endpoint:'https://s4h.halcyon.internal/sap/opu/odata4/billing/v1', env:'Production', tested:'4 min ago', schedule:'Real time (on event)', retries:'3 attempts, exponential backoff' },
+  { g:'Data sources', name:'Microsoft Dynamics 365', kind:'API / HTTP endpoint', tech:'Dataverse Web API', desc:'Accounts, contacts and invoice lines for the commercial invoice.', status:'warn', last:'12 records with missing fields', col:'#5E3BB0', ab:'D365', on:true, auth:'OAuth 2.0 client credentials', endpoint:'https://halcyon.crm4.dynamics.com/api/data/v9.2', env:'Production', tested:'1 hour ago', schedule:'Every 15 minutes', retries:'3 attempts, exponential backoff' },
+  { g:'Data sources', name:'Core banking', kind:'SQL database', tech:'ISO 20022 camt.053', desc:'Daily account statements and transaction history.', status:'ok', last:'Synced 01:12 today', col:'#1A3442', ab:'CB', on:true, auth:'Managed identity', endpoint:'sql-halcyon.database.windows.net / BillingCore', env:'Production', tested:'1 hour ago', schedule:'Nightly at 01:00', retries:'5 attempts, then dead-letter queue' },
+  { g:'Data sources', name:'Kafka', kind:'API / HTTP endpoint', tech:'Topic billing.events', desc:'Real-time trigger for single documents such as instant receipts.', status:'ok', last:'1,204 events in the last hour', col:'#231F20', ab:'K', on:true, auth:'Mutual TLS', endpoint:'kafka.halcyon.internal:9093', env:'Production', tested:'2 hours ago', schedule:'Real time (on event)', retries:'3 attempts, exponential backoff' },
+  { g:'Data sources', name:'Salesforce', kind:'API / HTTP endpoint', tech:'REST API', desc:'Opportunity data for quotes and proposals.', status:'off', last:'Not connected', col:'#00A1E0', ab:'SF', on:false, auth:'OAuth 2.0 client credentials', endpoint:'https://login.salesforce.com', env:'Test', tested:'3 weeks ago', schedule:'Nightly at 02:00', retries:'3 attempts, exponential backoff' },
+  { g:'Delivery channels', name:'SMTP relay', kind:'SMTP email', tech:'Email', desc:'Sends HTML email with PDF attachments from billing@halcyon-energy.cy.', status:'err', last:'37 rejections today', col:'#BE3D37', ab:'@', on:true, auth:'SMTP credentials', endpoint:'smtp-relay.halcyon-energy.cy:587', env:'Production', tested:'4 hours ago', schedule:'Real time (on event)', retries:'3 attempts, exponential backoff' },
+  { g:'Delivery channels', name:'Print house SFTP', kind:'SFTP', tech:'PCL 6 batches', desc:'Nightly print and post files to Cyprus Print Services.', status:'warn', last:'Key expires in 6 days', col:'#5B6773', ab:'SFTP', on:true, auth:'SSH key', endpoint:'sftp.cyprusprintservices.com:22', env:'Production', tested:'Yesterday', schedule:'Nightly at 01:00', retries:'5 attempts, then dead-letter queue' },
+  { g:'Delivery channels', name:'Customer portal', kind:'API / HTTP endpoint', tech:'Webhook', desc:'Publishes documents to the self-service portal and notifies customers.', status:'ok', last:'Delivered 2 min ago', col:'#0A6E8A', ab:'WEB', on:true, auth:'API key', endpoint:'https://portal.halcyon-energy.cy/api/hooks/verso', env:'Production', tested:'2 min ago', schedule:'Real time (on event)', retries:'3 attempts, exponential backoff' },
+  { g:'Delivery channels', name:'Peppol e-invoicing', kind:'API / HTTP endpoint', tech:'Access point', desc:'UBL 2.1 invoices for EU business customers.', status:'ok', last:'48 sent today', col:'#2F7D4F', ab:'PEP', on:true, auth:'Mutual TLS', endpoint:'https://peppol.halcyon-accesspoint.cy/v1', env:'Production', tested:'1 hour ago', schedule:'Real time (on event)', retries:'5 attempts, then dead-letter queue' },
+  { g:'Delivery channels', name:'SMS gateway', kind:'API / HTTP endpoint', tech:'Secure links', desc:'Text message with a one-time link to the document.', status:'off', last:'Not connected', col:'#B7791F', ab:'SMS', on:false, auth:'API key', endpoint:'https://sms.halcyon-energy.cy/v2', env:'Test', tested:'1 month ago', schedule:'Real time (on event)', retries:'3 attempts, exponential backoff' },
+  { g:'Signing & storage', name:'Qualified e-signature', kind:'API / HTTP endpoint', tech:'eIDAS QES', desc:'Seals statements and certificates with a qualified certificate.', status:'ok', last:'Certificate valid to Mar 2028', col:'#A82E6B', ab:'QES', on:true, auth:'Mutual TLS', endpoint:'https://qes.halcyon-energy.cy/v1', env:'Production', tested:'5 hours ago', schedule:'Real time (on event)', retries:'3 attempts, exponential backoff' },
+  { g:'Signing & storage', name:'Long-term archive', kind:'Archive storage', tech:'S3 Object Lock (WORM)', desc:'Immutable storage with retention rules per document type.', status:'ok', last:'2.4M documents', col:'#E8B30F', ab:'S3', on:true, auth:'Managed identity', endpoint:'verso-archive.blob.core.windows.net', env:'Production', tested:'3 hours ago', schedule:'Real time (on event)', retries:'3 attempts, exponential backoff' },
+  { g:'Signing & storage', name:'SharePoint Online', kind:'API / HTTP endpoint', tech:'Microsoft Graph', desc:'Copies customer correspondence into account folders.', status:'ok', last:'Synced 1 h ago', col:'#03787C', ab:'SP', on:true, auth:'OAuth 2.0 client credentials', endpoint:'https://graph.microsoft.com/v1.0', env:'Production', tested:'1 hour ago', schedule:'Every 15 minutes', retries:'3 attempts, exponential backoff' },
+  { g:'Internal services', name:'Azure Key Vault', kind:'Vault / secrets', tech:'Secrets store', desc:'Central store for every secret Verso uses.', status:'ok', last:'8 secrets, all valid', col:'#5B6773', ab:'KV', on:true, auth:'Managed identity', endpoint:'verso-kv.vault.azure.net', env:'Production', tested:'3 hours ago', schedule:'—', retries:'—' },
+  { g:'Internal services', name:'Entra ID (OIDC)', kind:'Identity (OIDC)', tech:'Sign-in and tokens', desc:'Staff sign-in and service tokens for Verso itself.', status:'ok', last:'5 hours ago', col:'#0A6E8A', ab:'AD', on:true, auth:'Client credentials', endpoint:'login.microsoftonline.com/halcyon', env:'Production', tested:'5 hours ago', schedule:'—', retries:'—' },
+  { g:'Internal services', name:'Document AI', kind:'AI provider', tech:'Extraction and drafting', desc:'Reads scanned documents and drafts text. Test tenant only.', status:'ok', last:'20 minutes ago', col:'#A82E6B', ab:'AI', on:true, auth:'API key', endpoint:'ai.halcyon-energy.cy/v1', env:'Test', tested:'20 minutes ago', schedule:'—', retries:'3 attempts, exponential backoff' }
 ];
-function renderIntegrations() {
-  const v = $('#view-integrations');
-  const groups = [...new Set(INTEGRATIONS.map(i => i.g))];
-  const desc = { 'Data sources':'Where document data comes from', 'Delivery channels':'Where finished documents go', 'Signing & storage':'Sealing, retention and copies' };
-  const st = s => ({ ok:'<span class="pill ok">Connected</span>', warn:'<span class="pill warn">Needs attention</span>', err:'<span class="pill err">Failing</span>', off:'<span class="pill">Off</span>' }[s]);
+/* persistence (prototype: browser only) */
+function gLoad(key, fallback) { try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback; } catch (e) { return fallback; } }
+function gSave(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
+const connsStore = gLoad('verso-conns', null); if (connsStore) CONNECTIONS.splice(0, CONNECTIONS.length, ...connsStore);
+const connNames = kinds => CONNECTIONS.filter(c => !kinds || kinds.includes(c.kind)).map(c => c.name);
+const connUsedBy = name => (window.VersoWorkflow ? WF.nodes.filter(n => n.config && n.config.conn === name).map(n => n.title) : []);
+
+function renderConnections() {
+  const v = $('#cfgConnectionContent') || $('#view-integrations');
+  const groups = [...new Set(CONNECTIONS.map(c => c.g))];
+  const desc = { 'Data sources':'Where document data comes from', 'Delivery channels':'Where finished documents go', 'Signing & storage':'Sealing, retention and copies', 'Internal services':'Secrets, sign-in and AI used by Verso itself' };
+  const st = c => c.on ? ({ ok:'<span class="pill ok">Connected</span>', warn:'<span class="pill warn">Needs attention</span>', err:'<span class="pill err">Failing</span>' }[c.status] || '<span class="pill ok">Connected</span>') : '<span class="pill">Off</span>';
   v.innerHTML = `<div class="pad">
+    <div class="sec-title"><h3>Connections</h3><p>Every external system in one place: what it does, its credentials, and where it's used. Workflow steps reference a connection by name — secrets never enter a workflow.</p></div>
+    <div class="row" style="justify-content:flex-end;margin:-6px 0 10px"><button class="btn sm" id="cExport"><i data-lucide="download"></i>Export</button><button class="btn sm" id="cImport"><i data-lucide="upload"></i>Import</button><button class="btn primary sm" id="cNew"><i data-lucide="plus"></i>New connection</button></div>
     ${groups.map(g => `<div class="sec-title"><h3>${g}</h3><p>${desc[g]}</p></div>
-      <div class="int-grid">${INTEGRATIONS.map((it, idx) => it.g !== g ? '' : `<div class="int">
-        <div class="int-top"><div class="int-logo" style="background:${it.col}">${it.ab}</div><div class="grow"><h4>${esc(it.n)}</h4><div class="cat">${esc(it.c)}</div></div>
-          <span class="switch"><input type="checkbox" data-tog="${idx}" ${it.on ? 'checked' : ''} aria-label="Enable ${esc(it.n)}"></span></div>
-        <p>${esc(it.d)}</p>
-        <div class="int-foot">${st(it.s)}<span>${esc(it.last)}</span><button class="btn sm" data-cfg="${idx}">Configure</button></div>
-      </div>`).join('')}</div>`).join('')}
+      <div class="int-grid">${CONNECTIONS.map((c, idx) => c.g !== g ? '' : (() => { const used = connUsedBy(c.name); return `<div class="int" style="${c.on ? '' : 'opacity:.55'}">
+        <div class="int-top"><div class="int-logo" style="background:${c.col}">${c.ab}</div><div class="grow"><h4>${esc(c.name)}</h4><div class="cat">${esc(c.tech)} · ${esc(c.kind)}</div></div>
+          <span class="switch"><input type="checkbox" data-tog="${idx}" ${c.on ? 'checked' : ''} aria-label="Enable ${esc(c.name)}"></span></div>
+        <p>${esc(c.desc)}</p>
+        <div class="kv" style="margin:0 0 10px"><dt>Credential</dt><dd class="mono">${esc(c.auth)} · ${esc(c.endpoint)}</dd></div>
+        <div class="int-foot">${st(c)}<span>${esc(c.last)}</span>${used.length ? `<span class="tag" title="${esc(used.join(', '))}">used by ${used.length} step${used.length > 1 ? 's' : ''}</span>` : ''}<button class="btn sm" data-cfg="${idx}">Configure</button></div>
+      </div>`; })()).join('')}</div>`).join('')}
     <div class="sec-title"><h3>API access</h3><p>Keys for systems that call Verso directly</p></div>
     <section class="panel"><div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Key</th><th>Scopes</th><th>Last used</th><th>Expires</th><th></th></tr></thead><tbody>
       <tr><td>Billing service (prod)</td><td class="mono">vrs_live_••••••••7f2a</td><td><span class="tag">render</span> <span class="tag">jobs:write</span></td><td>2 min ago</td><td>12 Mar 2027</td><td><button class="btn sm ghost" data-rotate>Rotate</button></td></tr>
@@ -1851,47 +1876,232 @@ function renderIntegrations() {
       <tr><td>UAT test harness</td><td class="mono">vrs_test_••••••••0b44</td><td><span class="tag">render</span> <span class="tag">templates:read</span></td><td>Yesterday</td><td>15 Nov 2026</td><td><button class="btn sm ghost" data-rotate>Rotate</button></td></tr>
     </tbody></table></div></section>
   </div>`;
-  v.querySelectorAll('[data-tog]').forEach(t => t.onchange = () => { const it = INTEGRATIONS[t.dataset.tog]; it.on = t.checked; toast(`${it.n} ${t.checked ? 'turned on' : 'turned off'}`, t.checked ? 'plug' : 'plug-zap'); });
-  v.querySelectorAll('[data-cfg]').forEach(b => b.onclick = () => openIntegration(INTEGRATIONS[b.dataset.cfg]));
+  $('#cNew').onclick = () => openConnection(null);
+  $('#cExport').onclick = () => cfgDrawer('transfer');
+  $('#cImport').onclick = () => cfgDrawer('transfer');
+  v.querySelectorAll('[data-tog]').forEach(t => t.onchange = () => { const c = CONNECTIONS[t.dataset.tog]; c.on = t.checked; gSave('verso-conns', CONNECTIONS); toast(`${c.name} ${t.checked ? 'turned on' : 'turned off'}${connUsedBy(c.name).length ? ' — used by ' + connUsedBy(c.name).length + ' workflow step(s)' : ''}`, t.checked ? 'plug' : 'plug-zap'); });
+  v.querySelectorAll('[data-cfg]').forEach(b => b.onclick = () => openConnection(CONNECTIONS[+b.dataset.cfg]));
   v.querySelectorAll('[data-rotate]').forEach(b => b.onclick = () => toast('New key created. The old key works for 24 more hours.', 'key-round'));
   icons();
 }
-function openIntegration(it) {
+
+function openConnection(c) {
+ const fromConfiguration=!!$('#cfgConnectionContent');
+  const isNew = !c;
+  const d = c || { g:'Data sources', name:'', kind:'API / HTTP endpoint', tech:'', desc:'', status:'ok', last:'Not used yet', col:'#0A6E8A', ab:'NEW', on:true, auth:'API key', endpoint:'', env:'Test', tested:'Not tested yet', secret:'', schedule:'Real time (on event)', retries:'3 attempts, exponential backoff' };
+  const KIND_FIELDS = {
+    'API / HTTP endpoint': 'Base URL', 'SQL database': 'Server / database', 'SFTP': 'Host', 'SMTP email': 'Relay host', 'Vault / secrets': 'Vault URI', 'Identity (OIDC)': 'Authority', 'AI provider': 'Endpoint', 'SOAP web service': 'WSDL URL', 'Archive storage': 'Storage account' };
   openDrawer({
-    title:it.n, sub:it.c, icon:`<div class="int-logo" style="background:${it.col}">${it.ab}</div>`,
-    body:`<div class="field"><label>Endpoint</label><input class="input mono" value="${it.n.includes('SAP') ? 'https://s4h.halcyon.internal/sap/opu/odata4/billing/v1' : it.n.includes('Dynamics') ? 'https://halcyon.crm4.dynamics.com/api/data/v9.2' : it.n.includes('SMTP') ? 'smtp-relay.halcyon-energy.cy:587' : 'https://api.example-partner.com/v1'}"></div>
-      <div class="field"><label>Authentication</label><select class="input"><option>OAuth 2.0 client credentials</option><option>Mutual TLS</option><option>API key</option><option>SSH key</option></select></div>
-      <div class="field"><label>Secret</label><div class="row"><input class="input mono" value="••••••••••••••••" disabled><button class="btn sm">Replace</button></div><span class="hint">Stored in Azure Key Vault. Verso never displays it again.</span></div>
-      <div class="field"><label>Schedule</label><select class="input"><option>Real time (on event)</option><option>Every 15 minutes</option><option selected>Nightly at 01:00</option></select></div>
-      <div class="field"><label>Retry policy</label><select class="input"><option>3 attempts, exponential backoff</option><option>5 attempts, then dead-letter queue</option></select></div>
-      <div id="testResult"></div>`,
-    foot:`<button class="btn" id="testConn"><i data-lucide="plug-zap"></i>Test connection</button><button class="btn primary" data-close onclick="toast('Settings saved for ${esc(it.n)}')">Save settings</button>`
+    title:isNew ? 'New connection' : d.name, sub:isNew ? 'One place for the service and its credentials' : `${d.tech} · ${d.kind} · ${d.env}`, icon:`<i data-lucide="plug-zap"></i>`,
+    body:`
+      <div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field"><label>Name<span class="req">Required</span></label><input class="input" id="cName" value="${esc(d.name)}" placeholder="e.g. Finance API"></div>
+        <div class="field"><label>Category</label><select class="input" id="cGroup">${['Data sources','Delivery channels','Signing & storage','Internal services'].map(g => `<option ${g === d.g ? 'selected' : ''}>${g}</option>`).join('')}</select></div>
+      </div>
+      <div class="field"><label>Service type</label><input class="input" id="cTech" value="${esc(d.tech)}" placeholder="e.g. OData v4, Webhook, SFTP batches"></div>
+      <div class="field"><label>Connection type</label><select class="input" id="cKind">${CONN_KINDS.map(k => `<option ${k === d.kind ? 'selected' : ''}>${k}</option>`).join('')}</select><span class="hint">Workflow steps of this type list this connection in their Connection dropdown.</span></div>
+      <div class="field"><label>${esc(KIND_FIELDS[d.kind] || 'Endpoint')}<span class="req">Required</span></label><input class="input mono" id="cEndpoint" value="${esc(d.endpoint)}" placeholder="https://api.example.com or host:port"></div>
+      <div class="field"><label>Authentication</label><select class="input" id="cAuth">${(CONN_AUTH[d.kind] || ['API key']).map(a => `<option ${a === d.auth ? 'selected' : ''}>${a}</option>`).join('')}</select></div>
+      <div class="field"><label>Secret or key</label><div class="row"><input class="input mono" id="cSecret" type="password" value="${esc(d.secret || '••••••••••••••••')}" placeholder="Paste once — it is masked afterwards"><button class="btn sm" id="cReveal" type="button">Show</button></div><span class="hint">Prototype: kept in this browser. In production this goes straight to the bank's secret store and is never displayed again.</span></div>
+      <div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field"><label>Environment</label><select class="input" id="cEnv">${['Development', 'Test', 'Production'].map(e => `<option ${e === d.env ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
+        <div class="field"><label>Status</label><select class="input" id="cStatus"><option value="ok" ${d.status === 'ok' ? 'selected' : ''}>Connected</option><option value="warn" ${d.status === 'warn' ? 'selected' : ''}>Needs attention</option><option value="err" ${d.status === 'err' ? 'selected' : ''}>Failing</option></select></div>
+      </div>
+      <div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field"><label>Schedule</label><select class="input" id="cSched">${['Real time (on event)','Every 15 minutes','Hourly','Nightly at 01:00','Nightly at 02:00','—'].map(s => `<option ${s === d.schedule ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+        <div class="field"><label>Retry policy</label><select class="input" id="cRetries">${['3 attempts, exponential backoff','5 attempts, then dead-letter queue','—'].map(s => `<option ${s === d.retries ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+      </div>
+      <div class="field"><label>Description</label><input class="input" id="cDesc" value="${esc(d.desc)}" placeholder="What is this connection for?"></div>
+      <div id="cTestResult">${isNew ? '' : `<div class="check ok"><i data-lucide="circle-check"></i><span>Last test ${esc(d.tested)} — authentication and permissions look correct.</span></div>`}</div>`,
+    foot:`<button class="btn" data-close>Cancel</button><button class="btn" id="cTest"><i data-lucide="plug-zap"></i>Test connection</button><button class="btn primary" id="cSave">${isNew ? 'Create connection' : 'Save changes'}</button>`
   });
-  $('#testConn').onclick = () => {
-    $('#testResult').innerHTML = `<div class="check"><span class="typing" style="padding:0"><i></i><i></i><i></i></span><span>Testing…</span></div>`;
+  if(fromConfiguration) cfgEditorBack('connections');
+  const kindSel = $('#cKind'), authSel = $('#cAuth');
+  kindSel.onchange = () => { authSel.innerHTML = (CONN_AUTH[kindSel.value] || ['API key']).map(a => `<option>${a}</option>`).join(''); };
+  $('#cReveal').onclick = () => { const s = $('#cSecret'); s.type = s.type === 'password' ? 'text' : 'password'; };
+  $('#cTest').onclick = () => {
+    $('#cTestResult').innerHTML = `<div class="check"><span class="typing" style="padding:0"><i></i><i></i><i></i></span><span>Testing…</span></div>`;
     setTimeout(() => {
-      $('#testResult').innerHTML = it.s === 'err' ? `<div class="check warn" style="color:var(--err)"><i data-lucide="circle-x"></i><span>Connected, but the test message was rejected: 550 5.7.1 sender not authorised. Check the SPF record.</span></div>` : `<div class="check ok"><i data-lucide="circle-check"></i><span>Connected in ${80 + Math.floor(Math.random()*120)} ms. Authentication and permissions look correct.</span></div>`;
+      const stat = $('#cStatus').value;
+      $('#cTestResult').innerHTML = stat === 'err' ? `<div class="check warn" style="color:var(--err)"><i data-lucide="circle-x"></i><span>Connected, but the test message was rejected: 550 5.7.1 sender not authorised. Check the SPF record.</span></div>` : stat === 'warn' ? `<div class="check warn"><i data-lucide="triangle-alert"></i><span>Connected, but the key expires in 6 days. Rotate it before then.</span></div>` : `<div class="check ok"><i data-lucide="circle-check"></i><span>Connected in ${80 + Math.floor(Math.random() * 120)} ms. Authentication and permissions look correct.</span></div>`;
       icons();
     }, 1100);
+  };
+  $('#cSave').onclick = () => {
+    const name = $('#cName').value.trim();
+    if (!name) return toast('Give the connection a name.', 'triangle-alert');
+    if (CONNECTIONS.some(x => x.name === name && x !== d)) return toast('A connection with that name already exists.', 'triangle-alert');
+    const endpoint = $('#cEndpoint').value.trim();
+    if (!endpoint) return toast('The endpoint is required.', 'triangle-alert');
+    const secret = $('#cSecret').value.trim();
+    Object.assign(d, { name, g:$('#cGroup').value, tech:$('#cTech').value.trim() || d.kind, kind:kindSel.value, auth:authSel.value, endpoint, env:$('#cEnv').value, status:$('#cStatus').value, schedule:$('#cSched').value, retries:$('#cRetries').value, desc:$('#cDesc').value.trim(), on:d.on !== false, secret:secret && secret !== '••••••••••••••••' ? '••••••••••••••••' : (d.secret || '••••••••••••••••'), tested:'Just now' });
+    if (isNew) CONNECTIONS.push(d);
+    gSave('verso-conns', CONNECTIONS);
+    closeOverlays();
+    if(fromConfiguration)cfgDrawer('connections');else renderConnections();
+    toast(isNew ? `Connection “${name}” created.` : `Connection “${name}” saved.`, 'plug-zap');
   };
 }
 
 /* =========================================================
-   Global connections & Global variables
-   Admin-managed shared resources. Workflow steps reference them by
-   name; credentials never leave this screen (prototype: local only).
+   Configuration package — export / import between environments
+   Connections, variables, workflow and templates in one JSON file.
+   Secrets are never exported: the target environment sets them.
    ========================================================= */
-const CONN_KINDS = ['API / HTTP endpoint', 'SQL database', 'SFTP', 'SMTP email', 'Vault / secrets', 'Identity (OIDC)', 'AI provider', 'SOAP web service'];
-const CONN_AUTH = { 'API / HTTP endpoint':['OAuth 2.0 client credentials','API key','Bearer token','Mutual TLS'], 'SQL database':['SQL authentication','Windows integrated','Managed identity'], 'SFTP':['SSH key','Username and password'], 'SMTP email':['SMTP credentials','OAuth 2.0'], 'Vault / secrets':['Service principal','Managed identity'], 'Identity (OIDC)':['Client credentials','Authorization code'], 'AI provider':['API key'], 'SOAP web service':['WS-Security username','Mutual TLS'] };
-const GCONNS = [
-  { name:'Halcyon Finance API', kind:'API / HTTP endpoint', auth:'OAuth 2.0 client credentials', env:'Production', status:'ok', endpoint:'https://api.halcyon-energy.cy/v1', secret:'••••••••••••••••', tested:'2 hours ago', desc:'Billing and customer data for invoices.', on:true },
-  { name:'Core banking SQL', kind:'SQL database', auth:'Managed identity', env:'Production', status:'ok', endpoint:'sql-halcyon.database.windows.net / BillingCore', secret:'••••••••••••••••', tested:'1 hour ago', desc:'Reads statement and transaction data.', on:true },
-  { name:'SMTP relay', kind:'SMTP email', auth:'SMTP credentials', env:'Production', status:'err', endpoint:'smtp-relay.halcyon-energy.cy:587', secret:'••••••••••••••••', tested:'4 hours ago', desc:'Outbound email for document delivery.', on:true },
-  { name:'Print house SFTP', kind:'SFTP', auth:'SSH key', env:'Production', status:'warn', endpoint:'sftp.cyprusprintservices.com:22', secret:'••••••••••••••••', tested:'Yesterday', desc:'Nightly print batches. Key expires in 6 days.', on:true },
-  { name:'Azure Key Vault', kind:'Vault / secrets', auth:'Managed identity', env:'Production', status:'ok', endpoint:'verso-kv.vault.azure.net', secret:'••••••••••••••••', tested:'3 hours ago', desc:'Central store for every secret Verso uses.', on:true },
-  { name:'Entra ID (OIDC)', kind:'Identity (OIDC)', auth:'Client credentials', env:'Production', status:'ok', endpoint:'login.microsoftonline.com/halcyon', secret:'••••••••••••••••', tested:'5 hours ago', desc:'Sign-in and API tokens for staff and services.', on:true },
-  { name:'Document AI', kind:'AI provider', auth:'API key', env:'Test', status:'ok', endpoint:'ai.halcyon-energy.cy/v1', secret:'••••••••••••••••', tested:'20 minutes ago', desc:'Extraction and drafting assistance. Test tenant only.', on:true }
-];
+const CFG = { env: gLoad('verso-env', null) || 'Test' };
+function cfgPackage(sel) { // sel = { conns:[names], vars:[names], tpls:[ids], wf:bool } or null for everything
+  const take = (list, keys, k) => keys == null ? list : list.filter(x => keys.includes(x[k]));
+  const s = sel || { conns:null, vars:null, tpls:null, wf:true };
+  return {
+    product:'Verso configuration package', schemaVersion:1,
+    exportedAt:new Date().toISOString(), environment:CFG.env,
+    connections:take(CONNECTIONS, s.conns, 'name').map(c => ({ ...c, secret:null })),
+    variables:take(GVARS, s.vars, 'name'),
+    templates:take(TEMPLATES, s.tpls, 'id'),
+    workflow:s.wf ? { name:WF.name, version:WF.version, status:WF.status,
+      nodes:WF.nodes.map(n => ({ id:n.id, type:n.type, x:Math.round(n.x), y:Math.round(n.y), title:n.title, config:n.config })),
+      edges:WF.edges.map(e => ({ ...e })) } : null
+  };
+}
+function cfgExport() {
+  const sel = cfgReadSel();
+  const pkg = cfgPackage(sel);
+  try { window.__lastExport = pkg; } catch (e) {}
+  try {
+    const blob = new Blob([JSON.stringify(pkg, null, 2)], { type:'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `verso-config-${CFG.env.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast(`Exported ${pkg.connections.length} connection${pkg.connections.length === 1 ? '' : 's'}, ${pkg.variables.length} variable${pkg.variables.length === 1 ? '' : 's'}, ${pkg.templates.length} template${pkg.templates.length === 1 ? '' : 's'}${pkg.workflow ? `, ${pkg.workflow.nodes.length} workflow steps` : ''}`, 'download');
+  } catch (e) { toast('Export failed in this preview: ' + e.message, 'circle-x'); }
+}
+function cfgValidate(pkg) {
+  const errs = [];
+  if (!pkg || typeof pkg !== 'object') return ['Not a valid JSON file'];
+  if (pkg.product !== 'Verso configuration package') errs.push('This file is not a Verso configuration package');
+  if (pkg.schemaVersion !== 1) errs.push('Unsupported package version ' + pkg.schemaVersion);
+  if (!Array.isArray(pkg.connections)) errs.push('connections section missing');
+  if (!Array.isArray(pkg.variables)) errs.push('variables section missing');
+  if (pkg.workflow !== null && (!pkg.workflow || !Array.isArray(pkg.workflow.nodes) || !Array.isArray(pkg.workflow.edges))) errs.push('workflow section missing');
+  if (!Array.isArray(pkg.templates)) errs.push('templates section missing');
+  return errs;
+}
+function cfgApply(pkg, mode, withWorkflow) {
+  const report = { connections:0, variables:0, templates:0, workflow:false, secretsNeeded:[] };
+  // connections: merge by name (keep local secret) or replace
+  const importedConns = clone(pkg.connections);
+  importedConns.forEach(c => { const local = CONNECTIONS.find(x => x.name === c.name); if (local) c.secret = local.secret || '••••••••••••••••'; else { c.secret = '••••••••••••••••'; report.secretsNeeded.push(c.name); } });
+  if (mode === 'replace') { CONNECTIONS.splice(0, CONNECTIONS.length, ...importedConns); report.connections = importedConns.length; }
+  else {
+    importedConns.forEach(c => { const i = CONNECTIONS.findIndex(x => x.name === c.name); if (i >= 0) { CONNECTIONS[i] = c; report.connections++; } else { CONNECTIONS.push(c); report.connections++; } });
+  }
+  // variables: merge by name or replace
+  if (mode === 'replace') { GVARS.splice(0, GVARS.length, ...clone(pkg.variables)); report.variables = pkg.variables.length; }
+  else pkg.variables.forEach(g => { const i = GVARS.findIndex(x => x.name === g.name); if (i >= 0) GVARS[i] = g; else GVARS.push(g); report.variables++; });
+  // templates: upsert by id
+  pkg.templates.forEach(t => { const i = TEMPLATES.findIndex(x => x.id === t.id); if (i >= 0) TEMPLATES[i] = t; else TEMPLATES.push(t); report.templates++; });
+  // workflow
+  if (withWorkflow && pkg.workflow) {
+    WF.name = pkg.workflow.name; WF.version = pkg.workflow.version; WF.status = pkg.workflow.status || 'draft';
+    WF.nodes = clone(pkg.workflow.nodes).map(n => ({ ...n, status:'incomplete' }));
+    WF.edges = clone(pkg.workflow.edges);
+    WF.undo = []; WF.redo = []; WF.sel = null; WF.selEdge = null; WF.run = null; WF.lastRun = null; WF.issues = null;
+    report.workflow = true;
+  }
+  gSave('verso-conns', CONNECTIONS); gSave('verso-gvars', GVARS);
+  return report;
+}
+function cfgReadSel() { // read the checkboxes from the open drawer; null when the drawer is closed
+  const list = $('#cfgSelList');
+  if (!list) return null;
+  const conns = [...list.querySelectorAll('[data-sel="conn"]:checked')].map(i => i.value);
+  const vars = [...list.querySelectorAll('[data-sel="var"]:checked')].map(i => i.value);
+  const tpls = [...list.querySelectorAll('[data-sel="tpl"]:checked')].map(i => i.value);
+  const wf = !!(list.querySelector('#cfgSelWf') || {}).checked;
+  const all = $('#cfgSelAll');
+  if (all && all.checked && conns.length === CONNECTIONS.length && vars.length === GVARS.length && tpls.length === TEMPLATES.length && wf) return null;
+  return { conns, vars, tpls, wf };
+}
+function cfgSelHTML() {
+  const grp=(title,key,items,label,sub)=>`<details class="cfg-group" open><summary>${title}<span data-count="${key}"></span></summary><label class="cfg-group-toggle"><input type="checkbox" data-group="${key}" checked> Select group</label>${items.map((x,i)=>`<label class="cfg-item"><input type="checkbox" data-sel="${key}" value="${esc(x)}" checked><span>${esc(label(x,i))}<small>${esc(sub(x,i)||'')}</small></span></label>`).join('')}</details>`;
+  return `<div id="cfgSelList"><div class="cfg-security">Connection secrets are excluded from this package.</div><input class="input" type="search" id="cfgSearch" placeholder="Search export items" aria-label="Search export items"><div class="cfg-tools"><label><input type="checkbox" id="cfgSelAll" checked> Select everything</label><button type="button" class="btn sm" id="cfgExpand">Collapse all</button></div><div class="hint" id="cfgSelectionSummary" aria-live="polite"></div>${grp('Connections','conn',CONNECTIONS.map(c=>c.name),n=>n,(n,i)=>CONNECTIONS[i].kind)}${grp('Global variables','var',GVARS.map(g=>g.name),n=>'{{'+n+'}}',(n,i)=>GVARS[i].type)}${grp('Templates','tpl',TEMPLATES.map(t=>t.id),(n,i)=>TEMPLATES[i].name,(n,i)=>TEMPLATES[i].version)}<label class="cfg-item"><input type="checkbox" id="cfgSelWf" checked><span>Workflow<small>${esc(WF.name)} · ${WF.nodes.length} steps</small></span></label><p id="cfgNoResults" class="hint" hidden>No matching items.</p></div>`;
+}
+function cfgWireSel(){
+ const list=$('#cfgSelList'),all=$('#cfgSelAll');if(!list)return;
+ const sync=()=>{const boxes=[...list.querySelectorAll('[data-sel],#cfgSelWf')],n=boxes.filter(x=>x.checked).length;all.checked=n===boxes.length;all.indeterminate=n>0&&n<boxes.length;
+ list.querySelectorAll('[data-group]').forEach(g=>{const items=[...list.querySelectorAll('[data-sel="'+g.dataset.group+'"]')],count=items.filter(x=>x.checked).length;g.checked=items.length>0&&count===items.length;g.indeterminate=count>0&&count<items.length;list.querySelector('[data-count="'+g.dataset.group+'"]').textContent=count+' / '+items.length;});
+ $('#cfgSelectionSummary').textContent=n+' of '+boxes.length+' items selected · JSON package';const btn=$('#cfgExportBtn');btn.disabled=!n;btn.innerHTML='<i data-lucide="download"></i>Export '+n+' items';icons();};
+ list.addEventListener('change',e=>{if(e.target===all)list.querySelectorAll('[data-sel],#cfgSelWf').forEach(x=>x.checked=all.checked);if(e.target.matches('[data-group]'))list.querySelectorAll('[data-sel="'+e.target.dataset.group+'"]').forEach(x=>x.checked=e.target.checked);sync();});
+ const groups=[...list.querySelectorAll('details')],exp=$('#cfgExpand');const update=()=>exp.textContent=groups.every(d=>d.open)?'Collapse all':'Expand all';groups.forEach(d=>d.addEventListener('toggle',update));exp.onclick=()=>{const open=!groups.every(d=>d.open);groups.forEach(d=>d.open=open);update();};
+ let previous=null;$('#cfgSearch').oninput=e=>{const q=e.target.value.trim().toLowerCase();if(q&&!previous)previous=groups.map(d=>d.open);let total=0;groups.forEach((d,i)=>{let count=0;d.querySelectorAll('.cfg-item').forEach(row=>{row.hidden=!!q&&!row.textContent.toLowerCase().includes(q);if(!row.hidden)count++;});d.hidden=!!q&&!count;if(q&&count)d.open=true;if(!q&&previous)d.open=previous[i];total+=count;});if(!q)previous=null;$('#cfgNoResults').hidden=!q||total>0;update();};sync();
+}
+
+function cfgDrawer(tab) {
+ tab=typeof tab==='string'?tab:(gLoad('verso-config-tab',null)||'connections');if(!['connections','variables','transfer'].includes(tab))tab='connections';
+  openDrawer({
+    title:'Configuration', sub:'Move settings between environments', icon:'<i data-lucide="settings"></i>',
+    body:`<div class="cfg-nav" role="tablist" aria-label="Configuration sections">${[['connections','Connections'],['variables','Global variables'],['transfer','Export / import']].map(([k,l])=>`<button type="button" role="tab" aria-selected="false" aria-controls="cfgPanel-${k}" data-ctab="${k}">${l}</button>`).join('')}</div><div id="cfgPanel-connections" hidden></div><div id="cfgPanel-variables" hidden></div><div id="cfgPanel-transfer">
+      <div class="field"><label>Current environment</label><select class="input" id="cfgEnv">${['Development', 'Test', 'Production'].map(e => `<option ${e === CFG.env ? 'selected' : ''}>${e}</option>`).join('')}</select><span class="hint">Label written into every export, so you can see where a package came from.</span></div>
+      <div class="dz-sec"><h3>Export</h3><div class="grid">
+        <p class="hint" style="margin:0">Pick everything, or untick what you don't want to move. Secrets are never included — the target environment sets its own.</p>
+        ${cfgSelHTML()}
+        
+      </div></div>
+      <div class="dz-sec"><h3>Import</h3><div class="grid">
+        <p class="hint" style="margin:0">Upload a package from another environment. You will see a summary before anything changes.</p>
+        <input type="file" id="cfgFile" accept=".json,application/json" class="input" style="padding:7px">
+        <div class="field"><label>How to apply</label><select class="input" id="cfgMode"><option value="merge">Merge — add new items, update items with the same name</option><option value="replace">Replace — make this environment match the package</option></select></div>
+        <label class="toggle-row"><span class="switch"><input type="checkbox" id="cfgWorkflow" checked></span>Also replace the current workflow</label>
+        <div id="cfgImportResult"></div>
+      </div></div></div>`,
+    foot:`<button class="btn" data-close>Close</button><button class="btn primary" id="cfgExportBtn"><i data-lucide="download"></i>Export package</button>`
+  });
+  $('#drawer').classList.add('cfg-wide');
+ const selectTab=k=>{gSave('verso-config-tab',k);document.querySelectorAll('[data-ctab]').forEach(b=>{b.setAttribute('aria-selected',String(b.dataset.ctab===k));$('#cfgPanel-'+b.dataset.ctab).hidden=b.dataset.ctab!==k;});$('#cfgExportBtn').hidden=k!=='transfer';if(k==='connections'){$('#cfgPanel-connections').innerHTML='<input class="input" type="search" id="configSearch" placeholder="Search connections" aria-label="Search connections"><div id="cfgConnectionContent"></div>';renderConnections();$('#configSearch').oninput=e=>document.querySelectorAll('#cfgConnectionContent .int').forEach(c=>c.hidden=!c.textContent.toLowerCase().includes(e.target.value.toLowerCase()));}if(k==='variables'){$('#cfgPanel-variables').innerHTML='<div id="cfgVariableContent"></div>';renderVariables();}};
+ document.querySelectorAll('[data-ctab]').forEach(b=>b.onclick=()=>selectTab(b.dataset.ctab));selectTab(tab);
+
+  $('#cfgEnv').onchange = e => { CFG.env = e.target.value; gSave('verso-env', CFG.env); toast(`Environment set to ${CFG.env}`, 'settings'); };
+  cfgWireSel();
+  $('#cfgExportBtn').onclick = cfgExport;
+  $('#cfgFile').onchange = e => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = $('#cfgImportResult');
+      let pkg;
+      try { pkg = JSON.parse(reader.result); } catch (err) { res.innerHTML = '<div class="check bad"><i data-lucide="circle-x"></i><span>Not valid JSON: ' + esc(err.message) + '</span></div>'; return; }
+      const errs = cfgValidate(pkg);
+      if (errs.length) { res.innerHTML = '<div class="check bad"><i data-lucide="circle-x"></i><span>' + errs.map(esc).join('<br>') + '</span></div>'; return; }
+      const conflicts = { c:0, v:0 };
+      pkg.connections.forEach(c => { if (CONNECTIONS.some(x => x.name === c.name)) conflicts.c++; });
+      pkg.variables.forEach(g => { if (GVARS.some(x => x.name === g.name)) conflicts.v++; });
+      res.innerHTML = `<div class="kv"><dt>Package</dt><dd>from <b>${esc(pkg.environment || '?')}</b>, exported ${esc(String(pkg.exportedAt || '').slice(0, 16).replace('T', ' '))}</dd>
+        <dt>Contents</dt><dd>${pkg.connections.length} connections, ${pkg.variables.length} variables, ${pkg.templates.length} templates${pkg.workflow ? `, ${pkg.workflow.nodes.length} workflow steps` : ', no workflow'}</dd>
+        <dt>Already here</dt><dd>${conflicts.c} connection${conflicts.c === 1 ? '' : 's'} and ${conflicts.v} variable${conflicts.v === 1 ? '' : 's'} with the same name</dd></div>
+        <button class="btn primary" id="cfgApplyBtn" style="width:100%"><i data-lucide="check"></i>Apply package</button>`;
+      res.querySelector('#cfgApplyBtn').onclick = () => {
+        const rep = cfgApply(pkg, $('#cfgMode').value, $('#cfgWorkflow').checked);
+        closeOverlays();
+        go(location.hash.slice(1) || 'workflow');
+        if (window.VersoWorkflow) wfDrawAll();
+        const bits = [`${rep.connections} connections`, `${rep.variables} variables`, rep.workflow ? 'workflow replaced' : 'workflow kept'];
+        let extra = rep.secretsNeeded.length ? ` Set the secret for: ${rep.secretsNeeded.join(', ')}.` : '';
+        toast(`Imported ${bits.join(', ')}.${extra}`, rep.secretsNeeded.length ? 'triangle-alert' : 'check');
+      };
+    };
+    reader.readAsText(file);
+  };
+}
+
+function cfgEditorBack(tab){$('#drawer').classList.add('cfg-wide');const b=$('#drawerFoot [data-close]');b.removeAttribute('data-close');b.textContent='Back';b.onclick=()=>cfgDrawer(tab);$('#drawer .drawer-h [data-close]').onclick=e=>{e.stopPropagation();cfgDrawer(tab);};}
+$('#cfgBtn').onclick = () => cfgDrawer();
+
+/* =========================================================
+   Global variables
+   ========================================================= */
 const GVARS = [
   { name:'companyName', type:'Text', scope:'Tenant', env:'All', value:'Halcyon Energy', sensitive:false, desc:'Legal name printed on every document.', updated:'2 weeks ago' },
   { name:'defaultCurrency', type:'Text', scope:'Tenant', env:'All', value:'EUR', sensitive:false, desc:'Used when the source record has no currency.', updated:'2 weeks ago' },
@@ -1900,86 +2110,15 @@ const GVARS = [
   { name:'statementStorage', type:'Text', scope:'Tenant', env:'All', value:'/finance/statements', sensitive:false, desc:'Base archive folder for statements.', updated:'1 month ago' },
   { name:'portalApiKey', type:'Secret', scope:'Environment', env:'Test', value:'••••••••••••••••', sensitive:true, desc:'Key for the customer portal API. Referenced, never printed.', updated:'5 days ago' }
 ];
-/* persistence (prototype: browser only) */
-function gLoad(key, fallback) { try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback; } catch (e) { return fallback; } }
-function gSave(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
-const gconnsStore = gLoad('verso-gconns', null); if (gconnsStore) GCONNS.splice(0, GCONNS.length, ...gconnsStore);
+/* persistence for variables (prototype: browser only) */
 const gvarsStore = gLoad('verso-gvars', null); if (gvarsStore) GVARS.splice(0, GVARS.length, ...gvarsStore);
-const connNames = kinds => GCONNS.filter(c => !kinds || kinds.includes(c.kind)).map(c => c.name);
-const connUsedBy = name => (window.VersoWorkflow ? WF.nodes.filter(n => n.config && n.config.conn === name).map(n => n.title) : []);
-const connSt = s => ({ ok:'<span class="pill ok">Connected</span>', warn:'<span class="pill warn">Needs attention</span>', err:'<span class="pill err">Failing</span>', off:'<span class="pill">Inactive</span>' }[s] || '<span class="pill">Inactive</span>');
-
-function renderConnections() {
-  const v = $('#view-connections');
-  v.innerHTML = `<div class="pad">
-    <div class="sec-title"><h3>Global connections</h3><p>Reusable endpoints and credentials. Workflow steps pick one by name — secrets stay here and are never saved inside a workflow.</p></div>
-    <section class="panel">
-      <div class="panel-h" style="padding:14px 16px"><h3 style="margin:0">${GCONNS.length} connections</h3><button class="btn primary sm" id="gNewConn" style="margin-left:auto"><i data-lucide="plus"></i>New connection</button></div>
-      <div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Type</th><th>Authentication</th><th>Endpoint</th><th>Environment</th><th>Status</th><th>Last tested</th><th>Used by</th><th></th></tr></thead><tbody>
-        ${GCONNS.map((c, i) => { const used = connUsedBy(c.name); return `<tr>
-          <td><b>${esc(c.name)}</b>${c.desc ? `<div class="muted" style="font-size:12px">${esc(c.desc)}</div>` : ''}</td>
-          <td>${esc(c.kind)}</td><td>${esc(c.auth)}</td><td class="mono">${esc(c.endpoint)}</td><td>${esc(c.env)}</td>
-          <td>${connSt(c.on ? c.status : 'off')}</td><td>${esc(c.tested)}</td>
-          <td>${used.length ? `<span class="tag">${used.length} step${used.length > 1 ? 's' : ''}</span>` : '<span class="muted">—</span>'}</td>
-          <td class="row" style="gap:6px;justify-content:flex-end"><button class="btn sm" data-ctest="${i}"><i data-lucide="plug-zap"></i>Test</button><button class="btn sm ghost" data-cedit="${i}">Edit</button></td>
-        </tr>`; }).join('')}
-      </tbody></table></div>
-      <div style="padding:12px 16px;border-top:1px solid var(--line)" class="muted">Prototype: connections are stored in this browser only and the test button is simulated. No external service is contacted.</div>
-    </section>
-  </div>`;
-  $('#gNewConn').onclick = () => openConnEditor(null);
-  v.querySelectorAll('[data-cedit]').forEach(b => b.onclick = () => openConnEditor(GCONNS[+b.dataset.cedit]));
-  v.querySelectorAll('[data-ctest]').forEach(b => b.onclick = () => {
-    const c = GCONNS[+b.dataset.ctest];
-    toast(`Testing ${c.name}…`, 'plug-zap');
-    setTimeout(() => toast(c.status === 'err' ? `${c.name}: connected, but the test message was rejected. Check the SPF record.` : c.status === 'warn' ? `${c.name}: connected, but the key expires in 6 days.` : `${c.name}: connected in ${80 + Math.floor(Math.random() * 120)} ms. Authentication OK.`, c.status === 'ok' ? 'circle-check' : 'triangle-alert'), 900);
-  });
-  icons();
-}
-
-function openConnEditor(c) {
-  const isNew = !c;
-  const d = c || { name:'', kind:'API / HTTP endpoint', auth:'API key', env:'Test', status:'ok', endpoint:'', secret:'', desc:'', on:true, tested:'Not tested yet' };
-  openDrawer({
-    title:isNew ? 'New connection' : d.name, sub:isNew ? 'Shared across every workflow' : `${d.kind} · ${d.env}`, icon:`<i data-lucide="plug-zap"></i>`,
-    body:`
-      <div class="field"><label>Name<span class="req">Required</span></label><input class="input" id="gcName" value="${esc(d.name)}" placeholder="e.g. Finance API"></div>
-      <div class="field"><label>Type</label><select class="input" id="gcKind">${CONN_KINDS.map(k => `<option ${k === d.kind ? 'selected' : ''}>${k}</option>`).join('')}</select></div>
-      <div class="field"><label>Authentication</label><select class="input" id="gcAuth">${(CONN_AUTH[d.kind] || ['API key']).map(a => `<option ${a === d.auth ? 'selected' : ''}>${a}</option>`).join('')}</select></div>
-      <div class="field"><label>Endpoint / host<span class="req">Required</span></label><input class="input mono" id="gcEndpoint" value="${esc(d.endpoint)}" placeholder="https://api.example.com or host:port"></div>
-      <div class="field"><label>Secret or key</label><div class="row"><input class="input mono" id="gcSecret" type="password" value="${esc(d.secret)}" placeholder="Paste once — it is masked afterwards"><button class="btn sm" id="gcReveal" type="button">Show</button></div><span class="hint">Prototype: kept in this browser. In production this goes straight to the bank's secret store and is never displayed again.</span></div>
-      <div class="grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div class="field"><label>Environment</label><select class="input" id="gcEnv">${['Development', 'Test', 'Production'].map(e => `<option ${e === d.env ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
-        <div class="field"><label>Active</label><select class="input" id="gcOn"><option value="1" ${d.on ? 'selected' : ''}>Active</option><option value="0" ${!d.on ? 'selected' : ''}>Inactive</option></select></div>
-      </div>
-      <div class="field"><label>Description</label><input class="input" id="gcDesc" value="${esc(d.desc || '')}" placeholder="What is this connection for?"></div>`,
-    foot:`<button class="btn" data-close>Cancel</button><button class="btn primary" id="gcSave">${isNew ? 'Create connection' : 'Save changes'}</button>`
-  });
-  const kindSel = $('#gcKind'), authSel = $('#gcAuth');
-  kindSel.onchange = () => { authSel.innerHTML = (CONN_AUTH[kindSel.value] || ['API key']).map(a => `<option>${a}</option>`).join(''); };
-  $('#gcReveal').onclick = () => { const s = $('#gcSecret'); s.type = s.type === 'password' ? 'text' : 'password'; };
-  $('#gcSave').onclick = () => {
-    const name = $('#gcName').value.trim();
-    if (!name) return toast('Give the connection a name.', 'triangle-alert');
-    if (GCONNS.some(x => x.name === name && x !== d)) return toast('A connection with that name already exists.', 'triangle-alert');
-    const endpoint = $('#gcEndpoint').value.trim();
-    if (!endpoint) return toast('Endpoint or host is required.', 'triangle-alert');
-    const secret = $('#gcSecret').value.trim();
-    Object.assign(d, { name, kind:kindSel.value, auth:authSel.value, endpoint, env:$('#gcEnv').value, on:$('#gcOn').value === '1', desc:$('#gcDesc').value.trim(), secret:secret ? '••••••••••••••••' : d.secret, tested:'Not tested yet' });
-    if (isNew) GCONNS.push(d);
-    gSave('verso-gconns', GCONNS);
-    closeOverlays();
-    renderConnections();
-    toast(isNew ? `Connection “${name}” created.` : `Connection “${name}” saved.`, 'plug-zap');
-  };
-}
 
 function renderVariables() {
-  const v = $('#view-variables');
+  const v = $('#cfgVariableContent') || $('#view-variables');
   v.innerHTML = `<div class="pad">
     <div class="sec-title"><h3>Global variables</h3><p>Named values every workflow can reference with {{double braces}} — for example {{companyName}} or {{vatRate}}. Sensitive values are referenced but never printed into documents.</p></div>
     <section class="panel">
-      <div class="panel-h" style="padding:14px 16px"><h3 style="margin:0">${GVARS.length} variables</h3><button class="btn primary sm" id="gNewVar" style="margin-left:auto"><i data-lucide="plus"></i>New variable</button></div>
+      <div class="panel-h" style="padding:14px 16px"><h3 style="margin:0">${GVARS.length} variables</h3><div class="row" style="margin-left:auto;gap:6px"><button class="btn sm" id="gExport"><i data-lucide="download"></i>Export</button><button class="btn sm" id="gImport"><i data-lucide="upload"></i>Import</button><button class="btn primary sm" id="gNewVar"><i data-lucide="plus"></i>New variable</button></div></div>
       <div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Value</th><th>Type</th><th>Scope</th><th>Environment</th><th>Sensitive</th><th>Updated</th><th></th></tr></thead><tbody>
         ${GVARS.map((g, i) => `<tr>
           <td class="mono"><b>{{${esc(g.name)}}}</b>${g.desc ? `<div class="muted" style="font-size:12px;font-family:var(--font)">${esc(g.desc)}</div>` : ''}</td>
@@ -1994,6 +2133,8 @@ function renderVariables() {
     </section>
   </div>`;
   $('#gNewVar').onclick = () => openVarEditor(null);
+  $('#gExport').onclick = () => cfgDrawer('transfer');
+  $('#gImport').onclick = () => cfgDrawer('transfer');
   v.querySelectorAll('[data-vedit]').forEach(b => b.onclick = () => openVarEditor(GVARS[+b.dataset.vedit]));
   v.querySelectorAll('[data-vdel]').forEach(b => b.onclick = () => {
     const g = GVARS[+b.dataset.vdel];
@@ -2004,6 +2145,7 @@ function renderVariables() {
 }
 
 function openVarEditor(g) {
+ const fromConfiguration=!!$('#cfgVariableContent');
   const isNew = !g;
   const d = g || { name:'', type:'Text', scope:'Tenant', env:'All', value:'', sensitive:false, desc:'', updated:'Just now' };
   openDrawer({
@@ -2020,6 +2162,7 @@ function openVarEditor(g) {
       <label class="toggle-row"><span class="switch"><input type="checkbox" id="gvSens" ${d.sensitive ? 'checked' : ''}></span>Sensitive (secret) — referenced by workflows, never printed into documents</label>`,
     foot:`<button class="btn" data-close>Cancel</button><button class="btn primary" id="gvSave">${isNew ? 'Create variable' : 'Save changes'}</button>`
   });
+  if(fromConfiguration)cfgEditorBack('variables');
   $('#gvType').onchange = () => { $('#gvSens').checked = $('#gvType').value === 'Secret'; };
   $('#gvSens').onchange = () => { const val = $('#gvValue'); val.type = ($('#gvSens').checked || $('#gvType').value === 'Secret') ? 'password' : 'text'; };
   $('#gvSave').onclick = () => {
@@ -2033,7 +2176,7 @@ function openVarEditor(g) {
     if (isNew) GVARS.push(d);
     gSave('verso-gvars', GVARS);
     closeOverlays();
-    renderVariables();
+    if(fromConfiguration)cfgDrawer('variables');else renderVariables();
     toast(isNew ? `Variable {{${name}}} created.` : `Variable {{${name}}} saved.`, 'braces');
   };
 }
@@ -2292,6 +2435,33 @@ const AUTH_HINT = {
 
 /* Node catalogue: handles (ins/outs), default config, settings form, summary and test behaviour */
 const WF_TYPES = {
+  'email-inbox':{cat:'input',icon:'mail',label:'Email inbox',desc:'Preview an incoming email and attachments (simulated)',kw:'inbox mailbox attachment incoming email',ins:[],outs:OUT,
+    config:{mailbox:'accounts@example.com',folder:'Inbox',attachments:true},
+    fields:[F('mailbox','Mailbox','text',{req:true}),F('folder','Folder','text',{req:true}),F('attachments','Include attachments','toggle')],sum:c=>c.mailbox+' / '+c.folder,run:['SIMULATED: sample email received; no mailbox accessed',20]},
+  'database-query':{cat:'input',icon:'database',label:'Database query',desc:'Preview a parameterized read-only query (simulated)',kw:'sql database query select records',ins:[],outs:OUT,
+    config:{conn:'Core banking',query:'SELECT * FROM customers WHERE customer_id = :customerId',params:'{"customerId":"C-001"}'},
+    fields:[F('conn','Connection','conn',{kinds:['SQL database'],req:true}),F('query','Read-only query','textarea',{req:true,mono:true,hint:'Prototype only. No SQL is executed; a production service must enforce read-only access and parameter binding.'}),F('params','Parameters (JSON)','textarea',{req:true,mono:true})],
+    check:c=>[!/^\s*SELECT\b/i.test(c.query)&&'Query must start with SELECT',jsonErr(c.params)&&'Valid JSON parameters'].filter(Boolean),sum:c=>'Read-only · '+c.conn,run:['SIMULATED: sample record returned; no database queried',25]},
+  'form-submission':{cat:'input',icon:'clipboard-list',label:'Form submission',desc:'Preview data received from a form (simulated)',kw:'form request portal submit fields',ins:[],outs:OUT,
+    config:{name:'Agreement request',access:'Signed-in staff',sample:'{"customerId":"C-001","documentType":"Agreement"}'},
+    fields:[F('name','Form name','text',{req:true}),F('access','Access','select',{o:['Signed-in staff','Portal customers']}),F('sample','Sample submission (JSON)','textarea',{req:true,mono:true})],check:c=>[jsonErr(c.sample)&&'Valid sample JSON'].filter(Boolean),sum:c=>c.name+' · '+c.access,run:['SIMULATED: sample submission accepted; no public form created',15]},
+  'lookup-enrich':{cat:'process',icon:'search',label:'Lookup / enrich data',desc:'Configure a keyed lookup against a shared connection (simulated)',kw:'lookup enrich customer reference data',ins:['in'],outs:[['found','Found'],['missing','Not found'],['failed','Failed',true]],
+    config:{conn:'Microsoft Dynamics 365',key:'customer.id',destination:'customer.profile',missing:'Continue with empty result'},
+    fields:[F('conn','Connection','conn',{kinds:['API / HTTP endpoint','SQL database'],req:true}),F('key','Lookup key path','mono',{req:true}),F('destination','Result path','mono',{req:true}),F('missing','If no match','select',{o:['Continue with empty result','Fail the run']})],sum:c=>c.key+' → '+c.destination,simulate:()=>({port:'found',msg:'SIMULATED: found sample customer; no lookup or data mutation performed',ms:20})},
+  'deduplicate':{cat:'process',icon:'copy-check',label:'Deduplicate',desc:'Configure duplicate detection and routing (simulated)',kw:'deduplicate duplicate unique idempotency',ins:['in'],outs:[['unique','Unique'],['duplicate','Duplicate']],
+    config:{key:'invoice.number',scope:'Current batch',retention:'30 days',preview:'Unique'},
+    fields:[F('key','Business key path','mono',{req:true}),F('scope','Scope','select',{o:['Current batch','Across runs']}),F('retention','Across-run retention','select',{o:['1 day','7 days','30 days','90 days'],hint:'Applies only to Across runs. No persistent deduplication store is implemented in this prototype.'}),F('preview','Preview outcome','select',{o:['Unique','Duplicate']})],sum:c=>c.key+' · '+c.scope,simulate:n=>({port:n.config.preview==='Duplicate'?'duplicate':'unique',msg:'SIMULATED: '+n.config.preview.toLowerCase()+' outcome; no deduplication store accessed',ms:3})},
+  'parallel-branches':{cat:'logic',icon:'git-fork',label:'Parallel branches',desc:'Fan out to two paths; preview runs sequentially',kw:'parallel fork fanout branches',ins:['in'],outs:[['branch-a','Branch A'],['branch-b','Branch B']],
+    config:{name:'Independent tasks'},fields:[F('name','Branch group name','text',{req:true,hint:'Both paths are visited in the test preview, sequentially rather than concurrently.'})],sum:c=>c.name+' · 2 paths',simulate:()=>({port:'branch-a',msg:'SIMULATED: fan-out to both paths; preview execution is sequential',ms:1})},
+  'wait-branches':{cat:'logic',icon:'git-merge',label:'Wait for branches',desc:'Design a join policy; synchronization is not implemented',kw:'join wait synchronize branches all any',ins:['branch-a','branch-b'],outs:SF,
+    config:{policy:'Wait for all',timeout:'1 hour'},fields:[F('policy','Completion policy','select',{o:['Wait for all','Continue after any'],hint:'Design-time configuration only. Preview does not enforce synchronization or timeout.'}),F('timeout','Timeout','select',{o:['5 minutes','1 hour','24 hours']})],sum:c=>c.policy+' · '+c.timeout,run:['SIMULATED: join visited; no synchronization or timeout enforced',1]},
+  'wait-event':{cat:'logic',icon:'clock',label:'Wait for event',desc:'Configure a correlated event wait (simulated)',kw:'wait event signature callback correlate timeout',ins:['in'],outs:[['received','Received'],['timeout','Timed out']],
+    config:{event:'signature.completed',correlation:'document.id',timeout:'7 days',preview:'Received'},fields:[F('event','Event name','mono',{req:true}),F('correlation','Correlation key path','mono',{req:true}),F('timeout','Maximum wait','select',{o:['1 hour','24 hours','7 days','30 days']}),F('preview','Preview outcome','select',{o:['Received','Timed out'],hint:'Returns immediately in preview. No event listener or durable wait is created.'})],sum:c=>c.event+' · '+c.timeout,simulate:n=>({port:n.config.preview==='Received'?'received':'timeout',msg:'SIMULATED: '+n.config.preview.toLowerCase()+' immediately; no external event awaited',ms:1})},
+  'assemble-pack':{cat:'doc',icon:'folders',label:'Assemble document pack',desc:'Configure ordered documents and attachments (simulated)',kw:'assemble pack bundle documents attachments zip',ins:['in'],outs:SF,
+    config:{name:'Agreement pack',files:'agreement.pdf\nterms.pdf\nsupporting-evidence.pdf',format:'ZIP package',filename:'agreement-pack.zip'},fields:[F('name','Pack name','text',{req:true}),F('files','Files in order (one per line)','textarea',{req:true,hint:'File references are configuration examples; preview does not create a package.'}),F('format','Output format','select',{o:['ZIP package','Combined PDF']}),F('filename','Output filename','mono',{req:true})],sum:c=>c.name+' · '+c.format,run:['SIMULATED: pack assembly preview; no file generated',35]},
+  'request-signature':{cat:'output',icon:'signature',label:'Request e-signature',desc:'Configure a signing request using a shared connection (simulated)',kw:'sign signature agreement signer contract',ins:['in'],outs:[['submitted','Submitted'],['failed','Failed',true]],
+    config:{conn:'Qualified e-signature',document:'agreement.pdf',signers:'customer@example.com',order:'Sequential',expires:'7 days'},fields:[F('conn','Signing provider','conn',{kinds:['API / HTTP endpoint'],req:true}),F('document','Document reference','mono',{req:true}),F('signers','Signer emails (comma separated)','text',{req:true}),F('order','Signing order','select',{o:['Sequential','Any order']}),F('expires','Expires after','select',{o:['3 days','7 days','30 days'],hint:'Prototype only. No signing request is sent. Use Wait for event as a separate follow-up step.'})],sum:c=>c.order+' · '+c.signers,simulate:()=>({port:'submitted',msg:'SIMULATED: request submission preview; nothing sent to a signing provider',ms:20})},
+
   /* Inputs: no input handle */
   'api-webhook':{ cat:'input', icon:'webhook', label:'API / webhook', desc:'Starts a run when a system posts JSON to a URL', kw:'http rest post endpoint trigger json',
     ins:[], outs:OUT, editor:true, fields:[],
@@ -2440,7 +2610,7 @@ const WF_TYPES = {
     fields:[F('conn','Connection','conn',{ kinds:['SFTP'], req:true }), F('folder','Folder','mono',{ req:true })],
     sum:c => `Via ${c.conn || 'no connection'}${c.folder}`, run:['Uploaded 1 file', 220] },
   'deliver-api':{ cat:'output', icon:'send', label:'Deliver via API', desc:'Posts the document to another system', kw:'http rest post api webhook deliver',
-    ins:['in'], outs:[['delivered','Delivered'],['failed','Failed',true]], config:{ url:'', conn:'Halcyon Finance API' },
+    ins:['in'], outs:[['delivered','Delivered'],['failed','Failed',true]], config:{ url:'', conn:'Customer portal' },
     fields:[F('url','Endpoint URL','mono',{ req:true, ph:'https://api.partner.com/documents' }), F('conn','Connection','conn',{ kinds:['API / HTTP endpoint'] })],
     sum:c => `${c.conn || 'no connection'} · ${c.url.replace(/^https?:\/\//, '')}`, run:['201 Created', 180] }
 };
@@ -2755,7 +2925,7 @@ function wfFieldHTML(n, f) {
   const lab = `<label>${esc(f.l)}${f.req ? '<span class="req">Required</span>' : ''}</label>`;
   const hint = f.hint ? `<span class="hint">${esc(f.hint)}</span>` : '';
   if (f.t === 'toggle') return `<label class="toggle-row"><span class="switch"><input type="checkbox" data-cfg="${f.k}" ${v ? 'checked' : ''}></span>${esc(f.l)}</label>`;
-  if (f.t === 'conn') { const list = connNames(f.kinds); return `<div class="field">${lab}<select class="input ${miss ? 'missing' : ''}" data-cfg="${f.k}">${list.length ? list.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('') : '<option value="">No connection of this type yet</option>'}</select><span class="hint">Shared credentials from <a href="#connections" style="color:inherit">Global connections</a>. Secrets stay out of the workflow.</span></div>`; }
+  if (f.t === 'conn') { const list = connNames(f.kinds); return `<div class="field">${lab}<select class="input ${miss ? 'missing' : ''}" data-cfg="${f.k}">${list.length ? list.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('') : '<option value="">No connection of this type yet</option>'}</select><span class="hint">Shared credentials from <a href="#integrations" style="color:inherit">Connections</a>. Secrets stay out of the workflow.</span></div>`; }
   if (f.t === 'select') return `<div class="field">${lab}<select class="input ${miss ? 'missing' : ''}" data-cfg="${f.k}">${f.o.map(o => { const val = Array.isArray(o) ? o[0] : o, lbl = Array.isArray(o) ? o[1] : o; return `<option value="${esc(val)}" ${val === v ? 'selected' : ''}>${lbl ? esc(lbl) : 'Choose…'}</option>`; }).join('')}</select>${hint}</div>`;
   if (f.t === 'textarea') return `<div class="field">${lab}<textarea class="input ${f.mono ? 'mono' : ''} ${miss ? 'missing' : ''}" data-cfg="${f.k}" placeholder="${esc(f.ph || '')}">${esc(v)}</textarea>${hint}</div>`;
   if (f.t === 'map') return `<div><div class="lbl" style="margin-bottom:6px">Field mappings</div><table class="map-t">${MAP_ROWS.map(([a, b]) => `<tr><td class="mono">${a}</td><td>→</td><td class="mono">${b}</td></tr>`).join('')}</table><div class="hint">Shared with the Template designer’s data model.</div></div>`;
@@ -3085,6 +3255,7 @@ const WF_EDITORS = {
         fld('Template version', `<select class="input" data-cfg="version" id="wfVersion">${opt(TEMPLATE_VERSIONS[c.template] || ['Latest published'], c.version)}</select>`, 'Drafts are fine for testing. Publish the template before this workflow goes live.') +
         fld('Language', sel('lang', ['English', 'Greek', 'English and Greek', 'From customer record'], c.lang)) +
         `<div class="row" style="gap:8px"><button class="btn sm primary" data-edittpl><i data-lucide="pen-tool"></i>Edit template</button><span class="hint" style="margin:0">Opens the Template designer. Use “Return to workflow” to come back.</span></div>`) +
+      sec('Live flow renderer', `<div class="hint">Bind the current edited flow template to this step. Preview uses this workflow’s mapped sample payload. Browser PDF output does not certify PDF/A or PDF/UA.</div><button class="btn sm" type="button" data-r14-bind="${n.id}">Use current flow template</button><button class="btn sm primary" type="button" data-r14-wfpreview="${n.id}">Preview flow PDF</button><div class="hint">${c.flowTemplate ? 'Flow template attached: '+esc(c.flowTemplate.name) : 'No flow template attached to this step yet.'}</div>`) +
       sec('Output', fld('Output filename pattern', inp('file', c.file, { mono:true, req:true, ph:'{{invoice.number}}.pdf' }), 'Use fields such as {{invoice.number}} or {{customer.name|slug}}.', true) +
         fld('PDF format', sel('format', ['PDF/A-3', 'PDF/UA', 'PDF 1.7'], c.format)) + '<div id="wfPreview"></div>'); },
     preview:n => { const sim = wfSim(), r = wfResolve(n.config.file, sim.ctx);
@@ -3102,7 +3273,7 @@ const WF_EDITORS = {
         fld('Subject', inp('subject', c.subject, { req:true, ph:'Invoice {{invoice.number}}' }), '', true) +
         fld('Body', `<textarea class="input" data-cfg="body" rows="7">${esc(c.body)}</textarea>`, 'Fields in double braces are filled from the invoice data, and global variables like {{companyName}} come from Global variables. Filters: |money, |date, |upper.')) +
       sec('Attachment', fld('Attach the file from', `<select class="input" data-cfg="attach"><option value="auto" ${c.attach === 'auto' ? 'selected' : ''}>Connected document step${auto ? ` (${esc(auto.title)})` : ''}</option>${docs.map(d => `<option value="${d.id}" ${c.attach === d.id ? 'selected' : ''}>${esc(d.title)} (${d.id})</option>`).join('')}<option value="none" ${c.attach === 'none' ? 'selected' : ''}>No attachment</option></select>`) + '<div id="wfAttachRef"></div>') +
-      sec('Delivery', fld('SMTP connection', `<select class="input" data-cfg="conn">${connNames(['SMTP email']).map(o => `<option value="${esc(o)}" ${o === c.conn ? 'selected' : ''}>${esc(o)}</option>`).join('') || '<option value="">No SMTP connection yet</option>'}</select>`, 'Shared credentials from Global connections. Secrets stay out of the workflow.', true) +
+      sec('Delivery', fld('SMTP connection', `<select class="input" data-cfg="conn">${connNames(['SMTP email']).map(o => `<option value="${esc(o)}" ${o === c.conn ? 'selected' : ''}>${esc(o)}</option>`).join('') || '<option value="">No SMTP connection yet</option>'}</select>`, 'Shared credentials from Connections. Secrets stay out of the workflow.', true) +
         fld('Retry count', sel('retries', ['0','1','2','3','4','5'], c.retries), 'Retries happen 5, 15, then 60 minutes apart. Then the Bounced output is used.')) +
       sec('Preview', '<div id="wfPreview"></div>'); },
     preview:n => {
@@ -3166,8 +3337,8 @@ function wfValidate() {
     if (outs.length > 1) open.forEach(p => issues.push({ lvl:'warn', node:n.id, msg:`The “${p.label}” output of ${n.title} isn’t connected. Records that take this path stop here.` }));
     else if (open.length && ['input','process','logic','doc','ai'].includes(t.cat)) issues.push({ lvl:'warn', node:n.id, msg:`The output of ${n.title} isn’t used by any later step.` });
     if (n.config && n.config.conn) { // global connection checks
-      const gc = GCONNS.find(c => c.name === n.config.conn);
-      if (!gc) issues.push({ lvl:'err', node:n.id, msg:`${n.title}: the connection “${n.config.conn}” no longer exists in Global connections.` });
+      const gc = CONNECTIONS.find(c => c.name === n.config.conn);
+      if (!gc) issues.push({ lvl:'err', node:n.id, msg:`${n.title}: the connection “${n.config.conn}” no longer exists in Connections.` });
       else if (!gc.on) issues.push({ lvl:'err', node:n.id, msg:`${n.title}: the connection “${gc.name}” is inactive, so this step can’t run.` });
       else if (gc.status === 'err') issues.push({ lvl:'warn', node:n.id, msg:`${n.title}: the connection “${gc.name}” is failing — the last test was rejected.` });
     }
@@ -3186,7 +3357,7 @@ function wfPlan() { // order of steps the test will visit
   while (q.length) {
     const id = q.shift(); if (seen.has(id)) continue; seen.add(id); order.push(id);
     const n = wfNode(id), port = wfRunPort(n, sim);
-    WF.edges.filter(e => e.from === id && e.fromPort === port).forEach(e => q.push(e.to));
+    WF.edges.filter(e => e.from === id && (n.type === 'parallel-branches' || e.fromPort === port)).forEach(e => q.push(e.to));
   }
   return order;
 }
@@ -3309,7 +3480,7 @@ function wfTestRun() {
         WF.run.state[id] = 'succeeded'; WF.run.ms[id] = ms; total += ms;
         WF.run.msg[id] = msg;
         const port = res && 'port' in res ? res.port : wfRunPort(n, sim);
-        WF.edges.filter(e => e.from === id && e.fromPort === port).forEach(e => queue.push(e.to));
+        WF.edges.filter(e => e.from === id && (n.type === 'parallel-branches' || e.fromPort === port)).forEach(e => queue.push(e.to));
       }
       next();
     }, 340 + Math.min(ms, 420));
@@ -3502,7 +3673,303 @@ document.addEventListener('keydown', e => {
 /* =========================================================
    Boot
    ========================================================= */
-const RENDER = { dashboard:renderDashboard, designer:renderDesigner, workflow:renderWorkflow, preview:renderPreview, assistant:renderAssistant, jobs:renderJobs, integrations:renderIntegrations, connections:renderConnections, variables:renderVariables, archive:renderArchive, audit:renderAudit };
+
+/* Flow-layout template studio. Separate persisted document model from the legacy fixed canvas. */
+const FLOW_KEY='verso-flow-template-v1';
+let FS={doc:null,block:0,cell:null,preview:true,stress:false,report:[],sample:{customer:{name:'Kestrel Logistics Ltd'},lines:[{description:'Electricity supply and network service',qty:12,amount:145.25},{description:'Meter maintenance',qty:1,amount:28.5}]}},flowDialog;
+const flowClone=x=>JSON.parse(JSON.stringify(x));
+function flowSeed(){return {schema:'Verso flow template v1',name:'Flow invoice',blocks:[{type:'text',text:'INVOICE',style:{size:25,bold:true,color:'#16394c'}},{type:'text',text:'Customer: {{customer.name}}',style:{size:12}},{type:'table',rows:[[{text:'Description'},{text:'Quantity'},{text:'Amount'}],[{text:'{{item.description}}'},{text:'{{item.qty}}'},{text:'{{item.amount}}'}]],source:'lines',repeat:1,headers:1,repeatHeaders:true,keepRows:true,widths:[60,15,25],columns:[{align:'left'},{align:'right'},{align:'right',format:'currency'}],style:{size:11,padding:9,color:'#172f40',background:'#ffffff',border:'#cbd6df'},headerColor:'#e8f1f6'},{type:'text',text:'Thank you. This paragraph follows the table automatically, even when descriptions grow or rows are added.',style:{size:11}}]};}
+function flowOpen(importNow=false){
+ r14Ensure();
+ if(!FS.doc){try{const saved=JSON.parse(localStorage.getItem(FLOW_KEY));FS.doc=saved?.schema==='Verso flow template v1'?saved:flowSeed();}catch(e){FS.doc=flowSeed();}}
+ if(!flowDialog){flowDialog=document.createElement('dialog');flowDialog.id='flowStudio';document.body.appendChild(flowDialog);}
+ flowDialog.innerHTML=`<div class="flow-head"><div><h2>Flow template designer</h2><p>DOCX import · editable bindings · expanding tables</p></div><button type="button" class="btn" id="flowClose">Back to designer</button></div><div class="flow-toolbar"><button class="btn sm" id="flowBlank">New blank</button><button class="btn sm" id="flowImport">Import DOCX</button><input type="file" accept=".docx" id="flowFile" hidden><button class="btn sm" id="flowText">＋ Text</button><button class="btn sm" id="flowTable">＋ Table</button><button class="btn sm" id="flowTheme">Apply Verso theme</button><label><input type="checkbox" id="flowPreview" ${FS.preview?'checked':''}> Render sample values</label><label><input type="checkbox" id="flowStress" ${FS.stress?'checked':''}> Stress test</label><button class="btn sm" id="flowSave">Save locally</button><button class="btn sm" id="flowJSON">Export template</button><button class="btn sm" id="flowHTML">Export HTML</button><button class="btn primary sm" id="flowPDFPreview">Preview PDF</button><button class="btn sm" id="flowPrintPDF">Print / Save PDF</button></div><div class="flow-layout"><aside class="flow-outline"><div class="flow-aside-title">Document blocks</div><div id="flowLayers"></div><div class="flow-info">Flow templates now share their renderer with Document preview and Print / Save PDF. The original fixed-position canvas and demo templates remain separate.</div><section class="r14-data"><div class="flow-aside-title">Dynamic data</div><div class="r14-data-actions"><button class="btn sm" id="flowLoadJSON">Load JSON</button><input type="file" id="flowJSONFile" accept=".json,application/json" hidden><button class="btn sm" id="flowUseWorkflow">Workflow sample</button></div><input class="input" type="search" id="flowFieldSearch" aria-label="Search dynamic fields" placeholder="Search fields…"><div id="flowDataTree"></div><small>Click a field to insert. Drag onto text or a cell to replace its value. Array buttons create repeating tables.</small></section><details><summary>Dynamic data (JSON)</summary><textarea id="flowData" aria-label="Sample data JSON"></textarea><button class="btn sm" id="flowApplyData">Apply data</button></details><div id="flowReport" role="status" aria-live="polite"></div></aside><section class="flow-stage"><div class="flow-page-label">Continuous A4-width preview · use exported HTML for browser print pagination</div><article id="flowPaper"></article></section><aside id="flowProps" class="flow-properties"></aside></div><div class="flow-status" id="flowStatus" role="status" aria-live="polite"></div>`;
+ $('#flowData').value=JSON.stringify(FS.sample,null,2);
+ $('#flowBlank').onclick=()=>{if(!confirm('Start a blank flow template? Save or export the current template first if needed.'))return;FS.doc={schema:'Verso flow template v1',name:'Untitled dynamic template',blocks:[]};FS.block=0;FS.cell=null;FS.report=[];R14.cursor=null;flowDraw();flowNote('Blank template ready. Click a field to create text, or an array to create a repeating table.');};
+ $('#flowClose').onclick=()=>flowDialog.close();$('#flowImport').onclick=()=>$('#flowFile').click();$('#flowFile').onchange=async e=>{const file=e.target.files[0];if(file)await flowImportDocx(file);e.target.value='';};
+ $('#flowText').onclick=()=>{FS.doc.blocks.push({type:'text',text:'New text — use {{customer.name}} to bind a value.',style:{size:12}});FS.block=FS.doc.blocks.length-1;FS.cell=null;flowDraw();};
+ $('#flowTable').onclick=()=>{FS.doc.blocks.push(flowClone(flowSeed().blocks[2]));FS.block=FS.doc.blocks.length-1;FS.cell=null;flowDraw();};
+ $('#flowTheme').onclick=()=>{FS.doc.blocks.forEach(b=>{b.style={...b.style,color:'#173448',size:b.type==='table'?11:12,font:'Arial'};if(b.type==='table'){b.style.padding=9;b.style.border='#cbd6df';b.headerColor='#e8f1f6';b.rows.forEach(r=>r.forEach(c=>c.style={}));}else b.runs=null;});flowDraw();flowNote('Verso theme applied. Original import formatting was intentionally replaced.');};
+ $('#flowPreview').onchange=e=>{FS.preview=e.target.checked;flowDraw();};$('#flowStress').onchange=e=>{FS.stress=e.target.checked;flowDraw();};
+ $('#flowSave').onclick=()=>{try{localStorage.setItem(FLOW_KEY,JSON.stringify(FS.doc));try{localStorage.setItem('verso-flow-data-v14',JSON.stringify(FS.sample));}catch(e){}flowNote('Template and current dynamic data saved locally. Export a copy for backup.');}catch(e){flowNote('Could not save: browser storage limit reached. Export the template instead.');}};
+ $('#flowJSON').onclick=()=>flowDownload(JSON.stringify(FS.doc,null,2),'verso-flow-template.json','application/json');
+ $('#flowHTML').onclick=()=>r14ExportHTML();
+ $('#flowPDFPreview').onclick=()=>r14OpenPreview();
+ $('#flowPrintPDF').onclick=()=>r14Print();
+ $('#flowApplyData').onclick=()=>{try{const d=JSON.parse($('#flowData').value);if(!d||Array.isArray(d)||typeof d!=='object')throw Error('Use a JSON object.');r14ApplyData(d);}catch(e){flowNote('Sample data: '+e.message);}};
+ $('#flowPaper').onclick=e=>{const b=e.target.closest('[data-flow-block]');if(!b)return;FS.block=+b.dataset.flowBlock;const cell=e.target.closest('[data-flow-cell]');FS.cell=cell?cell.dataset.flowCell.split(',').map(Number):null;flowDrawProps();flowDrawLayers();};
+ $('#flowLayers').onclick=e=>{const b=e.target.closest('[data-flow-select]');if(b){FS.block=+b.dataset.flowSelect;FS.cell=null;flowDrawProps();flowDrawLayers();}};
+ r14WireData();flowDraw();flowDialog.showModal();if(importNow)$('#flowFile').click();
+}
+function flowNote(message){$('#flowStatus').textContent=message;}
+function flowDownload(content,name,type){const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
+function flowPath(o,path){return String(path).replace(/\[(\d+)\]/g,'.$1').split('.').filter(Boolean).reduce((v,k)=>v&&Object.prototype.hasOwnProperty.call(v,k)?v[k]:undefined,o);}
+function flowValue(text,ctx,format){
+ let raw=String(text??'');
+ if(!FS.preview)return raw;
+ const whole=raw.match(/^\s*{{\s*([^{}]+?)\s*}}\s*$/);
+ const fmt=v=>{if(v===null||v===undefined)return '';if(format==='currency'||format==='number'){const num=Number(v);if(v!==''&&Number.isFinite(num))return new Intl.NumberFormat('en-GB',{style:format==='currency'?'currency':'decimal',...(format==='currency'?{currency:'EUR'}:{}),maximumFractionDigits:2}).format(num);}return typeof v==='object'?JSON.stringify(v):String(v);};
+ return whole?fmt(flowPath(ctx,whole[1])):raw.replace(/{{\s*([^{}]+?)\s*}}/g,(_,key)=>fmt(flowPath(ctx,key)));
+}
+function flowStyle(st={}){let out='';const num=(k,css,min,max,unit='px')=>{if(st[k]!==undefined&&Number.isFinite(Number(st[k])))out+=css+':'+Math.max(min,Math.min(max,Number(st[k])))+unit+';';};num('size','font-size',7,72);num('padding','padding',0,40);for(const [k,css]of [['color','color'],['background','background-color'],['border','border-color']])if(/^#[0-9a-f]{6}$/i.test(st[k]||''))out+=css+':'+st[k]+';';if(['left','center','right','justify'].includes(st.align))out+='text-align:'+st.align+';';if(st.bold!==undefined)out+='font-weight:'+(st.bold?'700':'400')+';';if(st.italic!==undefined)out+='font-style:'+(st.italic?'italic':'normal')+';';if(st.underline)out+='text-decoration:underline;';if(st.font)out+='font-family:'+String(st.font).replace(/[^a-zA-Z0-9 ,_-]/g,'')+';';return out;}
+function flowContext(){const ctx=flowClone(FS.sample);if(FS.stress){ctx.lines=Array.from({length:60},(_,i)=>({description:i%3===0?('Long service description with full details, including locations, conditions and supporting notes. ').repeat(12):i%3===1?'REFERENCE_'+('ABCDEFG1234567890'.repeat(18)):'Normal service line '+(i+1),qty:i+1,amount:i%2?9876543210.98:125.4}));}return ctx;}
+function flowRenderDocument(exporting=false,contextOverride=null){
+ const ctx=contextOverride || flowContext(),warnings=[];let renderedRows=0;
+ const html=FS.doc.blocks.map((b,bi)=>{const attrs=exporting?'':` data-flow-block="${bi}"`;
+ if(b.type==='image')return `<figure${attrs}><img src="${esc(b.src)}" alt="${esc(b.alt||'Imported image')}" style="max-width:100%;height:auto"></figure>`;
+ if(b.type==='text'){let text=b.runs&&!String(b.text).includes('{{')?b.runs.map(r=>`<span style="${esc(flowStyle(r.style))}">${esc(flowValue(r.text,ctx))}</span>`).join(''):esc(flowValue(b.text,ctx));return `<p${attrs} style="${esc(flowStyle(b.style))}">${text||'<br>'}</p>`;}
+ if(b.type!=='table')return '';
+ let rows=b.rows.map((r,ri)=>({cells:r,ri,ctx}));
+ if(b.source){const source=flowPath(ctx,b.source);if(!Array.isArray(source))warnings.push('Table '+(bi+1)+': data source “'+b.source+'” is not an array.');else if(!b.rows[b.repeat])warnings.push('Table '+(bi+1)+': select a valid repeating row.');else{if(source.length>1000)warnings.push('Table '+(bi+1)+': preview and HTML export limited to the first 1,000 records.');rows=[...rows.slice(0,b.repeat),...source.slice(0,1000).map((item,i)=>({cells:b.rows[b.repeat],ri:b.repeat,ctx:{...ctx,item,index:i+1}})),...rows.slice(b.repeat+1)];}}
+ const widths=b.widths||[];const count=Math.max(1,...b.rows.map(r=>r.reduce((n,c)=>n+(c.span||1),0)));let header=[],body=[];
+ rows.forEach((row,idx)=>{const isHeader=row.ri<(b.headers||0);let col=0;const cells=row.cells.map((c,ci)=>{const column=b.columns?.[col]||{},tag=isHeader?'th':'td',val=flowValue(c.text,row.ctx,c.format||column.format),style={...b.style,...column,...c.style,...(isHeader?{background:b.headerColor||'#edf3f7',bold:true}:{})};col+=c.span||1;if(val.length>150&&!/\s/.test(val))warnings.push('Table '+(bi+1)+': long unbroken values wrap within their column.');return `<${tag}${isHeader?' scope="col"':''} colspan="${Math.max(1,Math.min(30,c.span||1))}" ${exporting?'':`data-flow-cell="${row.ri},${ci}"`} style="${esc(flowStyle(style))}">${esc(val)||'&#160;'}</${tag}>`;}).join('');const tr='<tr style="break-inside:'+(b.keepRows?'avoid':'auto')+'">'+cells+'</tr>';if(isHeader&&idx<(b.headers||0))header.push(tr);else body.push(tr);});renderedRows+=body.length;
+ if(b.source&&Array.isArray(flowPath(ctx,b.source))&&flowPath(ctx,b.source).length===0)warnings.push('Table '+(bi+1)+': the data source contains no records.');
+ return `<table${attrs} class="flow-table" style="${esc(flowStyle(b.style))}"><colgroup>${Array.from({length:count},(_,i)=>'<col style="width:'+Math.max(1,Number(widths[i])||100/count)+'%">').join('')}</colgroup><thead style="display:${b.repeatHeaders?'table-header-group':'table-row-group'}">${header.join('')}</thead><tbody>${body.join('')}</tbody></table>`;
+ }).join('');return {html,warnings:[...new Set(warnings)],renderedRows};
+}
+function flowDrawLayers(){$('#flowLayers').innerHTML=FS.doc.blocks.map((b,i)=>`<button type="button" class="flow-layer ${FS.block===i?'selected':''}" data-flow-select="${i}">${i+1}. ${esc(b.type==='table'?'Table · '+(b.source||'static'):b.type==='image'?'Image':b.text.slice(0,30)||'Empty paragraph')}</button>`).join('');}
+function flowDraw(){const r=flowRenderDocument();if($('#flowDataTree'))r14DrawTree();$('#flowPaper').innerHTML=r.html;flowDrawLayers();flowDrawProps();$('#flowReport').innerHTML=[...FS.report,...r.warnings,...r14Check(FS.doc,flowContext()).errors.map(e=>'Binding check: '+e)].map(x=>'<p>'+esc(x)+'</p>').join('');flowNote(r.renderedRows+' body rows rendered. Text wraps and rows expand; content below stays in normal document flow. Print pagination is browser-dependent.');}
+function flowDrawProps(){
+ const b=FS.doc.blocks[FS.block],box=$('#flowProps');if(!b){box.innerHTML='<p>Select a block.</p>';return;}
+ const cell=FS.cell&&b.type==='table'?b.rows[FS.cell[0]]?.[FS.cell[1]]:null;const st=cell?(cell.style||={}):(b.style||={});
+ const input=(key,label,value,type='text')=>`<label>${label}<input type="${type}" data-fprop="${key}" value="${esc(value??'')}"></label>`;
+ const select=(key,label,value,values)=>`<label>${label}<select data-fprop="${key}">${values.map(v=>`<option value="${esc(v)}" ${String(v)===String(value)?'selected':''}>${esc(v)}</option>`).join('')}</select></label>`;
+ let out='<label>Template name<input data-fname value="'+esc(FS.doc.name)+'"></label><h3>'+(cell?'Cell '+(FS.cell[0]+1)+' / '+(FS.cell[1]+1):b.type==='table'?'Table properties':'Block properties')+'</h3>';
+ if(b.type!=='image'){
+ if(b.type==='text'||cell)out+=`<label>Text / binding<textarea data-fprop="text">${esc(cell?cell.text:b.text)}</textarea></label><small>Use {{customer.name}} or {{item.description}} in a repeating row. Editing text replaces imported run-level formatting.</small>`;
+ out+=input('size','Font size (px)',st.size||11,'number')+select('font','Font',st.font||'Arial',['Arial','Georgia','Times New Roman','Verdana','Courier New'])+input('color','Text color',st.color||'#172f40','color')+input('background','Background',st.background||'#ffffff','color')+select('align','Alignment',st.align||'left',['left','center','right','justify'])+select('bold','Weight',st.bold?'Bold':'Normal',['Normal','Bold']);}
+ if(b.type==='table'){
+ if(cell){out+=select('cellFormat','Cell value format',cell.format||'text',['text','number','currency'])+`<button class="btn sm" id="flowTableScope">Select whole table</button>`;}
+ out+='<hr><div class="flow-prop-actions"><button class="btn sm" id="flowAddRow">＋ Row</button><button class="btn sm" id="flowAddColumn">＋ Column</button><button class="btn sm" id="flowRemoveRow">Remove row</button></div><h3 style="margin-top:16px">Data & table layout</h3>'+input('source','Array data source (blank = static)',b.source||'')+input('repeat','Repeating row (1-based)',(b.repeat??1)+1,'number')+input('headers','Header rows',b.headers??1,'number')+input('widths','Column widths (%)',(b.widths||[]).join(','))+input('padding','Table cell padding (px)',b.style.padding||8,'number')+input('border','Border color',b.style.border||'#cbd6df','color')+input('headerColor','Header background',b.headerColor||'#e8f1f6','color')+select('repeatHeaders','Repeat header when printing',b.repeatHeaders?'Yes':'No',['Yes','No'])+select('keepRows','Prefer keeping rows together',b.keepRows?'Yes':'No',['Yes','No'])+'<small>Oversized rows may split. Browser print rules are best-effort; no content is deliberately clipped.</small>';
+ const col=FS.cell?FS.cell[1]:0;const cs=b.columns?.[col]||{};out+='<hr><h3>Column '+(col+1)+' defaults</h3>'+select('columnFormat','Value format',cs.format||'text',['text','number','currency'])+select('columnAlign','Alignment',cs.align||'left',['left','center','right'])+'<small>Select a cell to choose its column. Cell overrides take priority.</small>';
+ }
+ out+='<hr><div class="flow-prop-actions"><button class="btn sm" id="flowUp">Move up</button><button class="btn sm" id="flowDown">Move down</button><button class="btn sm" id="flowDelete">Delete block</button></div>';
+ box.innerHTML=out;
+ box.querySelector('[data-fname]').onchange=e=>{FS.doc.name=e.target.value.trim()||'Untitled flow template';};
+ if(b.type==='table'){
+ $('#flowAddRow').onclick=()=>{const count=Math.max(1,...b.rows.map(r=>r.reduce((n,c)=>n+(c.span||1),0)));b.rows.push(Array.from({length:count},()=>({text:'New value'})));FS.cell=[b.rows.length-1,0];flowDraw();};
+ $('#flowAddColumn').onclick=()=>{if(b.rows.some(r=>r.some(c=>(c.span||1)>1))){flowNote('Column insertion is not supported for merged-cell tables. Import a revised table or create an unmerged table.');return;}b.rows.forEach((r,i)=>r.push({text:i<(b.headers||0)?'New column':'New value'}));const count=b.rows[0].length;b.widths=Array(count).fill(100/count);flowDraw();};
+ $('#flowRemoveRow').onclick=()=>{if(!FS.cell){flowNote('Select a cell in the row to remove.');return;}if(b.rows.length<=1){flowNote('A table must retain at least one row.');return;}if(!confirm('Remove the selected table row?'))return;const idx=FS.cell[0];b.rows.splice(idx,1);if(idx<b.headers)b.headers--;if(idx<b.repeat)b.repeat--;b.repeat=Math.min(b.repeat,b.rows.length-1);if(b.source&&b.repeat<(b.headers||0)){b.source='';flowNote('Repeating row removed; configure a body row before rebinding.');}FS.cell=null;flowDraw();};
+ }
+ const textBinding=box.querySelector('[data-fprop="text"]');if(textBinding){const remember=()=>{R14.cursor={block:FS.block,cell:FS.cell?.join(',')||'',start:textBinding.selectionStart,end:textBinding.selectionEnd};};textBinding.addEventListener('select',remember);textBinding.addEventListener('blur',remember);textBinding.addEventListener('keyup',remember);}
+ box.querySelectorAll('[data-fprop]').forEach(el=>el.onchange=()=>{const k=el.dataset.fprop,v=el.value;let error='';
+ if(k==='text'){if(cell)cell.text=v;else{b.text=v;b.runs=null;}}
+ else if(k==='source')b.source=v.trim();
+ else if(k==='repeat'){if(!Number.isInteger(+v)||+v<1||+v>b.rows.length||+v<=b.headers)error='Choose a body row after the header, within this table.';else b.repeat=+v-1;}
+ else if(k==='headers'){if(!Number.isInteger(+v)||+v<0||+v>=b.rows.length)error='Header count must leave at least one body row.';else{b.headers=+v;if(b.repeat<b.headers)b.repeat=b.headers;}}
+ else if(k==='widths'){const w=v.split(',').map(Number),count=Math.max(...b.rows.map(r=>r.reduce((n,c)=>n+(c.span||1),0)));if(w.length!==count||w.some(x=>!Number.isFinite(x)||x<=0)||Math.abs(w.reduce((a,x)=>a+x,0)-100)>.2)error='Enter one positive width per column, totaling 100%.';else b.widths=w;}
+ else if(k==='repeatHeaders'||k==='keepRows')b[k]=v==='Yes';
+ else if(k==='headerColor')b.headerColor=v;
+ else if(k==='cellFormat')cell.format=v;
+ else if(k==='columnFormat'||k==='columnAlign'){b.columns=b.columns||[];const ci=FS.cell?FS.cell[1]:0;b.columns[ci]={...b.columns[ci],[k==='columnFormat'?'format':'align']:v};}
+ else if(k==='size'||k==='padding'){const n=+v;if(!Number.isFinite(n)||n<(k==='size'?7:0)||n>(k==='size'?72:40))error='Enter a valid size: '+(k==='size'?'7–72':'0–40')+'.';else (k==='padding'?b.style:st)[k]=n;}
+ else if(k==='border')b.style.border=v;
+ else st[k]=k==='bold'?v==='Bold':v;
+ flowDraw();if(error)flowNote(error);
+ });
+ $('#flowTableScope')?.addEventListener('click',()=>{FS.cell=null;flowDrawProps();});
+ $('#flowUp').onclick=()=>flowMove(-1);$('#flowDown').onclick=()=>flowMove(1);$('#flowDelete').onclick=()=>{if(!confirm('Delete this block from the flow template?'))return;FS.doc.blocks.splice(FS.block,1);FS.block=Math.max(0,FS.block-1);FS.cell=null;flowDraw();};
+}
+function flowMove(delta){const i=FS.block,j=i+delta;if(j<0||j>=FS.doc.blocks.length)return;[FS.doc.blocks[i],FS.doc.blocks[j]]=[FS.doc.blocks[j],FS.doc.blocks[i]];FS.block=j;FS.cell=null;flowDraw();}
+const FLOW_PRINT_CSS=`@page{size:A4;margin:18mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172f40;line-height:1.5;margin:0}.flow-export{max-width:174mm;margin:auto}.flow-export p{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 12px}.flow-table{width:100%;table-layout:fixed;border-collapse:collapse;margin:14px 0 18px}.flow-table td,.flow-table th{border:1px solid #cbd6df;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;vertical-align:top;height:auto;max-height:none;line-height:1.5}.flow-table thead{display:table-header-group}img{max-width:100%;height:auto}figure{margin:12px 0}@media print{.flow-table{break-inside:auto}p{orphans:2;widows:2}img{break-inside:avoid}}`;
+document.addEventListener('click',e=>{const b=e.target.closest('[data-flow-open]');if(b)flowOpen(b.dataset.flowOpen==='import');});
+
+
+async function flowReadZip(file){
+ if(file.size>20*1024*1024)throw Error('DOCX limit is 20 MB.');
+ const bytes=new Uint8Array(await file.arrayBuffer()),dv=new DataView(bytes.buffer);let end=-1;
+ for(let i=bytes.length-22;i>=Math.max(0,bytes.length-65557);i--)if(dv.getUint32(i,true)===0x06054b50){end=i;break;}
+ if(end<0)throw Error('Not a valid DOCX ZIP package.');
+ const count=dv.getUint16(end+10,true),offset=dv.getUint32(end+16,true);if(count>1500||count===65535)throw Error('Too many package entries or unsupported ZIP64 file.');
+ const entries=new Map();let p=offset;
+ for(let n=0;n<count;n++){
+ if(p+46>bytes.length||dv.getUint32(p,true)!==0x02014b50)throw Error('Invalid ZIP directory.');
+ const flags=dv.getUint16(p+8,true),method=dv.getUint16(p+10,true),compressed=dv.getUint32(p+20,true),size=dv.getUint32(p+24,true),nl=dv.getUint16(p+28,true),extra=dv.getUint16(p+30,true),comment=dv.getUint16(p+32,true),local=dv.getUint32(p+42,true);
+ const name=new TextDecoder().decode(bytes.slice(p+46,p+46+nl));entries.set(name,{flags,method,compressed,size,local});p+=46+nl+extra+comment;
+ }
+ let total=0;
+ return {has:name=>entries.has(name),async read(name){const e=entries.get(name);if(!e)return null;if(e.flags&1)throw Error('Encrypted DOCX files are not supported.');if(e.size>12*1024*1024||total+e.size>40*1024*1024)throw Error('Expanded content exceeds safe import limits.');const o=e.local;if(o+30>bytes.length||dv.getUint32(o,true)!==0x04034b50)throw Error('Invalid ZIP entry.');const start=o+30+dv.getUint16(o+26,true)+dv.getUint16(o+28,true);if(start+e.compressed>bytes.length)throw Error('Truncated ZIP entry.');let out;if(e.method===0)out=bytes.slice(start,start+e.compressed);else if(e.method===8){let ds;try{ds=new DecompressionStream('deflate-raw');}catch(err){throw Error('This browser cannot decompress DOCX. Use a current Chromium browser.');}const reader=new Blob([bytes.slice(start,start+e.compressed)]).stream().pipeThrough(ds).getReader(),chunks=[];let length=0;while(true){const r=await reader.read();if(r.done)break;length+=r.value.length;if(length>12*1024*1024||length+total>40*1024*1024){await reader.cancel();throw Error('Expanded content exceeds safe import limits.');}chunks.push(r.value);}out=new Uint8Array(length);let at=0;chunks.forEach(c=>{out.set(c,at);at+=c.length;});}else throw Error('Unsupported ZIP compression.');if(out.length!==e.size)throw Error('Invalid expanded entry size.');total+=out.length;return out;}};
+}
+function flowXml(bytes){if(!bytes)return null;const doc=new DOMParser().parseFromString(new TextDecoder().decode(bytes),'application/xml');if(doc.getElementsByTagName('parsererror').length)throw Error('Invalid document XML.');return doc;}
+const flowNs='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+function fxFirst(node,name){return node?.getElementsByTagNameNS(flowNs,name)[0];}
+function fxVal(node,key='val'){return node?.getAttributeNS(flowNs,key)||node?.getAttribute('w:'+key)||'';}
+function fxChildren(node,name){return [...(node?.children||[])].filter(x=>x.localName===name);}
+function fxStyle(pr){const style={};if(!pr)return style;const size=Number(fxVal(fxFirst(pr,'sz')));if(size>0)style.size=Math.round(size/2*96/72*10)/10;for(const [tag,key]of [['b','bold'],['i','italic'],['u','underline']]){const e=fxFirst(pr,tag);if(e)style[key]=!['0','false','none'].includes(fxVal(e));}const color=fxVal(fxFirst(pr,'color'));if(/^[0-9a-f]{6}$/i.test(color))style.color='#'+color;const font=fxVal(fxFirst(pr,'rFonts'),'ascii');if(font)style.font=font;return style;}
+function fxText(node){let out='';const walk=n=>{if(n.nodeType!==1)return;if(n.localName==='t')out+=n.textContent;else if(n.localName==='br'||n.localName==='cr')out+='\n';else if(n.localName==='tab')out+='\t';else for(const c of n.children)walk(c);};walk(node);return out;}
+async function flowImportDocx(file){
+ flowNote('Importing '+file.name+'…');$('#flowImport').disabled=true;
+ try{
+ if(!/\.docx$/i.test(file.name))throw Error('Choose a .docx file.');
+ const zip=await flowReadZip(file),xml=flowXml(await zip.read('word/document.xml'));if(!xml)throw Error('The package has no Word document.');if(xml.getElementsByTagName('*').length>100000)throw Error('Document is too complex for this preview.');
+ const stylesXml=flowXml(await zip.read('word/styles.xml')),styleMap={};
+ if(stylesXml)for(const st of stylesXml.getElementsByTagNameNS(flowNs,'style')){const id=fxVal(st,'styleId');styleMap[id]=fxStyle(fxFirst(st,'rPr'));}
+ const relations=flowXml(await zip.read('word/_rels/document.xml.rels')),rels={};if(relations)for(const r of relations.documentElement.children)if(r.getAttribute('TargetMode')!=='External')rels[r.getAttribute('Id')]=r.getAttribute('Target');
+ const blocks=[],report=['Import is editable and approximate, not a pixel-identical Word rendering. Section layouts, headers/footers, floating objects, numbering and advanced pagination are not preserved. Table cell text is flattened; mixed run styles inside cells are approximated.'];
+ const paragraph=p=>{const pp=fxChildren(p,'pPr')[0],id=fxVal(fxFirst(pp,'pStyle')),base={size:12,...styleMap[id]},align=fxVal(fxFirst(pp,'jc'));if(['left','center','right','both'].includes(align))base.align=align==='both'?'justify':align;
+ const runs=[...p.getElementsByTagNameNS(flowNs,'r')].map(r=>({text:fxText(r),style:{...base,...fxStyle(fxChildren(r,'rPr')[0])}}));let text=runs.map(r=>r.text).join('');if(fxFirst(pp,'numPr'))text='• '+text;
+ return {type:'text',text,runs:fxFirst(pp,'numPr')?null:runs,style:base};};
+ const body=fxFirst(xml,'body');if(!body)throw Error('The document has no body.');
+ for(const el of body.children){
+ if(el.localName==='p'){
+ const p=paragraph(el);if(p.text||!fxFirst(el,'drawing'))blocks.push(p);
+ for(const blip of el.getElementsByTagNameNS('http://schemas.openxmlformats.org/drawingml/2006/main','blip')){
+ const rid=blip.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','embed'),target=rels[rid];
+ if(!target||target.includes('..')||!/^media\/[\w .-]+\.(png|jpe?g|gif)$/i.test(target)){report.push('An unsupported or externally linked image was omitted.');continue;}
+ const bytes=await zip.read('word/'+target);if(bytes){const type=/\.png$/i.test(target)?'image/png':/\.gif$/i.test(target)?'image/gif':'image/jpeg';const src=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(new Blob([bytes],{type}));});blocks.push({type:'image',src,alt:'Imported image'});report.push('Images are imported inline; original floating positions and sizes are not preserved.');}
+ }
+ }else if(el.localName==='tbl'){
+ const rows=fxChildren(el,'tr').map(tr=>fxChildren(tr,'tc').map(tc=>{const ps=fxChildren(tc,'p').map(paragraph),span=Number(fxVal(fxFirst(fxChildren(tc,'tcPr')[0],'gridSpan')))||1,shade=fxVal(fxFirst(fxChildren(tc,'tcPr')[0],'shd'),'fill');return {text:ps.map(p=>p.text).join('\n'),span:Math.max(1,Math.min(30,span)),style:{...ps[0]?.style,...ps[0]?.runs?.[0]?.style,...(/^[0-9a-f]{6}$/i.test(shade)?{background:'#'+shade}:{})}};}));
+ if(!rows.length)continue;const grid=fxChildren(fxChildren(el,'tblGrid')[0],'gridCol').map(c=>Number(fxVal(c,'w'))||1),sum=grid.reduce((a,b)=>a+b,0);let headers=0;for(const row of fxChildren(el,'tr')){if(fxFirst(fxChildren(row,'trPr')[0],'tblHeader'))headers++;else break;}
+ if(fxFirst(el,'vMerge'))report.push('Vertical merged cells were flattened. Review this table before using it.');if(fxFirst(el,'tbl')&&fxFirst(el,'tbl')!==el)report.push('Nested tables are not imported as nested layouts.');
+ blocks.push({type:'table',rows,source:'',repeat:Math.min(headers,rows.length-1),headers,repeatHeaders:true,keepRows:true,widths:sum?grid.map(x=>Math.round(x/sum*10000)/100):[],columns:[],style:{size:11,padding:8,color:'#172f40',background:'#ffffff',border:'#cbd6df'},headerColor:'#edf3f7'});
+ }
+ if(blocks.length>700)throw Error('Import limit is 700 blocks.');
+ }
+ if(!blocks.length)throw Error('No supported text, images or tables found.');
+ if(FS.doc?.blocks.length&&!confirm('Replace the current flow template with this DOCX import? Export or save your current template first if needed.'))return;
+ FS.doc={schema:'Verso flow template v1',name:file.name.replace(/\.docx$/i,''),blocks};FS.block=0;FS.cell=null;FS.preview=false;$('#flowPreview').checked=false;FS.report=[...new Set(report)];flowDraw();flowNote('Imported '+blocks.length+' editable blocks. Select a table, set its array source and repeating row, then map its cells. Review the import report.');
+ }catch(e){flowNote('Import failed: '+e.message);}finally{$('#flowImport').disabled=false;}
+}
+
+
+/* v14: one shared flow renderer for the editor, live preview, workflow sample and browser PDF. */
+const R14={mode:'flow',context:null,template:null,origin:'Designer dynamic data',cursor:null,loaded:false,objectURL:null};
+function r14Ensure(){
+ if(!FS.doc){try{const d=JSON.parse(localStorage.getItem(FLOW_KEY));FS.doc=d?.schema==='Verso flow template v1'?d:flowSeed();}catch(e){FS.doc=flowSeed();}}
+ if(!R14.loaded){R14.loaded=true;try{const d=JSON.parse(localStorage.getItem('verso-flow-data-v14'));if(d&&typeof d==='object'&&!Array.isArray(d))FS.sample=d;}catch(e){}}
+}
+function r14ApplyData(data){
+ if(!data||typeof data!=='object'||Array.isArray(data))throw Error('Use a JSON object as the root. Put a record array inside an object, e.g. {"lines":[…]}.');
+ if(JSON.stringify(data).length>2*1024*1024)throw Error('Dynamic JSON limit is 2 MB.');
+ FS.sample=flowClone(data);FS.stress=false;if($('#flowStress'))$('#flowStress').checked=false;
+ if($('#flowData'))$('#flowData').value=JSON.stringify(data,null,2);
+ R14.context=null;R14.template=null;flowDraw();flowNote('Dynamic data applied. Fields are available in the data browser; preview and print use this same data.');
+}
+function r14Flatten(value,prefix='',list=[],depth=0){
+ if(depth>9||list.length>250)return list;
+ if(Array.isArray(value)){list.push({path:prefix,array:true,value});return list;}
+ if(value&&typeof value==='object'){
+ for(const key of Object.keys(value)){if(!/^[A-Za-z_$][\w$]*$/.test(key)){list.push({path:(prefix?prefix+'.':'')+key,unsupported:true,value:value[key]});continue;}r14Flatten(value[key],prefix?prefix+'.'+key:key,list,depth+1);}
+ }else list.push({path:prefix,value});return list;
+}
+function r14DrawTree(){
+ const tree=$('#flowDataTree');if(!tree)return;const q=$('#flowFieldSearch')?.value.trim().toLowerCase()||'',fields=r14Flatten(FS.sample);
+ let html=fields.filter(f=>!q||f.path.toLowerCase().includes(q)).map(f=>{
+ if(f.unsupported)return '<div class="r14-unsupported">'+esc(f.path)+' · rename this key to use dot-path bindings</div>';
+ if(f.array){const first=f.value.find(x=>x!==null),children=first&&typeof first==='object'&&!Array.isArray(first)?r14Flatten(first,'item').filter(x=>!x.array&&!x.unsupported):[{path:'item',value:first}];return `<details class="r14-array" open><summary>${esc(f.path)}[] <small>${f.value.length} records</small></summary><button type="button" class="btn sm" data-r14-array="${esc(f.path)}">＋ Repeating table</button>${children.slice(0,30).map(x=>r14FieldButton(x,f.path)).join('')}</details>`;}
+ return r14FieldButton(f,'');
+ }).join('');tree.innerHTML=html||'<p class="hint">No matching fields. Load JSON or use the workflow sample.</p>';
+}
+function r14FieldButton(f,array){const value=f.value===null?'null':String(f.value??'');return `<button class="r14-field" type="button" draggable="true" data-r14-field="${esc(f.path)}" data-r14-scope="${esc(array)}" title="${esc(f.path+' = '+value.slice(0,160))}"><span>${esc(f.path)}</span><small>${esc(value.slice(0,38))}</small></button>`;}
+function r14Insert(path,array='',replace=false){
+ const block=FS.doc.blocks[FS.block],cell=FS.cell&&block?.type==='table'?block.rows[FS.cell[0]]?.[FS.cell[1]]:null,token='{{'+path+'}}';
+ if(path==='item'||path.startsWith('item.')){
+ if(!cell||!block.source||FS.cell[0]!==block.repeat){flowNote('Item fields belong in a table’s repeating body row. Choose a cell there, or create a repeating table from the array.');return;}
+ if(array&&block.source!==array){flowNote('This item field belongs to '+array+', but the selected table uses '+block.source+'.');return;}
+ }
+ if(cell||block?.type==='text'){
+ const target=cell||block,cur=R14.cursor,same=cur?.block===FS.block&&cur.cell===(FS.cell?.join(',')||''),text=String(target.text||'');
+ if(replace)target.text=token;
+ else if(same)target.text=text.slice(0,cur.start)+token+text.slice(cur.end);
+ else target.text=text+(text&&!/\s$/.test(text)?' ':'')+token;
+ if(!cell)block.runs=null;
+ }else{const at=FS.doc.blocks.length?FS.block+1:0;FS.doc.blocks.splice(at,0,{type:'text',text:token,style:{size:12}});FS.block=at;FS.cell=null;}
+ R14.cursor=null;flowDraw();flowNote('Inserted '+token+'. The same binding resolves in PDF preview.');
+}
+function r14ArrayTable(path){
+ const source=flowPath(FS.sample,path);if(!Array.isArray(source))return flowNote('Choose an array from the current data.');
+ const first=source.find(x=>x!==null);if(first===undefined)return flowNote('This array is empty. Add one representative record to infer columns, or configure a table manually.');
+ let fields=typeof first==='object'&&!Array.isArray(first)?r14Flatten(first,'item').filter(x=>!x.array&&!x.unsupported).slice(0,8):[{path:'item',value:first}];
+ if(!fields.length)return flowNote('No scalar fields found. Nested arrays need their own repeating table.');
+ const count=fields.length;let widths=Array(count).fill(100/count);if(count>1){widths=Array(count).fill(55/(count-1));widths[0]=45;}
+ const table={type:'table',rows:[fields.map(f=>({text:f.path.replace(/^item\.?/,'')||'Value'})),fields.map(f=>({text:'{{'+f.path+'}}'}))],source:path,repeat:1,headers:1,repeatHeaders:true,keepRows:true,widths,columns:fields.map(f=>typeof f.value==='number'?{align:'right',format:'number'}:{align:'left',format:'text'}),style:{size:11,padding:8,color:'#172f40',background:'#ffffff',border:'#cbd6df'},headerColor:'#e8f1f6'};
+ const at=FS.doc.blocks.length?FS.block+1:0;FS.doc.blocks.splice(at,0,table);FS.block=at;FS.cell=[1,0];R14.cursor=null;flowDraw();flowNote('Repeating table created from '+path+'. Review its columns and number formats.');
+}
+function r14WireData(){
+ $('#flowLoadJSON').onclick=()=>$('#flowJSONFile').click();
+ $('#flowJSONFile').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>2*1024*1024)throw Error('JSON limit is 2 MB.');r14ApplyData(JSON.parse(await file.text()));}catch(err){flowNote('Data import: '+err.message);}finally{e.target.value='';}};
+ $('#flowUseWorkflow').onclick=()=>{try{r14ApplyData(wfSim().ctx);}catch(e){flowNote('Workflow data: '+e.message);}};
+ $('#flowFieldSearch').oninput=r14DrawTree;
+ $('#flowDataTree').onclick=e=>{const array=e.target.closest('[data-r14-array]');if(array)return r14ArrayTable(array.dataset.r14Array);const field=e.target.closest('[data-r14-field]');if(field)r14Insert(field.dataset.r14Field,field.dataset.r14Scope);};
+ $('#flowDataTree').ondragstart=e=>{const field=e.target.closest('[data-r14-field]');if(!field)return;e.dataTransfer.setData('application/x-verso-flow-field',JSON.stringify({path:field.dataset.r14Field,array:field.dataset.r14Scope}));e.dataTransfer.effectAllowed='copy';};
+ $('#flowPaper').ondragover=e=>{if([...e.dataTransfer.types].includes('application/x-verso-flow-field'))e.preventDefault();};
+ $('#flowPaper').ondrop=e=>{const data=e.dataTransfer.getData('application/x-verso-flow-field');if(!data)return;e.preventDefault();try{const field=JSON.parse(data),block=e.target.closest('[data-flow-block]'),cell=e.target.closest('[data-flow-cell]');if(block){FS.block=+block.dataset.flowBlock;FS.cell=cell?cell.dataset.flowCell.split(',').map(Number):null;}r14Insert(field.path,field.array,true);}catch(err){flowNote('Could not insert this field.');}};
+}
+function r14Check(doc,ctx){
+ const errors=[],warnings=[],add=(list,t)=>{if(list.length<25&&!list.includes(t))list.push(t);};
+ const check=(text,data,label,format)=>{
+ const str=String(text??''),re=/{{\s*([^{}]+?)\s*}}/g;let m;
+ while((m=re.exec(str))){const path=m[1],val=flowPath(data,path);if(val===undefined)add(errors,label+': missing field '+path);if((format==='currency'||format==='number')&&val!==null&&val!==undefined&&val!==''){
+ if((typeof val!=='number'&&typeof val!=='string')||!Number.isFinite(Number(val)))add(errors,label+': '+path+' is not a valid numeric value');
+ else if((typeof val==='number'&&Number.isInteger(val)&&!Number.isSafeInteger(val))||(typeof val==='string'&&val.replace(/[^0-9]/g,'').length>15))add(errors,label+': '+path+' exceeds safe numeric precision; use text format to preserve every digit');
+ }}if(str.replace(re,'').includes('{{')||str.replace(re,'').includes('}}'))add(errors,label+': malformed binding');
+ };
+ for(let bi=0;bi<doc.blocks.length;bi++){
+ const b=doc.blocks[bi],label='Block '+(bi+1);
+ if(b.type==='text')check(b.text,ctx,label);
+ if(b.type!=='table')continue;
+ let records=null;
+ if(b.source){records=flowPath(ctx,b.source);if(!Array.isArray(records)){add(errors,label+': '+b.source+' must be an array');records=[];}if(records.length>1000)add(errors,label+': maximum 1,000 records per table in this browser renderer; split the batch before printing');if(!records.length)add(warnings,label+': empty array; no repeating body rows');if(!b.rows[b.repeat]||b.repeat<(b.headers||0))add(errors,label+': select a repeating row after the table headers');}
+ b.rows.forEach((row,ri)=>{let columnIndex=0;row.forEach((cell,ci)=>{const format=cell.format||b.columns?.[columnIndex]?.format;columnIndex+=cell.span||1;const target=label+', row '+(ri+1)+', cell '+(ci+1);if(b.source&&ri===b.repeat){(records||[]).slice(0,1000).forEach((item,index)=>check(cell.text,{...ctx,item,index:index+1},target+' (record '+(index+1)+')',format));}else check(cell.text,ctx,target,format);});});
+ }
+ if(!doc.blocks.length)errors.push('The template contains no blocks.');return {errors,warnings};
+}
+function r14Build(context=null,template=null){
+ r14Ensure();const doc=template||FS.doc,ctx=context||flowContext(),validation=r14Check(doc,ctx);
+ let result={html:'',renderedRows:0,warnings:[]};const oldPreview=FS.preview,oldDoc=FS.doc;
+ try{FS.preview=true;FS.doc=doc;if(!validation.errors.length)result=flowRenderDocument(true,ctx);}finally{FS.preview=oldPreview;FS.doc=oldDoc;}
+ return {...result,doc,ctx,errors:validation.errors,warnings:[...new Set([...validation.warnings,...result.warnings])]};
+}
+function r14HTML(result){
+ const extra='html{background:white}body{margin:0;padding:0}.flow-export{max-width:174mm;margin:20px auto;padding:0}img{max-height:240mm;object-fit:contain}@media print{.flow-export{margin:0;max-width:none;width:100%}body{padding:0}table{break-inside:auto}}';
+ return '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'"><title>'+esc(result.doc.name||'Verso document')+'</title><style>'+FLOW_PRINT_CSS+extra+'</style></head><body><main class="flow-export">'+result.html+'</main></body></html>';
+}
+function r14OpenPreview(context=null,template=null,origin='Designer dynamic data'){
+ r14Ensure();R14.mode='flow';R14.context=context?flowClone(context):null;R14.template=template?flowClone(template):null;R14.origin=origin;
+ if(flowDialog?.open)flowDialog.close();
+ if(location.hash==='#preview')renderPreview();else location.hash='preview';
+}
+function r14Current(){return r14Build(R14.context,R14.template);}
+function renderPreview(){
+ if(R14.mode==='legacy')return renderLegacyPreview();
+ const v=$('#view-preview'),result=r14Current();
+ const checks=result.errors.length?'<div class="r14-bad"><h3>Resolve before PDF output</h3>'+result.errors.map(e=>'<p>'+esc(e)+'</p>').join('')+'</div>':'<div class="r14-good">Bindings validated. Preview and print use the same template and data.</div>';
+ v.innerHTML=`<div class="r14-preview"><div class="r14-preview-main"><div class="dz-toolbar"><strong>Live flow document</strong><span class="pill">${esc(result.doc.name)}</span><span class="grow"></span><button class="btn sm" id="r14Edit">Edit template</button><button class="btn sm" id="r14Rebuild">Refresh</button><button class="btn primary sm" id="r14Print" ${result.errors.length?'disabled':''}>Print / Save PDF</button><button class="btn sm" id="r14Demo">Demo documents</button></div><div class="r14-frame-stage">${result.errors.length?'<div class="r14-error-empty">No PDF preview was rendered. Correct the reported bindings or data to avoid missing or truncated values.</div>':'<iframe id="r14Frame" title="Rendered flow document" sandbox="allow-same-origin allow-modals"></iframe>'}</div></div><aside class="r14-preview-side"><div class="dz-sec"><h3>Render checks</h3>${checks}${result.warnings.map(w=>'<p class="r14-warning">'+esc(w)+'</p>').join('')}<dl class="kv"><dt>Data source</dt><dd>${esc(R14.origin)}</dd><dt>Template blocks</dt><dd>${result.doc.blocks.length}</dd><dt>Table body rows</dt><dd>${result.renderedRows}</dd><dt>PDF engine</dt><dd>Browser print / Save as PDF</dd><dt>Page count</dt><dd>Calculated in the print dialog</dd></dl><p class="hint">No PDF/A, PDF/UA, signature, or font-embedding compliance is claimed. Verify browser print output before delivery.</p></div><div class="dz-sec"><h3>Dynamic data</h3><button class="btn sm" id="r14DesignerData">Use designer data</button><button class="btn sm" id="r14WorkflowData">Use workflow sample</button><label class="hint" for="r14JSON">Edit the data used for this preview</label><textarea id="r14JSON" class="input mono" rows="12"></textarea><button class="btn sm" id="r14Apply">Apply JSON</button><p class="hint">Preview data edits stay in this preview until you load them in the designer. No service connection is called.</p></div></aside></div>`;
+ if($('#r14Frame'))$('#r14Frame').srcdoc=r14HTML(result);
+ $('#r14JSON').value=JSON.stringify(result.ctx,null,2);
+ $('#r14Edit').onclick=()=>{if(R14.template){FS.doc=flowClone(R14.template);FS.sample=flowClone(result.ctx);R14.template=null;R14.context=null;}flowOpen();};
+ $('#r14Rebuild').onclick=renderPreview;
+ $('#r14Print').onclick=()=>r14Print(R14.context,R14.template);
+ $('#r14Demo').onclick=()=>{R14.mode='legacy';renderPreview();};
+ $('#r14DesignerData').onclick=()=>{R14.context=null;R14.origin='Designer dynamic data';renderPreview();};
+ $('#r14WorkflowData').onclick=()=>{R14.context=flowClone(wfSim().ctx);R14.origin='Workflow mapped sample';renderPreview();};
+ $('#r14Apply').onclick=()=>{try{const raw=$('#r14JSON').value;if(raw.length>2*1024*1024)throw Error('JSON limit is 2 MB.');const data=JSON.parse(raw);if(!data||typeof data!=='object'||Array.isArray(data))throw Error('Use a JSON object.');R14.context=data;R14.origin='Preview JSON';renderPreview();}catch(e){toast('Data: '+e.message,'triangle-alert');}};
+ icons();
+}
+async function r14Print(context=null,template=null){
+ const result=r14Build(context,template);if(result.errors.length){toast('PDF blocked: '+result.errors[0],'triangle-alert');if(flowDialog?.open)flowNote('PDF blocked: '+result.errors[0]);return;}
+ let frame=$('#r14PrintFrame');if(frame)frame.remove();frame=document.createElement('iframe');frame.id='r14PrintFrame';frame.title='Print-ready document';frame.setAttribute('sandbox','allow-same-origin allow-modals');frame.style.cssText='position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;';
+ const loaded=new Promise(resolve=>frame.onload=resolve);frame.srcdoc=r14HTML(result);document.body.appendChild(frame);await loaded;
+ try{await frame.contentDocument.fonts.ready;await Promise.all([...frame.contentDocument.images].map(img=>img.decode?img.decode().catch(()=>{}):Promise.resolve()));frame.contentWindow.focus();frame.contentWindow.print();toast('Choose Save as PDF in the browser print dialog.','printer');}catch(e){toast('Printing was blocked. Open Document preview and try Print / Save PDF.','triangle-alert');}
+}
+function r14ExportHTML(){const result=r14Build();if(result.errors.length)return flowNote('Export blocked: '+result.errors[0]);flowDownload(r14HTML(result),'verso-flow-document.html','text/html');flowNote('Rendered HTML exported using the same resolved template and dynamic data as PDF preview.');}
+function r14BindWorkflow(id){
+ r14Ensure();const n=wfNode(id);if(!n)return;wfPush();n.config.flowTemplate=flowClone(FS.doc);wfLive(n);wfDrawProps();toast('Flow template attached to '+n.title+'. Preview it using the workflow sample.','file-text');
+}
+document.addEventListener('click',e=>{
+ if(e.target.closest('[data-r14-live]')){R14.mode='flow';renderPreview();}
+ const bind=e.target.closest('[data-r14-bind]');if(bind)r14BindWorkflow(bind.dataset.r14Bind);
+ const preview=e.target.closest('[data-r14-wfpreview]');if(preview){const n=wfNode(preview.dataset.r14Wfpreview);if(!n?.config.flowTemplate)return toast('Attach a flow template to this step first.','triangle-alert');r14OpenPreview(wfSim().ctx,n.config.flowTemplate,'Workflow mapped sample · '+n.title);}
+});
+const r14OriginalPdfSim=WF_TYPES['generate-pdf'].simulate;
+WF_TYPES['generate-pdf'].simulate=(n,sim)=>{
+ if(!n.config.flowTemplate)return r14OriginalPdfSim(n,sim);
+ const result=r14Build(sim.ctx,n.config.flowTemplate);
+ return {port:result.errors.length?'failed':'success',msg:result.errors.length?'Flow render blocked: '+result.errors[0]:'Flow HTML resolved from workflow data: '+result.renderedRows+' table body rows. PDF requires Print / Save PDF; no PDF bytes or delivery were generated by this test.',ms:1};
+};
+
+const RENDER = { dashboard:renderDashboard, designer:renderDesigner, workflow:renderWorkflow, preview:renderPreview, assistant:renderAssistant, jobs:renderJobs, integrations:renderConnections, variables:renderVariables, archive:renderArchive, audit:renderAudit };
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { paintThemeIcon(); if (!$('#view-dashboard').hidden) renderDashboard(); });
 paintThemeIcon();
 updateFailCount();

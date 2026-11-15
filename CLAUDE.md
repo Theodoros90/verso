@@ -3,7 +3,7 @@
 Bank-focused document-generation and workflow platform. MVP: maintain an invoice template, maintain a workflow, submit synthetic invoice JSON, validate it, generate a PDF, archive it, and show execution history.
 
 - Full plan, entities, API contracts, lifecycle, security, tests, milestones: [docs/plan/2026-11-09-verso-mvp-plan.md](docs/plan/2026-11-09-verso-mvp-plan.md)
-- Visual direction: [design-reference/Verso prototype v6.html](<design-reference/Verso prototype v6.html>). It's a prototype: keep its look, don't reuse its code as production code.
+- Visual direction: [design-reference/Verso-prototype-v14-Dynamic-Data-and-PDF.html](design-reference/Verso-prototype-v14-Dynamic-Data-and-PDF.html) (v14; it replaces v6). It's a prototype: keep its look, don't reuse its code as production code.
 - Architecture decisions: `docs/adr/`
 - Local setup and verification: [docs/setup.md](docs/setup.md). Implemented endpoints: [docs/api.md](docs/api.md)
 
