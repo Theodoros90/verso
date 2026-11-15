@@ -21,6 +21,12 @@ appsettings.*.local.json
 !.env.example
 secrets.json
 
+# Output of the API and Worker when started in the background for local runs
+.api.log
+.api.err.log
+.worker.log
+.worker.err.log
+
 # Editors / OS
 .idea/
 Thumbs.db
