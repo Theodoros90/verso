@@ -48,9 +48,23 @@ export type PositionedElement = { id: string; xMm: number; yMm: number; widthMm:
 export type FlowBlock = { id: string; spaceBeforeMm?: number } & ElementContent
 export type LayoutElement = PositionedElement | FlowBlock
 
+/** On which pages a header or footer is printed (layout JSON `showOn`; absent means every page). */
+export type PageVisibility = 'all' | 'first' | 'last' | 'not-first' | 'not-last'
+
+export const PAGE_VISIBILITIES: { value: PageVisibility; label: string; short: string }[] = [
+  { value: 'all', label: 'Every page', short: 'every page' },
+  { value: 'first', label: 'First page only', short: 'first page only' },
+  { value: 'last', label: 'Last page only', short: 'last page only' },
+  { value: 'not-first', label: 'Every page except the first', short: 'all but the first page' },
+  { value: 'not-last', label: 'Every page except the last', short: 'all but the last page' },
+]
+
+export const asPageVisibility = (v: unknown): PageVisibility => PAGE_VISIBILITIES.find((p) => p.value === v)?.value ?? 'all'
+
 export interface FixedRegion {
   heightMm: number
   elements: PositionedElement[]
+  showOn?: PageVisibility
 }
 
 export interface FlowRegion {

@@ -28,9 +28,14 @@ public static class HtmlRenderer
 
         // Each region is rendered once; the fragments feed both outputs, so issues are collected once.
         var ctx = new RenderContext(mode);
-        var header = string.Concat(layout.Header.Elements.Select(p => RenderPositioned(p, data, ctx) + "\n"));
+        // Header and footer text may hold {{page}} and {{pages}}: the sheet preview shows 1 and 1, while the print
+        // templates hand the numbers to Chromium, which fills in each page's own. Same elements, so issues are deduplicated.
+        string Band(FixedRegion region, PageNumberMode pages) => string.Concat(region.Elements.Select(p => RenderPositioned(p, data, ctx, pages) + "\n"));
+        var header = Band(layout.Header, PageNumberMode.Preview);
+        var headerPrint = Band(layout.Header, PageNumberMode.Print);
         var body = string.Concat(layout.Body.Blocks.Select(b => RenderBlock(b, data, ctx) + "\n"));
-        var footer = string.Concat(layout.Footer.Elements.Select(p => RenderPositioned(p, data, ctx) + "\n"));
+        var footer = Band(layout.Footer, PageNumberMode.Preview);
+        var footerPrint = Band(layout.Footer, PageNumberMode.Print);
 
         var preview = Document(title, DocumentCss.Preview(layout, page),
             "<div class=\"v-page\">\n" +
@@ -43,12 +48,14 @@ public static class HtmlRenderer
         var bottomBand = page.MarginBottomMm + layout.Footer.HeightMm;
         var print = new PrintDocument(
             BodyHtml: Document(title, DocumentCss.PrintBody(page), $"<main class=\"v-body\">\n{body}</main>\n"),
-            HeaderTemplate: Template(topBand, $"{Mm(page.MarginTopMm)} {Mm(page.MarginRightMm)} 0 {Mm(page.MarginLeftMm)}", layout.Header.HeightMm, header),
-            FooterTemplate: Template(bottomBand, $"0 {Mm(page.MarginRightMm)} {Mm(page.MarginBottomMm)} {Mm(page.MarginLeftMm)}", layout.Footer.HeightMm, footer),
+            HeaderTemplate: Template(topBand, $"{Mm(page.MarginTopMm)} {Mm(page.MarginRightMm)} 0 {Mm(page.MarginLeftMm)}", layout.Header.HeightMm, headerPrint),
+            FooterTemplate: Template(bottomBand, $"0 {Mm(page.MarginRightMm)} {Mm(page.MarginBottomMm)} {Mm(page.MarginLeftMm)}", layout.Footer.HeightMm, footerPrint),
             PaperWidthMm: page.WidthMm,
             PaperHeightMm: page.HeightMm,
             MarginTopMm: topBand,
-            MarginBottomMm: bottomBand);
+            MarginBottomMm: bottomBand,
+            HeaderShow: layout.Header.ShowOn,
+            FooterShow: layout.Footer.ShowOn);
 
         return new RenderResult(preview, print, ctx.Issues);
     }
@@ -62,17 +69,17 @@ public static class HtmlRenderer
         $"<div class=\"v-tpl\" style=\"height:{Mm(bandMm)};padding:{padding}\"><style>\n{DocumentCss.Template()}</style>" +
         $"<div class=\"v-area\" style=\"height:{Mm(areaMm)}\">\n{content}</div></div>";
 
-    internal static string RenderPositioned(PositionedElement p, JsonElement data, RenderContext ctx) =>
-        $"<div class=\"v-abs\" style=\"left:{Mm(p.XMm)};top:{Mm(p.YMm)};width:{Mm(p.WidthMm)};height:{Mm(p.HeightMm)}\">{RenderElement(p.Element, data, ctx)}</div>";
+    internal static string RenderPositioned(PositionedElement p, JsonElement data, RenderContext ctx, PageNumberMode pages = PageNumberMode.None) =>
+        $"<div class=\"v-abs\" style=\"left:{Mm(p.XMm)};top:{Mm(p.YMm)};width:{Mm(p.WidthMm)};height:{Mm(p.HeightMm)}\">{RenderElement(p.Element, data, ctx, pages)}</div>";
 
     internal static string RenderBlock(FlowBlock block, JsonElement data, RenderContext ctx) =>
         block.SpaceBeforeMm > 0
             ? $"<div class=\"v-block\" style=\"margin-top:{Mm(block.SpaceBeforeMm)}\">{RenderElement(block.Element, data, ctx)}</div>"
             : $"<div class=\"v-block\">{RenderElement(block.Element, data, ctx)}</div>";
 
-    internal static string RenderElement(LayoutElement element, JsonElement data, RenderContext ctx) => element switch
+    internal static string RenderElement(LayoutElement element, JsonElement data, RenderContext ctx, PageNumberMode pages = PageNumberMode.None) => element switch
     {
-        TextElement t => $"<div class=\"v-text\" data-id=\"{Encode(t.Id)}\" style=\"{StyleCss(t.Style)}\">{RenderText(t, data, ctx)}</div>",
+        TextElement t => $"<div class=\"v-text\" data-id=\"{Encode(t.Id)}\" style=\"{StyleCss(t.Style)}\">{RenderText(t, data, ctx, pages)}</div>",
         FieldElement f => RenderField(f, data, ctx),
         TableElement t => RenderTable(t, data, ctx),
         DividerElement d => $"<div class=\"v-divider\" data-id=\"{Encode(d.Id)}\" style=\"border-top:{Pt(d.ThicknessPt)} solid {d.Color}\"></div>",
@@ -82,7 +89,7 @@ public static class HtmlRenderer
         _ => throw new ArgumentOutOfRangeException(nameof(element), element.GetType().Name, "Unknown element type."),
     };
 
-    private static string RenderText(TextElement t, JsonElement data, RenderContext ctx)
+    private static string RenderText(TextElement t, JsonElement data, RenderContext ctx, PageNumberMode pages)
     {
         var sb = new StringBuilder();
         foreach (var part in TextTemplate.Parse(t.Text))
@@ -91,6 +98,11 @@ public static class HtmlRenderer
             {
                 case LiteralPart literal:
                     sb.Append(Encode(literal.Text));
+                    break;
+                case TokenPart token when pages != PageNumberMode.None && PageTokens.Is(token):
+                    sb.Append(pages == PageNumberMode.Print
+                        ? (token.Path == PageTokens.Page ? "<span class=\"pageNumber\"></span>" : "<span class=\"totalPages\"></span>")
+                        : "1");
                     break;
                 case TokenPart token:
                     sb.Append(ValueHtml(data, token.Path, token.Filter, t.Id, token.Path, ctx));
@@ -256,4 +268,17 @@ internal sealed class RenderContext(RenderMode mode)
             Issues.Add(new RenderIssue(severity, code, message, elementId, path));
         }
     }
+}
+
+/// <summary>How <c>{{page}}</c> and <c>{{pages}}</c> are written for a header or footer.</summary>
+internal enum PageNumberMode
+{
+    /// <summary>Not a header or footer: these are ordinary data paths.</summary>
+    None,
+
+    /// <summary>The one-sheet preview: there is only page 1 of 1.</summary>
+    Preview,
+
+    /// <summary>A Chromium print template: its own page-number and total-pages spans.</summary>
+    Print,
 }

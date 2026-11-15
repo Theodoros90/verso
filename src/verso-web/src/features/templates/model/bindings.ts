@@ -1,5 +1,5 @@
 /** Finding and checking the data bindings an element uses. Token grammar mirrors Verso.Rendering.Binding.TextTemplate. */
-import { FILTERS, type Filter, type LayoutElement } from './layout'
+import { FILTERS, isPositioned, type Filter, type LayoutElement } from './layout'
 import { findField, isScalar, type SchemaField } from './schema'
 
 const DATA_PATH = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/
@@ -8,6 +8,14 @@ const VALID_TOKEN = /^\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s
 
 export function isValidPath(path: string): boolean {
   return path.length <= 200 && DATA_PATH.test(path)
+}
+
+/** The reserved tokens of header and footer text: this page's number and the page count (docs/layout-model.md). */
+export const PAGE_TOKENS = ['page', 'pages'] as const
+
+/** Whether a token is a page-number token. Only meaningful in a header or footer; in the body they are ordinary data paths. */
+export function isPageToken(path: string, filter?: Filter): boolean {
+  return filter === undefined && (PAGE_TOKENS as readonly string[]).includes(path)
 }
 
 export type TextPart =
@@ -54,6 +62,8 @@ export function bindingsOf(element: LayoutElement): UsedBinding[] {
     case 'text':
       return parseText(element.props.text ?? '')
         .filter((p): p is Extract<TextPart, { kind: 'token' }> => p.kind === 'token')
+        // Positioned elements only exist in the header and footer, where {{page}} and {{pages}} are page numbers, not data.
+        .filter((p) => !(isPositioned(element) && isPageToken(p.path, p.filter)))
         .map((p) => ({ path: p.path, where: 'text', expects: 'scalar' as const }))
     case 'table': {
       const used: UsedBinding[] = []

@@ -42,6 +42,9 @@ const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/mai
 export const para = (text: string, opts: { bold?: boolean; size?: number; center?: boolean; style?: string } = {}) =>
   `<w:p><w:pPr>${opts.style ? `<w:pStyle w:val="${opts.style}"/>` : ''}${opts.center ? '<w:jc w:val="center"/>' : ''}</w:pPr><w:r><w:rPr>${opts.bold ? '<w:b/>' : ''}${opts.size ? `<w:sz w:val="${opts.size * 2}"/>` : ''}</w:rPr><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`
 
+/** "Page {PAGE} of {NUMPAGES}" the way Word writes it: a complex field for the page, a simple field for the count. */
+export const pageNumberPara = `<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t xml:space="preserve">Page </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t xml:space="preserve"> of </w:t></w:r><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p>`
+
 export const table = (rows: string[][], widths: number[] = []) =>
   `<w:tbl><w:tblGrid>${widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>${rows.map((r) => `<w:tr>${r.map((c) => `<w:tc><w:p><w:r><w:t>${c}</w:t></w:r></w:p></w:tc>`).join('')}</w:tr>`).join('')}</w:tbl>`
 

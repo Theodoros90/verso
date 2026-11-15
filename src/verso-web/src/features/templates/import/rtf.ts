@@ -1,11 +1,11 @@
-import { ImportError, MAX_IMAGE_BYTES, MAX_PARAGRAPHS, sniffImage, toDataUri, type ParaStyle, type ParsedDoc } from './types'
+import { ImportError, MAX_IMAGE_BYTES, MAX_PARAGRAPHS, pageFieldToken, sniffImage, toDataUri, type ParaStyle, type ParsedDoc } from './types'
 
 const TWIPS_PER_MM = 56.6929
 
 /** Destinations whose content is never text of the document. */
 const SKIPPED = new Set([
   'stylesheet', 'info', 'listtable', 'listoverridetable', 'rsidtbl', 'generator', 'xmlnstbl', 'filetbl', 'revtbl', 'themedata', 'colorschememapping',
-  'datastore', 'latentstyles', 'fldinst', 'object', 'nonshppict', 'headerl', 'headerf', 'footerl', 'footerf', 'pnseclvl', 'private', 'userprops', 'mmathPr',
+  'datastore', 'latentstyles', 'object', 'nonshppict', 'headerl', 'headerf', 'footerl', 'footerf', 'pnseclvl', 'private', 'userprops', 'mmathPr',
 ])
 
 const SYMBOLS: Record<string, string> = {
@@ -30,6 +30,8 @@ interface Group extends Fmt {
   pict?: { hex: string; mime?: 'image/png' | 'image/jpeg'; widthMm?: number; heightMm?: number; unsupported?: boolean }
   fonttbl?: boolean
   colortbl?: boolean
+  /** Inside a `\\fldinst` group: the field instruction collected so far (`PAGE`, `NUMPAGES`…). */
+  fieldInst?: string
 }
 
 interface Run {
@@ -65,6 +67,8 @@ export function parseRtf(text: string): ParsedDoc {
   let fontCapture = null as { index: number; name: string } | null
   let colorBuf = { r: -1, g: -1, b: -1 }
   let pendingBytes: number[] = []
+  /** A page field in a header or footer was written as its token: its shown result (`\\fldrslt`) is dropped. */
+  let suppressResult = false
 
   const styleOf = (fmt: Fmt, a: ParaStyle['align']): ParaStyle => {
     const s: ParaStyle = {}
@@ -147,7 +151,7 @@ export function parseRtf(text: string): ParsedDoc {
     if (ch === '{') {
       flushDecoded()
       stack.push(g)
-      g = { ...g, pict: undefined, fonttbl: g.fonttbl, colortbl: g.colortbl }
+      g = { ...g, pict: undefined, fieldInst: undefined, fonttbl: g.fonttbl, colortbl: g.colortbl }
       i++
     } else if (ch === '}') {
       flushDecoded()
@@ -162,6 +166,13 @@ export function parseRtf(text: string): ParsedDoc {
         flushTable()
       }
       g = parent
+      if (closing.fieldInst !== undefined && closing.target !== 'body') {
+        const token = pageFieldToken(closing.fieldInst)
+        if (token) {
+          add(token)
+          suppressResult = true
+        }
+      }
       i++
     } else if (ch === '\\') {
       i++
@@ -178,7 +189,7 @@ export function parseRtf(text: string): ParsedDoc {
           if (c === '*') {
             // An ignorable destination: skipped unless it is the picture wrapper we read.
             const rest = /^\s*\\([A-Za-z]+)/.exec(text.slice(i))
-            if (!rest || rest[1] !== 'shppict') g.skip = true
+            if (!rest || (rest[1] !== 'shppict' && rest[1] !== 'fldinst')) g.skip = true
           } else if (c === '~') add(' ')
           else if (c === '_') add('-')
           else if (c === '\\' || c === '{' || c === '}') add(c)
@@ -217,6 +228,7 @@ export function parseRtf(text: string): ParsedDoc {
       }
       flushDecoded()
       if (g.pict) g.pict.hex += chunk
+      else if (g.fieldInst !== undefined) g.fieldInst += chunk
       else if (g.fonttbl && fontCapture) {
         const semi = chunk.indexOf(';')
         fontCapture.name += semi >= 0 ? chunk.slice(0, semi) : chunk
@@ -272,6 +284,15 @@ export function parseRtf(text: string): ParsedDoc {
       return
     }
     switch (word) {
+      case 'fldinst':
+        g.fieldInst = ''
+        return
+      case 'fldrslt':
+        if (suppressResult) {
+          g.skip = true
+          suppressResult = false
+        }
+        return
       case 'fonttbl':
         g.fonttbl = true
         return

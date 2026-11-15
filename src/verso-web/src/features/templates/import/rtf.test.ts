@@ -64,6 +64,16 @@ describe('importing RTF', () => {
     expect(design.layout.body!.blocks).toHaveLength(1)
   })
 
+  it('turns PAGE and NUMPAGES fields in a footer into {{page}} and {{pages}}, and keeps the text of other fields', async () => {
+    const field = (instruction: string, shown: string) => `{\\field{\\*\\fldinst ${instruction}}{\\fldrslt ${shown}}}`
+    const design = await run(
+      rtf(`{\\footer\\pard\\qc Page ${field('PAGE', '1')} of ${field('NUMPAGES', '1')} ${field('DATE \\@ "d MMM"', '14 Nov')}\\par}\\pard Body ${field('PAGE', '1')}\\par`),
+    )
+
+    expect((design.layout.footer!.elements[0] as { props: { text: string } }).props.text).toBe('Page {{page}} of {{pages}} 14 Nov')
+    expect((design.layout.body!.blocks[0] as { props: { text: string } }).props.text).toBe('Body 1') // in the body: the shown number, no token
+  })
+
   it('imports a PNG picture and reports a metafile as left out', async () => {
     const design = await run(rtf(`Logo\\par{\\*\\shppict{\\pict\\pngblip\\picwgoal1000\\pichgoal500 ${pngHex}}}{\\nonshppict{\\pict\\emfblip 0102}}\\par`))
     const image = design.layout.body!.blocks.find((b) => b.type === 'image')

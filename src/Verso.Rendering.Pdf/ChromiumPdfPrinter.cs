@@ -169,6 +169,7 @@ public sealed partial class ChromiumPdfPrinter : IPdfPrinter, IAsyncDisposable
             FooterTemplate = DocumentFonts.IntoTemplate(document.FooterTemplate),
             PrintBackground = true,
             PreferCSSPageSize = false,
+            PageRanges = document.PageRanges,
         }).ConfigureAwait(false);
     }
 

@@ -6,7 +6,7 @@ import sampleRaw from '../../../../../../tests/fixtures/invoice/sample.json?raw'
 
 import { bindingsOf, parseText, usedPaths } from './bindings'
 import { commitFrom, createHistory, push, redo, replace, undo } from '@/lib/history'
-import { DEFAULT_PAGE_SETTINGS, emptyLayout, type Layout, type PositionedElement } from './layout'
+import { asPageVisibility, DEFAULT_PAGE_SETTINGS, emptyLayout, type Layout, type PositionedElement } from './layout'
 import {
   addElement,
   allElements,
@@ -16,6 +16,7 @@ import {
   nudge,
   removeElement,
   setBandHeight,
+  setBandShowOn,
   updatePlacement,
   updateProps,
   updateStyle,
@@ -27,6 +28,52 @@ import { elementIdForServerPath, validateDesign } from './validate'
 const invoiceLayout = JSON.parse(layoutRaw) as Layout
 const sample = JSON.parse(sampleRaw) as Record<string, unknown>
 const page = DEFAULT_PAGE_SETTINGS
+
+describe('page-number tokens', () => {
+  const footerWith = (text: string): Layout => ({
+    layoutSchemaVersion: 1,
+    footer: { heightMm: 10, elements: [{ id: 'f', type: 'text', xMm: 0, yMm: 0, widthMm: 60, heightMm: 6, props: { text } }] },
+  })
+
+  it('are not data bindings in a header or footer, so they are never "not in the data model"', () => {
+    const layout = footerWith('Page {{page}} of {{pages}} · {{invoice.number}}')
+    const element = layout.footer!.elements[0]!
+
+    expect(bindingsOf(element).map((b) => b.path)).toEqual(['invoice.number'])
+    expect(usedPaths([element])).toEqual(new Set(['invoice.number']))
+    const issues = validateDesign(footerWith('Page {{page}} of {{pages}}'), DEFAULT_PAGE_SETTINGS, { type: 'object' })
+    expect(issues.filter((i) => i.severity === 'error')).toEqual([])
+  })
+
+  it('are ordinary data paths in the body, and with a filter', () => {
+    const body: Layout = { layoutSchemaVersion: 1, body: { blocks: [{ id: 'b', type: 'text', props: { text: 'Page {{page}}' } }] } }
+    expect(bindingsOf(body.body!.blocks[0]!).map((b) => b.path)).toEqual(['page'])
+    expect(bindingsOf(footerWith('{{page|upper}}').footer!.elements[0]!).map((b) => b.path)).toEqual(['page'])
+    expect(validateDesign(body, DEFAULT_PAGE_SETTINGS, { type: 'object' }).some((i) => i.code === 'binding.unmapped')).toBe(true)
+  })
+})
+
+describe('header and footer page rule', () => {
+  it('stores the rule on the band, and removes it again for "all" so older layouts round-trip unchanged', () => {
+    const base: Layout = { layoutSchemaVersion: 1, footer: { heightMm: 12, elements: [] } }
+    const last = setBandShowOn(base, 'footer', 'last')
+    expect(last.footer).toEqual({ heightMm: 12, elements: [], showOn: 'last' })
+    expect(setBandShowOn(last, 'footer', 'all')).toEqual(base)
+    expect(base.footer).not.toHaveProperty('showOn') // the input is never changed
+  })
+
+  it('keeps the rule when the band is resized or gets elements, and ignores a band that does not exist', () => {
+    const base = setBandShowOn({ layoutSchemaVersion: 1, header: { heightMm: 20, elements: [] } }, 'header', 'not-first')
+    expect(setBandHeight(base, 'header', 30).header).toMatchObject({ heightMm: 30, showOn: 'not-first' })
+    expect(setBandShowOn({ layoutSchemaVersion: 1 }, 'header', 'first')).toEqual({ layoutSchemaVersion: 1 })
+  })
+
+  it('reads an unknown rule as every page', () => {
+    expect(asPageVisibility('sometimes')).toBe('all')
+    expect(asPageVisibility(undefined)).toBe('all')
+    expect(asPageVisibility('not-last')).toBe('not-last')
+  })
+})
 
 describe('layout operations', () => {
   it('adds header elements inside the band with a unique id', () => {

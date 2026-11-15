@@ -26,6 +26,9 @@ public sealed record RenderIssue(IssueSeverity Severity, string Code, string Mes
 /// that Chromium repeats in the top/bottom page margins of every page (Page.printToPDF <c>headerTemplate</c> /
 /// <c>footerTemplate</c> with <c>displayHeaderFooter</c>). Left/right margins are 0; the side margins are padding
 /// inside the parts. Verified with Chromium in M3; used by the PDF step (M5).
+/// <see cref="HeaderShow"/> and <see cref="FooterShow"/> say on which pages each band is wanted (Chromium repeats a template
+/// on every page, so <see cref="PageRulePdfPrinter"/> prints page ranges separately); <see cref="PageRanges"/> ("2-4") restricts
+/// one print to those pages and is set only by that printer.
 /// </summary>
 public sealed record PrintDocument(
     string BodyHtml,
@@ -34,7 +37,10 @@ public sealed record PrintDocument(
     decimal PaperWidthMm,
     decimal PaperHeightMm,
     decimal MarginTopMm,
-    decimal MarginBottomMm);
+    decimal MarginBottomMm,
+    PageVisibility HeaderShow = PageVisibility.All,
+    PageVisibility FooterShow = PageVisibility.All,
+    string? PageRanges = null);
 
 /// <param name="Html">Self-contained preview: one continuous sheet with header, body and footer, for screens.</param>
 /// <param name="Print">The same content split for paginated printing.</param>

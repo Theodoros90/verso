@@ -100,3 +100,6 @@ internal static class PdfTestSupport
         Assert.False(string.IsNullOrWhiteSpace(output), $"No process matched {condition}.");
     }
 }
+
+// Every test class that starts Chromium is in the "Chromium" collection, so they run one after another: the lifecycle
+// tests kill browser and driver processes on purpose, and must not catch another class's printer in the crossfire.

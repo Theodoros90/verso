@@ -177,6 +177,23 @@ public sealed class DocxTests
     }
 
     [Fact]
+    public void FooterPageTokens_BecomeLiveWordFields_WithTheTextAroundThem()
+    {
+        var layout = ParseValid("""{ "layoutSchemaVersion": 1, "footer": { "heightMm": 10, "elements": [ { "id": "f", "type": "text", "xMm": 0, "yMm": 0, "widthMm": 80, "heightMm": 6, "props": { "text": "Page {{page}} of {{pages}}" } } ] } }""");
+        var resolved = DocumentResolver.Resolve(layout, A4, Json("{}"), "T");
+
+        Assert.DoesNotContain(resolved.Issues, i => i.Severity == IssueSeverity.Error);
+        var runs = Assert.IsType<ParagraphBlock>(Assert.Single(resolved.Footer)).Runs;
+        Assert.Equal(["Page ", "", " of ", ""], runs.Select(r => r.Text));
+        Assert.Equal([null, PageField.Page, null, PageField.Pages], runs.Select(r => r.Field));
+
+        using var doc = Open(new DocxWriter().Write(resolved, DocxProtection.AllowEdits));
+        var footer = doc.MainDocumentPart!.FooterParts.Single().Footer!;
+        Assert.Equal(["PAGE", "NUMPAGES"], footer.Descendants<W.SimpleField>().Select(f => f.Instruction!.Value));
+        Assert.Empty(new OpenXmlValidator().Validate(doc));
+    }
+
+    [Fact]
     public void ImageDimensions_ReadPngHeader()
     {
         var png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
@@ -184,5 +201,105 @@ public sealed class DocxTests
         Assert.Equal((1, 1), ImageDimensions.Read(png, true));
         Assert.Null(ImageDimensions.Read([1, 2, 3], true));
         Assert.Null(ImageDimensions.Read([0xFF, 0xD8, 0xFF], false));
+    }
+
+    // ----- Header and footer page rules -----
+
+    private static byte[] WithRules(string header, string footer)
+    {
+        var layout = ParseValid($$"""
+            { "layoutSchemaVersion": 1,
+              "header": { "heightMm": 10, "showOn": "{{header}}", "elements": [ { "id": "h", "type": "text", "xMm": 0, "yMm": 0, "widthMm": 50, "heightMm": 6, "props": { "text": "HEAD" } } ] },
+              "body": { "blocks": [ { "id": "b", "type": "text", "props": { "text": "BODY" } } ] },
+              "footer": { "heightMm": 10, "showOn": "{{footer}}", "elements": [ { "id": "f", "type": "text", "xMm": 0, "yMm": 0, "widthMm": 50, "heightMm": 6, "props": { "text": "FOOT" } } ] } }
+            """);
+        return new DocxWriter().Write(DocumentResolver.Resolve(layout, A4, Json("{}"), "T"), DocxProtection.AllowEdits);
+    }
+
+    private static (bool TitlePage, string Default, string First) HeaderParts(byte[] bytes)
+    {
+        using var doc = Open(bytes);
+        var main = doc.MainDocumentPart!;
+        var section = main.Document!.Body!.Elements<W.SectionProperties>().Single();
+        string Text(W.HeaderFooterValues type)
+        {
+            var id = section.Elements<W.HeaderReference>().SingleOrDefault(r => r.Type?.Value == type)?.Id?.Value;
+            return id is null ? "(none)" : ((HeaderPart)main.GetPartById(id)).Header!.InnerText;
+        }
+
+        return (section.Elements<W.TitlePage>().Any(), Text(W.HeaderFooterValues.Default), Text(W.HeaderFooterValues.First));
+    }
+
+    private static (bool TitlePage, string Default, string First) FooterParts(byte[] bytes)
+    {
+        using var doc = Open(bytes);
+        var main = doc.MainDocumentPart!;
+        var section = main.Document!.Body!.Elements<W.SectionProperties>().Single();
+        string Text(W.HeaderFooterValues type)
+        {
+            var id = section.Elements<W.FooterReference>().SingleOrDefault(r => r.Type?.Value == type)?.Id?.Value;
+            return id is null ? "(none)" : ((FooterPart)main.GetPartById(id)).Footer!.InnerText;
+        }
+
+        return (section.Elements<W.TitlePage>().Any(), Text(W.HeaderFooterValues.Default), Text(W.HeaderFooterValues.First));
+    }
+
+    [Fact]
+    public void Header_OnTheFirstPageOnly_UsesWordsDifferentFirstPage_WithAnEmptyHeaderAfterwards()
+    {
+        var (titlePage, defaultText, firstText) = HeaderParts(WithRules("first", "all"));
+
+        Assert.True(titlePage);
+        Assert.Equal("", defaultText);
+        Assert.Equal("HEAD", firstText);
+    }
+
+    [Fact]
+    public void DifferentFirstPage_ProducesAFileWordAccepts_SchemaValid()
+    {
+        using var doc = Open(WithRules("first", "not-first"));
+
+        Assert.Empty(new OpenXmlValidator().Validate(doc));
+    }
+
+    [Fact]
+    public void Footer_OnAllButTheFirstPage_IsEmptyOnPageOne()
+    {
+        var (titlePage, defaultText, firstText) = FooterParts(WithRules("all", "not-first"));
+
+        Assert.True(titlePage);
+        Assert.Equal("FOOT", defaultText);
+        Assert.Equal("", firstText);
+    }
+
+    [Fact]
+    public void NoRule_IsOneHeaderAndFooterForEveryPage_WithNoDifferentFirstPage()
+    {
+        var bytes = WithRules("all", "all");
+
+        Assert.Equal((false, "HEAD", "(none)"), HeaderParts(bytes));
+        Assert.Equal((false, "FOOT", "(none)"), FooterParts(bytes));
+    }
+
+    [Fact]
+    public void Footer_OnTheLastPageOnly_IsWrittenAtTheEndOfTheDocument()
+    {
+        var bytes = WithRules("all", "last");
+        using var doc = Open(bytes);
+
+        Assert.Equal((false, "(none)", "(none)"), FooterParts(bytes)); // no repeating footer at all
+        var body = doc.MainDocumentPart!.Document!.Body!.InnerText;
+        Assert.True(body.IndexOf("BODY", StringComparison.Ordinal) < body.IndexOf("FOOT", StringComparison.Ordinal), "the footer text follows the body");
+    }
+
+    [Fact]
+    public void Header_OnAllButTheLastPage_StaysOnEveryPage_WithAWarning()
+    {
+        var layout = ParseValid("""{ "layoutSchemaVersion": 1, "header": { "heightMm": 10, "showOn": "not-last", "elements": [ { "id": "h", "type": "text", "xMm": 0, "yMm": 0, "widthMm": 50, "heightMm": 6, "props": { "text": "HEAD" } } ] } }""");
+        var resolved = DocumentResolver.Resolve(layout, A4, Json("{}"), "T");
+
+        Assert.Contains(resolved.Issues, i => i is { Severity: IssueSeverity.Warning, Code: "band.page_rule_unsupported", ElementId: "header" });
+        Assert.DoesNotContain(resolved.Issues, i => i.Severity == IssueSeverity.Error);
+        Assert.Equal((false, "HEAD", "(none)"), HeaderParts(new DocxWriter().Write(resolved, DocxProtection.AllowEdits)));
     }
 }

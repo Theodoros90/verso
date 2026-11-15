@@ -81,7 +81,7 @@ public static partial class LayoutParser
             return FixedRegion.Empty;
         }
 
-        ctx.AllowOnly(region, path, "heightMm", "elements");
+        ctx.AllowOnly(region, path, "heightMm", "elements", "showOn");
         var height = ctx.Number(region, path, "heightMm", 0, MaxRegionHeightMm, required: true) ?? 0;
         var elements = new List<PositionedElement>();
         foreach (var (item, itemPath) in ctx.Array(region, path, "elements"))
@@ -103,7 +103,14 @@ public static partial class LayoutParser
             }
         }
 
-        return new FixedRegion(height, elements);
+        var showOn = PageVisibility.All;
+        var showOnText = ctx.String(region, path, "showOn", required: false, maxLength: 16);
+        if (showOnText is not null && !PageVisibilityExtensions.TryParse(showOnText, out showOn))
+        {
+            ctx.Error(path + ".showOn", "Use one of: all, first, last, not-first, not-last.");
+        }
+
+        return new FixedRegion(height, elements, showOn);
     }
 
     private static FlowRegion ParseFlowRegion(JsonElement region, string path, Context ctx)

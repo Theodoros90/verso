@@ -216,6 +216,27 @@ describe('Template designer', { timeout: 20_000 }, () => {
     expect(saved.header.elements.find((e) => e.id === 'title')).toMatchObject({ xMm: 113, yMm: 2 })
   })
 
+  it('sets which pages the header and footer print on, stores it, and drops it again for "every page"', async () => {
+    const api = mockApi(version({ layout: invoiceLayout, dataSchema: inferSchema(sample), sampleData: sample }))
+    const user = userEvent.setup()
+    await openDesigner()
+
+    const [headerRule, footerRule] = screen.getAllByLabelText('Show on')
+    expect(headerRule).toHaveValue('all')
+    await user.selectOptions(headerRule!, 'first')
+    await user.selectOptions(footerRule!, 'last')
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(api.calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (api.calls.find((c) => c.method === 'PUT')!.body as { layout: { header: { showOn?: string }; footer: { showOn?: string } } }).layout
+    expect([saved.header.showOn, saved.footer.showOn]).toEqual(['first', 'last'])
+
+    await user.selectOptions(screen.getAllByLabelText('Show on')[0]!, 'all')
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(api.calls.filter((c) => c.method === 'PUT')).toHaveLength(2))
+    const again = (api.calls.filter((c) => c.method === 'PUT')[1]!.body as { layout: { header: object } }).layout
+    expect(again.header).not.toHaveProperty('showOn') // "every page" is the default and is not written
+  })
+
   it('shows a conflict message when someone else saved first (412)', async () => {
     mockApi(version({ layout: invoiceLayout, dataSchema: inferSchema(sample), sampleData: sample }), { putStatus: 412 })
     const user = userEvent.setup()

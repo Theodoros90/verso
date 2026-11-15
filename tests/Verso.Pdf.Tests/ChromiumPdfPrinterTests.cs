@@ -24,6 +24,7 @@ public sealed class PrinterFixture : IAsyncLifetime
 }
 
 /// <summary>M5 acceptance criteria, with real Chromium (plan §9, M5).</summary>
+[Collection("Chromium")]
 public sealed partial class ChromiumPdfPrinterTests(PrinterFixture fixture) : IClassFixture<PrinterFixture>
 {
     private readonly ChromiumPdfPrinter _printer = fixture.Printer;
@@ -191,6 +192,7 @@ public sealed partial class ChromiumPdfPrinterTests(PrinterFixture fixture) : IC
 }
 
 /// <summary>Tests that kill or recycle Chromium get their own printer, so they can't disturb the shared one.</summary>
+[Collection("Chromium")]
 public sealed class ChromiumLifecycleTests
 {
     [Fact]

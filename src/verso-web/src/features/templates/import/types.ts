@@ -56,3 +56,13 @@ export function sniffImage(bytes: Uint8Array): 'image/png' | 'image/jpeg' | null
   if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
   return null
 }
+
+/**
+ * A word processor's page-number field as Verso's header and footer token: PAGE → `{{page}}`, NUMPAGES (or SECTIONPAGES) →
+ * `{{pages}}`. Any other field returns null and keeps the text it currently shows.
+ */
+export function pageFieldToken(instruction: string): string | null {
+  const m = /^\s*(PAGE|NUMPAGES|SECTIONPAGES)\b/i.exec(instruction)
+  if (!m) return null
+  return m[1]!.toUpperCase() === 'PAGE' ? '{{page}}' : '{{pages}}'
+}

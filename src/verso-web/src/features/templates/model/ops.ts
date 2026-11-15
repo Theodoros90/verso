@@ -14,6 +14,7 @@ import {
   type Layout,
   type LayoutElement,
   type PageSettings,
+  type PageVisibility,
   type PositionedElement,
   type Region,
 } from './layout'
@@ -273,6 +274,14 @@ export function reorderInRegion(layout: Layout, id: string, delta: number): Layo
 export function setBandHeight(layout: Layout, region: 'header' | 'footer', heightMm: number): Layout {
   const existing = layout[region]
   return { ...layout, [region]: { ...(existing ?? { elements: [] }), heightMm: round(clamp(heightMm, 0, MAX_REGION_HEIGHT_MM)) } }
+}
+
+/** Sets the pages a band is printed on. 'all' is the default and is stored as no `showOn` at all, so older layouts round-trip unchanged. */
+export function setBandShowOn(layout: Layout, region: 'header' | 'footer', showOn: PageVisibility): Layout {
+  const existing = layout[region]
+  if (!existing) return layout
+  const { showOn: _old, ...rest } = existing
+  return { ...layout, [region]: showOn === 'all' ? rest : { ...rest, showOn } }
 }
 
 export function removeBand(layout: Layout, region: 'header' | 'footer'): Layout {

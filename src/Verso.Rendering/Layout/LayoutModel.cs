@@ -9,7 +9,8 @@ public sealed record TemplateLayout(FixedRegion Header, FlowRegion Body, FixedRe
     public static TemplateLayout Empty { get; } = new(FixedRegion.Empty, FlowRegion.Empty, FixedRegion.Empty);
 }
 
-public sealed record FixedRegion(decimal HeightMm, IReadOnlyList<PositionedElement> Elements)
+/// <param name="ShowOn">On which pages the band is printed. The designer preview shows it once; the PDF and DOCX follow the rule.</param>
+public sealed record FixedRegion(decimal HeightMm, IReadOnlyList<PositionedElement> Elements, PageVisibility ShowOn = PageVisibility.All)
 {
     public static FixedRegion Empty { get; } = new(0, []);
 }

@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 
 import {
   contentWidthMm,
+  PAGE_VISIBILITIES,
   pageSizeMm,
   REGION_LABELS,
   TYPE_LABELS,
@@ -232,6 +233,11 @@ function FixedBand(props: CanvasProps & { region: 'header' | 'footer' }) {
   return (
     <div className="relative flex-none" style={margins}>
       <RegionTag region={region} selected={regionSelected} detail={`${band.heightMm} mm`} />
+      {band.showOn && band.showOn !== 'all' && (
+        <span aria-hidden="true" data-testid="band-rule" className="pointer-events-none absolute top-0 right-0 z-10 rounded-bl-sm bg-[#E3F4F9] px-1.5 font-sans text-[7.5pt] leading-[1.6] font-medium text-[#0A6E8A]">
+          {PAGE_VISIBILITIES.find((p) => p.value === band.showOn)?.short}
+        </span>
+      )}
       <div
         ref={bandRef}
         data-region={region}

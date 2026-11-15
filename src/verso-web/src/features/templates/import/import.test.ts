@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { validateDesign } from '../model/validate'
 import { importDocument, ImportError } from './index'
-import { asFile, docx, imagePara, para, PNG_BASE64, table, zip } from './testFiles'
+import { asFile, docx, imagePara, pageNumberPara, para, PNG_BASE64, table, zip } from './testFiles'
 
 /** An imported design must always be accepted by the server: no structural error. Unmapped data fields are expected. */
 const structuralErrors = (design: Awaited<ReturnType<typeof importDocument>>) =>
@@ -119,6 +119,22 @@ describe('importing a DOCX', () => {
     expect(design.layout.footer?.elements).toHaveLength(1)
     expect(design.summary).toMatchObject({ header: 2, footer: 1 })
     expect(structuralErrors(design)).toEqual([])
+  })
+
+  it('turns Word page-number fields in the footer into {{page}} and {{pages}}, so the numbers count on every page', async () => {
+    const design = await importDocument(asFile(docx({ body: para('Body'), footer: pageNumberPara }), 'f.docx'))
+
+    expect(design.layout.footer?.elements).toHaveLength(1)
+    expect(design.layout.footer!.elements[0]).toMatchObject({ type: 'text', props: { text: 'Page {{page}} of {{pages}}', style: { align: 'center' } } })
+    expect(structuralErrors(design)).toEqual([])
+  })
+
+  it('leaves other fields alone (a date field keeps its shown text), and body page fields are not turned into tokens', async () => {
+    const dateField = '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> DATE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>14 Nov 2026</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+    const design = await importDocument(asFile(docx({ body: pageNumberPara, footer: dateField }), 'd.docx'))
+
+    expect((design.layout.footer!.elements[0] as { props: { text: string } }).props.text).toBe('14 Nov 2026')
+    expect(blocksOf(design)[0]).toMatchObject({ props: { text: 'Page 1 of 1' } }) // in the body there is no page token
   })
 
   it('reports a page size that is not A4', async () => {

@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Verso.Rendering\Verso.Rendering.csproj" />
     <ProjectReference Include="..\..\src\Verso.Rendering.Pdf\Verso.Rendering.Pdf.csproj" />
+    <ProjectReference Include="..\..\src\Verso.Rendering.PdfCombine\Verso.Rendering.PdfCombine.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Shared synthetic fixtures, copied next to the test assembly. -->

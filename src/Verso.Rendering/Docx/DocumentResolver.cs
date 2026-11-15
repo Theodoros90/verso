@@ -20,19 +20,28 @@ public static class DocumentResolver
         var header = Positioned(layout.Header, data, ctx);
         var body = layout.Body.Blocks.Select(b => Element(b.Element, data, ctx, b.SpaceBeforeMm, null, null)).Where(b => b is not null).Select(b => b!).ToList();
         var footer = Positioned(layout.Footer, data, ctx);
-        return new ResolvedDocument(title, page, header, body, footer, ctx.Issues);
+        // Word can't show a band on every page except the last (only "different first page" exists), so it stays on every page.
+        foreach (var (band, show, content) in new[] { ("header", layout.Header.ShowOn, header), ("footer", layout.Footer.ShowOn, footer) })
+        {
+            if (show == PageVisibility.NotLast && content.Count > 0)
+            {
+                ctx.Report(IssueSeverity.Warning, "band.page_rule_unsupported", $"A Word document can't leave the {band} off the last page only; it is shown on every page.", band, null);
+            }
+        }
+
+        return new ResolvedDocument(title, page, header, body, footer, ctx.Issues, layout.Header.ShowOn, layout.Footer.ShowOn);
     }
 
     private static List<ResolvedBlock> Positioned(FixedRegion region, JsonElement data, Html.RenderContext ctx) =>
         region.Elements
             .OrderBy(p => p.YMm).ThenBy(p => p.XMm)
-            .Select(p => Element(p.Element, data, ctx, 0, p.WidthMm, p.HeightMm))
+            .Select(p => Element(p.Element, data, ctx, 0, p.WidthMm, p.HeightMm, inBand: true))
             .Where(b => b is not null).Select(b => b!)
             .ToList();
 
-    private static ResolvedBlock? Element(LayoutElement element, JsonElement data, Html.RenderContext ctx, decimal space, decimal? widthMm, decimal? heightMm) => element switch
+    private static ResolvedBlock? Element(LayoutElement element, JsonElement data, Html.RenderContext ctx, decimal space, decimal? widthMm, decimal? heightMm, bool inBand = false) => element switch
     {
-        TextElement t => new ParagraphBlock([new ResolvedRun(Text(t, data, ctx), false)], t.Style, space),
+        TextElement t => new ParagraphBlock(TextRuns(t, data, ctx, inBand), t.Style, space),
         FieldElement f => new ParagraphBlock(FieldRuns(f, data, ctx), f.Style, space),
         TableElement t => Table(t, data, ctx, space),
         DividerElement d => new DividerBlock(d.ThicknessPt, d.Color, space),
@@ -54,15 +63,33 @@ public static class DocumentResolver
         return runs;
     }
 
-    private static string Text(TextElement t, JsonElement data, Html.RenderContext ctx)
+    /// <summary>
+    /// The text of a text element as runs. In a header or footer, <c>{{page}}</c> and <c>{{pages}}</c> become Word page fields
+    /// of their own; everywhere else the whole text is one run of plain text.
+    /// </summary>
+    private static List<ResolvedRun> TextRuns(TextElement t, JsonElement data, Html.RenderContext ctx, bool inBand)
     {
+        var runs = new List<ResolvedRun>();
         var sb = new StringBuilder();
+        void Flush()
+        {
+            if (sb.Length > 0)
+            {
+                runs.Add(new ResolvedRun(sb.ToString(), false));
+                sb.Clear();
+            }
+        }
+
         foreach (var part in TextTemplate.Parse(t.Text))
         {
             switch (part)
             {
                 case LiteralPart literal:
                     sb.Append(literal.Text);
+                    break;
+                case TokenPart token when inBand && PageTokens.Is(token):
+                    Flush();
+                    runs.Add(new ResolvedRun("", false, token.Path == PageTokens.Page ? PageField.Page : PageField.Pages));
                     break;
                 case TokenPart token:
                     sb.Append(Value(data, token.Path, token.Filter, t.Id, token.Path, ctx));
@@ -74,7 +101,13 @@ public static class DocumentResolver
             }
         }
 
-        return sb.ToString();
+        Flush();
+        if (runs.Count == 0)
+        {
+            runs.Add(new ResolvedRun("", false));
+        }
+
+        return runs;
     }
 
     private static TableBlock Table(TableElement t, JsonElement data, Html.RenderContext ctx, decimal space)

@@ -41,21 +41,64 @@ public sealed class DocxWriter : IDocxWriter
                 body.Append(Render(block, contentTwips, (bytes, png) => AddImage(main, main.AddImagePart(png ? ImagePartType.Png : ImagePartType.Jpeg), bytes), images));
             }
 
+            // A band meant for the last page only has no place in Word's page model, so it is written at the end of the document.
+            foreach (var (blocks, show) in new[] { (document.Header, document.HeaderShow), (document.Footer, document.FooterShow) })
+            {
+                if (show != PageVisibility.Last)
+                {
+                    continue;
+                }
+
+                foreach (var block in blocks)
+                {
+                    body.Append(Render(block, contentTwips, (bytes, png) => AddImage(main, main.AddImagePart(png ? ImagePartType.Png : ImagePartType.Jpeg), bytes), images));
+                }
+            }
+
             body.Append(new W.Paragraph()); // Word needs a paragraph after a final table.
 
             var section = new W.SectionProperties();
-            if (document.Header.Count > 0)
+            var differentFirstPage = false;
+            if (document.Header.Count > 0 && document.HeaderShow != PageVisibility.Last)
             {
-                var part = main.AddNewPart<HeaderPart>();
-                part.Header = new W.Header(document.Header.SelectMany(b => Render(b, contentTwips, (bytes, png) => AddImage(part, part.AddImagePart(png ? ImagePartType.Png : ImagePartType.Jpeg), bytes), images)));
-                section.Append(new W.HeaderReference { Type = W.HeaderFooterValues.Default, Id = main.GetIdOfPart(part) });
+                var content = main.AddNewPart<HeaderPart>();
+                content.Header = new W.Header(document.Header.SelectMany(b => Render(b, contentTwips, (bytes, png) => AddImage(content, content.AddImagePart(png ? ImagePartType.Png : ImagePartType.Jpeg), bytes), images)));
+                var contentId = main.GetIdOfPart(content);
+                if (document.HeaderShow is PageVisibility.First or PageVisibility.NotFirst)
+                {
+                    var empty = main.AddNewPart<HeaderPart>();
+                    empty.Header = new W.Header(new W.Paragraph());
+                    var emptyId = main.GetIdOfPart(empty);
+                    var onlyFirst = document.HeaderShow == PageVisibility.First;
+                    section.Append(new W.HeaderReference { Type = W.HeaderFooterValues.Default, Id = onlyFirst ? emptyId : contentId });
+                    section.Append(new W.HeaderReference { Type = W.HeaderFooterValues.First, Id = onlyFirst ? contentId : emptyId });
+                    differentFirstPage = true;
+                }
+                else
+                {
+                    section.Append(new W.HeaderReference { Type = W.HeaderFooterValues.Default, Id = contentId });
+                }
             }
 
-            if (document.Footer.Count > 0)
+            if (document.Footer.Count > 0 && document.FooterShow != PageVisibility.Last)
             {
-                var part = main.AddNewPart<FooterPart>();
-                part.Footer = new W.Footer(document.Footer.SelectMany(b => Render(b, contentTwips, (bytes, png) => AddImage(part, part.AddImagePart(png ? ImagePartType.Png : ImagePartType.Jpeg), bytes), images)));
-                section.Append(new W.FooterReference { Type = W.HeaderFooterValues.Default, Id = main.GetIdOfPart(part) });
+                var content = main.AddNewPart<FooterPart>();
+                content.Footer = new W.Footer(document.Footer.SelectMany(b => Render(b, contentTwips, (bytes, png) => AddImage(content, content.AddImagePart(png ? ImagePartType.Png : ImagePartType.Jpeg), bytes), images)));
+                var contentId = main.GetIdOfPart(content);
+                if (document.FooterShow is PageVisibility.First or PageVisibility.NotFirst)
+                {
+                    var empty = main.AddNewPart<FooterPart>();
+                    empty.Footer = new W.Footer(new W.Paragraph());
+                    var emptyId = main.GetIdOfPart(empty);
+                    var onlyFirst = document.FooterShow == PageVisibility.First;
+                    section.Append(new W.FooterReference { Type = W.HeaderFooterValues.Default, Id = onlyFirst ? emptyId : contentId });
+                    section.Append(new W.FooterReference { Type = W.HeaderFooterValues.First, Id = onlyFirst ? contentId : emptyId });
+                    differentFirstPage = true;
+                }
+                else
+                {
+                    section.Append(new W.FooterReference { Type = W.HeaderFooterValues.Default, Id = contentId });
+                }
             }
 
             section.Append(new W.PageSize
@@ -74,6 +117,11 @@ public sealed class DocxWriter : IDocxWriter
                 Footer = (uint)Tw(page.MarginBottomMm / 2),
                 Gutter = 0,
             });
+            if (differentFirstPage)
+            {
+                section.Append(new W.TitlePage()); // "different first page": the First header/footer above apply to page 1 only
+            }
+
             body.Append(section);
             main.Document = new W.Document(body);
 
@@ -128,7 +176,15 @@ public sealed class DocxWriter : IDocxWriter
         var paragraph = new W.Paragraph(new W.ParagraphProperties(Spacing(p.SpaceBeforeMm), Align(p.Style.Align)));
         foreach (var run in p.Runs)
         {
-            paragraph.Append(TextRun(run.Text, p.Style, run.Bold || p.Style.Bold));
+            if (run.Field is { } field)
+            {
+                // A live Word field: Word fills in the page number or page count when it lays the document out.
+                paragraph.Append(new W.SimpleField(TextRun("1", p.Style, run.Bold || p.Style.Bold)) { Instruction = field == PageField.Page ? "PAGE" : "NUMPAGES" });
+            }
+            else
+            {
+                paragraph.Append(TextRun(run.Text, p.Style, run.Bold || p.Style.Bold));
+            }
         }
 
         return paragraph;

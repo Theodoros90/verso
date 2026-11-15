@@ -3,8 +3,8 @@ import type { CSSProperties, ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 
-import { isMapped, parseText } from '../model/bindings'
-import type { Filter, LayoutElement, TextStyle } from '../model/layout'
+import { isMapped, isPageToken, parseText } from '../model/bindings'
+import { isPositioned, type Filter, type LayoutElement, type TextStyle } from '../model/layout'
 import { formatValue, resolvePath } from '../model/sampleValues'
 import type { SchemaField } from '../model/schema'
 
@@ -68,6 +68,12 @@ export function ElementView({ element, ctx }: { element: LayoutElement; ctx: Vie
               return (
                 <span key={i} className="text-[#BE3D37] underline decoration-wavy">
                   {p.raw}
+                </span>
+              )
+            if (isPositioned(element) && isPageToken(p.path, p.filter))
+              return (
+                <span key={i} title={p.path === 'page' ? 'The page number (filled in on each page of the PDF)' : 'The number of pages (filled in in the PDF)'} className="rounded-sm bg-[#E3F4F9] px-[0.5mm] text-[#0A6E8A]">
+                  {p.path === 'page' ? '1' : 'N'}
                 </span>
               )
             const mapped = isMapped(ctx.fields, { path: p.path, where: 'text', expects: 'scalar' })

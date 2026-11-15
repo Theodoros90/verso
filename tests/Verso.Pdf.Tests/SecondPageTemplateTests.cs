@@ -11,6 +11,7 @@ namespace Verso.Pdf.Tests;
 /// The two templates of the XML invoice batch sample (tests/fixtures/xml-batch) always print two pages in real Chromium:
 /// the layout model has no page-break element, so a page-2 section follows two invisible full-height spacer blocks.
 /// </summary>
+[Collection("Chromium")]
 public sealed class SecondPageTemplateTests(PrinterFixture fixture) : IClassFixture<PrinterFixture>
 {
     private static JsonNode Data(int lines = 2)

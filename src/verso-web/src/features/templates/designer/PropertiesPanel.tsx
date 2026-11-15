@@ -21,8 +21,11 @@ import { Field, Input, Kbd, Segmented, Select, Textarea } from '@/components/ui/
 import { cn } from '@/lib/utils'
 
 import {
+  asPageVisibility,
   FILTERS,
+  isPositioned,
   MAX_REGION_HEIGHT_MM,
+  PAGE_VISIBILITIES,
   REGION_LABELS,
   TYPE_LABELS,
   type Align,
@@ -30,12 +33,13 @@ import {
   type Layout,
   type LayoutElement,
   type PageSettings,
+  type PageVisibility,
   type PositionedElement,
   type Region,
   type TableColumn,
   type TextStyle,
 } from '../model/layout'
-import { findElement, isValidId, renameElement, setBandHeight, updatePlacement, updateProps, updateStyle } from '../model/ops'
+import { findElement, isValidId, renameElement, setBandHeight, setBandShowOn, updatePlacement, updateProps, updateStyle } from '../model/ops'
 import { arrayPaths, rowFields, scalarPaths, type SchemaField } from '../model/schema'
 import type { DesignIssue } from '../model/validate'
 import type { Draft, Selection } from './designerState'
@@ -340,8 +344,9 @@ function BandSettings(props: PropertiesProps & { region: 'header' | 'footer' }) 
   return (
     <Section title={`${REGION_LABELS[region]} band`}>
       {band ? (
+        <>
         <div className="flex items-end gap-2">
-          <Field label="Height (mm)" htmlFor={`${region}-height`} className="flex-1" hint="Repeats on every page.">
+          <Field label="Height (mm)" htmlFor={`${region}-height`} className="flex-1" hint={band.showOn && band.showOn !== 'all' ? 'The space is kept on every page.' : 'Repeats on every page.'}>
             <NumberInput
               id={`${region}-height`}
               label={`${REGION_LABELS[region]} height`}
@@ -358,6 +363,21 @@ function BandSettings(props: PropertiesProps & { region: 'header' | 'footer' }) 
             </Button>
           )}
         </div>
+        <Field
+          label="Show on"
+          htmlFor={`${region}-show-on`}
+          className="mt-3"
+          hint="Which pages of the PDF and Word file get this band. The designer and HTML preview show it once; Preview (PDF) shows the real pages."
+        >
+          <Select id={`${region}-show-on`} value={asPageVisibility(band.showOn)} disabled={readOnly} onChange={(e) => editLayout((l) => setBandShowOn(l, region, e.target.value as PageVisibility))}>
+            {PAGE_VISIBILITIES.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        </>
       ) : (
         <div className="flex items-center gap-2 text-[12.5px] text-ink-3">
           No {region}.
@@ -588,6 +608,8 @@ function TextContent({
 }) {
   const [cursor, setCursor] = useState<number | null>(null)
   const text = element.props.text ?? ''
+  // Header and footer text (positioned elements) can also show the page number and the page count.
+  const inBand = isPositioned(element)
   const insert = (path: string) => {
     if (!path) return
     const at = cursor ?? text.length
@@ -596,7 +618,7 @@ function TextContent({
   return (
     <Section title="Content">
       <div className="flex flex-col gap-2">
-        <Field label="Text" htmlFor={k('text')} hint="Line breaks are kept. Insert data as {{path}} or {{path|money}}.">
+        <Field label="Text" htmlFor={k('text')} hint={inBand ? 'Line breaks are kept. Use {{page}} and {{pages}} for page numbers, or insert data as {{path}}.' : 'Line breaks are kept. Insert data as {{path}} or {{path|money}}.'}>
           <Textarea
             id={k('text')}
             value={text}
@@ -611,8 +633,14 @@ function TextContent({
           />
         </Field>
         {!readOnly && (
-          <Select aria-label="Insert data field" value="" onChange={(e) => insert(e.target.value)} disabled={scalarPaths(fields).length === 0}>
+          <Select aria-label="Insert data field" value="" onChange={(e) => insert(e.target.value)} disabled={scalarPaths(fields).length === 0 && !inBand}>
             <option value="">Insert data field…</option>
+            {inBand && (
+              <optgroup label="Page numbers">
+                <option value="page">Page number</option>
+                <option value="pages">Total pages</option>
+              </optgroup>
+            )}
             {scalarPaths(fields).map((f) => (
               <option key={f.path} value={f.path}>
                 {f.path}

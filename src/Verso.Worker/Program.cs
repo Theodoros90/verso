@@ -21,7 +21,8 @@ builder.Services.AddVersoWorkerUseCases();
 // PDF printing with Chromium: only this process ever starts a browser (the API never does).
 builder.Services.Configure<PdfPrinterOptions>(builder.Configuration.GetSection(PdfPrinterOptions.Section));
 builder.Services.AddSingleton<ChromiumPdfPrinter>();
-builder.Services.AddSingleton<IPdfPrinter>(sp => sp.GetRequiredService<ChromiumPdfPrinter>());
+// Header/footer page rules (first page only, last page only…) are applied around Chromium, which can only repeat a band on every page.
+builder.Services.AddSingleton<IPdfPrinter>(sp => new PageRulePdfPrinter(sp.GetRequiredService<ChromiumPdfPrinter>(), sp.GetRequiredService<IPdfCombiner>()));
 builder.Services.AddHostedService<PdfPrinterWarmUp>();
 
 // Word output: plain text blocks → .docx (Open XML SDK; no browser, no scripting).

@@ -148,6 +148,36 @@ public sealed class TemplateApiTests(MigratedDatabaseFixture fixture)
     }
 
     [Fact]
+    public async Task SaveDraft_StoresTheHeaderAndFooterPageRule_AndRejectsAnUnknownOne()
+    {
+        var id = (await CreateTemplateAsync()).GetProperty("id").GetGuid();
+        var (_, etag) = await GetDraftAsync(id);
+        var body = DraftBody("rules");
+        body["layout"] = new JsonObject
+        {
+            ["layoutSchemaVersion"] = 1,
+            ["header"] = new JsonObject { ["heightMm"] = 20, ["showOn"] = "first", ["elements"] = new JsonArray() },
+            ["footer"] = new JsonObject { ["heightMm"] = 12, ["showOn"] = "not-first", ["elements"] = new JsonArray() },
+        };
+
+        using (var saved = await PutDraftAsync(id, etag, body))
+        {
+            Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+            etag = ETagOf(saved);
+        }
+
+        var (draft, _) = await GetDraftAsync(id);
+        var layout = draft.GetProperty("layout");
+        Assert.Equal("first", layout.GetProperty("header").GetProperty("showOn").GetString());
+        Assert.Equal("not-first", layout.GetProperty("footer").GetProperty("showOn").GetString());
+
+        body["layout"]!["footer"]!["showOn"] = "sometimes";
+        using var rejected = await PutDraftAsync(id, etag, body);
+        var errors = (await AssertProblemAsync(rejected, HttpStatusCode.BadRequest, "validation")).GetProperty("errors");
+        Assert.True(errors.TryGetProperty("layout.footer.showOn", out _));
+    }
+
+    [Fact]
     public async Task Publish_WithStaleETag_IsRejected_AndNothingIsPublished()
     {
         var id = (await CreateTemplateAsync()).GetProperty("id").GetGuid();

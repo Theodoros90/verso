@@ -13,7 +13,15 @@ public enum DocxProtection
     ReadOnly,
 }
 
-public sealed record ResolvedRun(string Text, bool Bold);
+/// <summary>Which page field a run stands for in a header or footer: this page's number or the page count.</summary>
+public enum PageField
+{
+    Page,
+    Pages,
+}
+
+/// <param name="Field">When set, the run is a Word PAGE or NUMPAGES field (and <paramref name="Text"/> is ignored).</param>
+public sealed record ResolvedRun(string Text, bool Bold, PageField? Field = null);
 
 public abstract record ResolvedBlock(decimal SpaceBeforeMm);
 
@@ -41,7 +49,9 @@ public sealed record ResolvedDocument(
     IReadOnlyList<ResolvedBlock> Header,
     IReadOnlyList<ResolvedBlock> Body,
     IReadOnlyList<ResolvedBlock> Footer,
-    IReadOnlyList<RenderIssue> Issues);
+    IReadOnlyList<RenderIssue> Issues,
+    PageVisibility HeaderShow = PageVisibility.All,
+    PageVisibility FooterShow = PageVisibility.All);
 
 /// <summary>Writes a <see cref="ResolvedDocument"/> as a .docx file. The contract lives here (pure); the implementation is wired only in the Worker.</summary>
 public interface IDocxWriter

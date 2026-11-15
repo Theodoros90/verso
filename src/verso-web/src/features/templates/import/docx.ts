@@ -1,4 +1,4 @@
-import { ImportError, MAX_IMAGE_BYTES, MAX_PARAGRAPHS, sniffImage, toDataUri, type ParaStyle, type ParsedBlock, type ParsedDoc } from './types'
+import { ImportError, MAX_IMAGE_BYTES, MAX_PARAGRAPHS, pageFieldToken, sniffImage, toDataUri, type ParaStyle, type ParsedBlock, type ParsedDoc } from './types'
 import { readZip, type Zip } from './zip'
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
@@ -63,6 +63,8 @@ interface Context {
   defaults: ParaStyle
   report: Set<string>
   paragraphs: number
+  /** A header or footer part: page-number fields become {{page}} and {{pages}} there. */
+  band: boolean
 }
 
 function resolveStyle(ctx: Context, id: string | null, depth = 0): ParaStyle {
@@ -95,7 +97,7 @@ async function loadContext(zip: Zip, relsPath: string, loadStyles: boolean): Pro
       styles.set(id, def)
     }
   }
-  return { zip, rels, styles, defaults, report: new Set(), paragraphs: 0 }
+  return { zip, rels, styles, defaults, report: new Set(), paragraphs: 0, band: false }
 }
 
 /** Reads a DOCX package into blocks. Approximate by design: see the report for what is simplified or left out. */
@@ -130,7 +132,7 @@ export async function parseDocx(buffer: ArrayBuffer): Promise<ParsedDoc> {
       if (!part || part.includes('..')) continue
       const partDoc = parseXml(await zip.read(`word/${part}`))
       if (!partDoc) continue
-      const partCtx = { ...(await loadContext(zip, `word/_rels/${part}.rels`, false)), styles: ctx.styles, defaults: ctx.defaults, report: ctx.report }
+      const partCtx = { ...(await loadContext(zip, `word/_rels/${part}.rels`, false)), styles: ctx.styles, defaults: ctx.defaults, report: ctx.report, band: true }
       doc[target] = await readBlocks(partCtx, partDoc.documentElement, false)
     }
   }
@@ -166,6 +168,9 @@ async function readParagraph(ctx: Context, p: Element): Promise<ParsedBlock[]> {
 
   const runs: { text: string; style: ParaStyle }[] = []
   const images: ParsedBlock[] = []
+  // Complex fields (begin … instruction … separate … shown result … end), innermost last. A page-number field in a band
+  // is written as its token and its shown result ("1") is dropped.
+  const fields: { instruction: string; replaced: boolean }[] = []
   const walk = async (node: Element) => {
     for (const el of node.children) {
       if (el.namespaceURI !== W) continue
@@ -175,8 +180,24 @@ async function readParagraph(ctx: Context, p: Element): Promise<ParsedBlock[]> {
           let text = ''
           for (const c of el.children) {
             if (c.namespaceURI !== W) continue
-            if (c.localName === 't') text += c.textContent ?? ''
-            else if (c.localName === 'tab') text += ' '
+            if (c.localName === 'fldChar') {
+              const kind = attr(c, 'fldCharType')
+              if (kind === 'begin') fields.push({ instruction: '', replaced: false })
+              else if (kind === 'end') fields.pop()
+              else if (kind === 'separate' && ctx.band) {
+                const field = fields[fields.length - 1]
+                const token = field ? pageFieldToken(field.instruction) : null
+                if (field && token) {
+                  text += token
+                  field.replaced = true
+                }
+              }
+            } else if (c.localName === 'instrText') {
+              const field = fields[fields.length - 1]
+              if (field) field.instruction += c.textContent ?? ''
+            } else if (c.localName === 't') {
+              if (!fields.some((f) => f.replaced)) text += c.textContent ?? ''
+            } else if (c.localName === 'tab') text += ' '
             else if (c.localName === 'br' || c.localName === 'cr') text += '\n'
             else if (c.localName === 'noBreakHyphen') text += '-'
             else if (c.localName === 'drawing') {
@@ -187,11 +208,16 @@ async function readParagraph(ctx: Context, p: Element): Promise<ParsedBlock[]> {
           if (text) runs.push({ text, style })
           break
         }
+        case 'fldSimple': {
+          const token = ctx.band ? pageFieldToken(attr(el, 'instr') ?? '') : null
+          if (token) runs.push({ text: token, style: { ...base, ...runProps(first(first(el, 'r'), 'rPr')) } })
+          else await walk(el)
+          break
+        }
         case 'hyperlink':
         case 'smartTag':
         case 'sdt':
         case 'ins':
-        case 'fldSimple':
           await walk(first(el, 'sdtContent') ?? el)
           break
       }
