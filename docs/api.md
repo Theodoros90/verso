@@ -24,6 +24,8 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | 400 | `validation` | Field errors; see `errors` |
 | 404 | `template.not_found` | Unknown template id |
 | 404 | `template.version_not_found` | Version id doesn't belong to the template |
+| 404 | `category.not_found` | Unknown document category id |
+| 409 | `category.name_taken` | Create or rename to a name another category already has (case-insensitive) |
 | 409 | `template.key_taken` | Create with a key that already exists |
 | 409 | `template.no_draft` | Reading, saving or publishing a draft when there is none (e.g. right after publishing). Published versions are immutable. Start a new draft first. |
 | 409 | `template.draft_exists` | Starting a draft when one already exists |
@@ -105,8 +107,9 @@ A template has at most one draft at a time. Version numbers start at 1 and are a
 
 | Method | Path | Success | Purpose |
 |---|---|---|---|
-| GET | `/api/v1/templates` | 200 page of `TemplateSummary` | List, ordered by key |
-| POST | `/api/v1/templates` | 201 `Template`, `Location` | Create with an empty draft |
+| GET | `/api/v1/templates` | 200 page of `TemplateSummary` | List, ordered by key. `?categoryId=<guid>` keeps one category, `?categoryId=none` the templates without one; anything else is 400 `validation` (`categoryId`) |
+| POST | `/api/v1/templates` | 201 `Template`, `Location` | Create with an empty draft; optional `categoryId` |
+| PUT | `/api/v1/templates/{id}/category` | 200 `Template` | Assign `{ "categoryId": "..." }` or clear (`null`) the category; see [Document categories](#document-categories) |
 | GET | `/api/v1/templates/{id}` | 200 `Template` | Metadata |
 | GET | `/api/v1/templates/{id}/versions` | 200 `TemplateVersionSummary[]` | History: draft first, then published newest first |
 | GET | `/api/v1/templates/{id}/versions/{versionId}` | 200 `TemplateVersion` + `ETag` | One version with full content |
@@ -120,19 +123,20 @@ A template has at most one draft at a time. Version numbers start at 1 and are a
 ### Create: `POST /api/v1/templates`
 
 ```json
-{ "key": "INV-STD", "name": "Commercial invoice", "description": "Optional", "documentType": "Invoice" }
+{ "key": "INV-STD", "name": "Commercial invoice", "description": "Optional", "documentType": "Invoice", "categoryId": null }
 ```
 
 - `key`: 2–32 characters, `A–Z`, `0–9`, `-`, starting with a letter. Unique; never changes.
 - `name`: 1–200 characters. `description`: up to 1000.
 - `documentType`: optional, defaults to `Invoice` (the only value in the MVP).
+- `categoryId`: optional; an active [document category](#document-categories). Unknown or deactivated is 400 `validation` (`categoryId`).
 
 Response `Template`:
 
 ```json
 { "id": "…", "key": "INV-STD", "name": "Commercial invoice", "description": null, "documentType": "Invoice",
   "createdAt": "2026-11-09T08:49:25.9+00:00", "createdBy": "dev.user",
-  "latestPublishedVersion": null, "draftVersionId": "…" }
+  "latestPublishedVersion": null, "draftVersionId": "…", "categoryId": null, "categoryName": null }
 ```
 
 ### Save draft: `PUT /api/v1/templates/{id}/draft`
@@ -195,7 +199,7 @@ Without `data` (or without a body), the draft's `sampleData` is used. `data` mus
 
 ### Summaries
 
-`TemplateSummary`: `{ id, key, name, documentType, latestPublishedVersion, hasDraft, updatedAt }`
+`TemplateSummary`: `{ id, key, name, documentType, latestPublishedVersion, hasDraft, updatedAt, categoryId, categoryName }`
 
 `TemplateVersionSummary`: `{ versionId, versionNumber, status, contentHash, updatedAt, updatedBy, publishedAt, publishedBy }`
 
@@ -295,6 +299,25 @@ Hub: `/hubs/executions` (plan §5.5). Needs sign-in with any Verso role; browser
 Notifications are hints, not the source of truth: after one arrives, read the REST API. Subscribe first, then read once, because the work may have finished before you subscribed. `status` in `ExecutionUpdated` is the execution's status when the notification was sent, which can be newer than `eventId` when several events were relayed together. A client in more than one group (for example an execution and all executions) may receive the same notification twice, so handle them idempotently.
 
 **Previews:** the API relays finished previews from the database about every 500 ms (the Worker and the API share only the database), so a notification arrives within about a second. **Executions:** the relay polls `ExecutionEvent` rows about every 500 ms, starting from the latest event when the API starts. Event ids are database identity values and concurrent runs can commit out of order, so each poll also re-reads the last 100 ids and skips those already sent; an event that becomes visible late is still delivered. Group memberships don't survive a reconnect: after SignalR reconnects, subscribe again and catch up with `GET /api/v1/executions/{id}/events?after={lastEventId}`. Clients should also poll slowly (the designer polls every 3 s, the run view every 3 s while a run is unfinished) in case WebSockets are blocked.
+
+## Document categories
+
+An optional, flat label on templates (for example Invoices, Statements). Categories are never deleted, only deactivated, and are not carried by export / import. See [ADR 0013](adr/0013-document-categories.md).
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/document-categories` | 200 `DocumentCategory[]` | Active categories ordered by name. `?includeInactive=true` adds the deactivated ones |
+| POST | `/api/v1/document-categories` | 201 `DocumentCategory`, `Location` | Create `{ name }` |
+| PUT | `/api/v1/document-categories/{id}` | 200 `DocumentCategory` | Rename `{ name }` |
+| POST | `/api/v1/document-categories/{id}/deactivate` | 200 `DocumentCategory` | Stop offering it for new assignments; templates that have it keep it |
+| POST | `/api/v1/document-categories/{id}/activate` | 200 `DocumentCategory` | Offer it again |
+| PUT | `/api/v1/templates/{id}/category` | 200 `Template` | Assign `{ "categoryId": "..." }` or clear it with `null` |
+
+- `DocumentCategory`: `{ id, name, isActive, templateCount }`. `name`: 1 to 100 characters after trimming, unique case-insensitively.
+- Reads need any role; changes need the TemplateAuthoring role (including `PUT /templates/{id}/category`).
+- Errors: 400 `validation` (`name`; `categoryId` when assigning an unknown or deactivated category, or a bad `?categoryId=` filter), 404 `category.not_found` / `template.not_found`, 409 `category.name_taken`. Assigning a template's current category is allowed even if it is deactivated.
+- Audited: `CategoryCreated`, `CategoryRenamed`, `CategoryDeactivated`, `CategoryActivated` (`entityType=DocumentCategory`) and `TemplateCategoryChanged` (`entityType=Template`). Repeating an action, or setting the category a template already has, changes nothing and writes no entry.
+- Assigning a category doesn't touch the draft or any version: no ETag or `If-Match` is involved.
 
 ## Workflows
 

@@ -45,7 +45,7 @@ public static class TemplateEndpoints
             .ProducesValidationProblem()
             .ProducesProblem(StatusCodes.Status404NotFound);
 
-        group.MapGet("/{id:guid}/versions",async (Guid id, TemplateService service, CancellationToken ct) =>
+        group.MapGet("/{id:guid}/versions", async (Guid id, TemplateService service, CancellationToken ct) =>
                 (await service.ListVersionsAsync(id, ct)).ToResult())
             .WithName("ListTemplateVersions")
             .Produces<IReadOnlyList<TemplateVersionSummaryDto>>()

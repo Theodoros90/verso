@@ -101,8 +101,11 @@ All ids are GUIDs (sequential for clustered-index friendliness). All timestamps 
 ### Templates module (`templates` schema)
 
 **Template**
-- `Id`, `Key` (unique, e.g. `INV-STD`), `Name`, `Description`, `DocumentType` (`Invoice` for MVP)
+- `Id`, `Key` (unique, e.g. `INV-STD`), `Name`, `Description`, `DocumentType` (`Invoice` for MVP), `CategoryId` (optional, post-MVP, ADR 0013)
 - `CreatedAt/By`, `RowVersion`
+
+**DocumentCategory** (post-MVP, ADR 0013)
+- `Id`, `Name` (1 to 100, unique case-insensitively), `IsActive`, `CreatedAt/By`. Flat, optional, one per template; never deleted, only deactivated.
 
 **TemplateVersion**
 - `Id`, `TemplateId`, `VersionNumber` (int, assigned on publish; draft has none)
@@ -191,6 +194,10 @@ Conventions:
 | POST | `/templates/{id}/draft/preview/pdf` | Queue a PDF preview job → `202 { previewId }`; result via SignalR or `GET /previews/{previewId}` |
 | POST | `/templates/{id}/draft/publish` | Validate + freeze draft as next version (`If-Match`) |
 | POST | `/templates/{id}/draft` | Start a new draft from the latest published version (added in M2) |
+| PUT | `/templates/{id}/category` | Assign or clear the template's category (post-MVP, ADR 0013) |
+| GET, POST | `/document-categories` | List (`?includeInactive`) / create categories (post-MVP, ADR 0013) |
+| PUT | `/document-categories/{id}` | Rename a category |
+| POST | `/document-categories/{id}/deactivate`, `/activate` | Deactivate or reactivate a category |
 
 Draft save body (abridged):
 
@@ -574,6 +581,13 @@ Requested by the user as a separate feature. It is the first real (not simulated
 - Admin screen (*Folder locations*, added the same day at the requester's request) was removed on 2026-11-12 (migration `RemoveManagedFolderLocations`); the `Administration` policy and `administer` permission remain. See the ADR addendum.
 - Not included: XML/CSV mapping, alerting on scan failures, a screen listing all ingested files across workflows.
 - Fixed alongside (found by these tests): audit `TraceId` was `varchar(32)`, but it also stores execution correlation ids, which the API accepts with up to 64 characters. A run submitted with a longer `X-Correlation-Id` failed at its final save and never finished. The column is now `varchar(64)` (migration `WidenAuditTraceId`, widening only), with a regression test.
+
+### Document categories (2026-11-16)
+
+Requested by the product owner. Full decision record: [ADR 0013](../adr/0013-document-categories.md).
+- Optional, flat category on templates (`templates.DocumentCategories`, nullable `Template.CategoryId`; migration `AddDocumentCategories`), maintained in the first tab of the Configuration drawer. Chosen in the New template dialog and the designer, and used as a filter on the template list.
+- Never deleted, only deactivated (the API database login has no DELETE); not carried by export / import (ADR 0010); one category per template; no new package.
+- Known minor gaps: the list filter can't select a deactivated category, the `TemplateCreated` audit entry doesn't record the category, and assigning a category while it is being deactivated is a benign check-then-save race.
 
 ## 10. Assumptions and unresolved decisions
 
