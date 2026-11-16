@@ -613,7 +613,7 @@ Append-only log, oldest first unless `newestFirst=true` (`sequence` is the autho
 
 | `action` | `details` |
 |---|---|
-| `TemplateCreated` | `{ key }` |
+| `TemplateCreated` | `{ key, categoryId }` (`categoryId` null when created without a category) |
 | `TemplateDraftSaved` | `{ versionId }` |
 | `TemplateDraftCreated` | `{ versionId, fromVersion }` |
 | `TemplatePublished` | `{ versionId, versionNumber, contentHash }` |

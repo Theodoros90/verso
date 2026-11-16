@@ -58,6 +58,7 @@ DENY DELETE         ON SCHEMA::executions                TO verso_api, verso_wor
 DENY DELETE         ON SCHEMA::workflows                 TO verso_api, verso_worker;
 DENY DELETE         ON OBJECT::templates.Templates       TO verso_api, verso_worker;
 DENY DELETE         ON OBJECT::templates.TemplateVersions TO verso_api, verso_worker;
+DENY DELETE         ON OBJECT::templates.DocumentCategories TO verso_api, verso_worker;  -- categories are deactivated, never deleted
 DENY DELETE         ON OBJECT::ingestion.FolderLocations  TO verso_api, verso_worker;  -- withdrawn locations are disabled, never deleted
 DENY UPDATE         ON OBJECT::ingestion.FolderFiles      TO verso_api;               -- only the Worker changes ingestion records
 

@@ -43,7 +43,7 @@ public sealed class TemplateService(IVersoDbContext db, ICurrentUser user, TimeP
         var template = Template.Create(key, request.Name!.Trim(), request.Description?.Trim(), documentType, TemplateContent.Empty, user.Id, now);
         template.SetCategory(request.CategoryId);
         db.Templates.Add(template);
-        Audit(Actions.Created, template.Id, now, new { key });
+        Audit(Actions.Created, template.Id, now, new { key, categoryId = request.CategoryId });
         await db.SaveChangesAsync(ct);
 
         return ToDto(template, await CategoryNameAsync(template.CategoryId, ct));

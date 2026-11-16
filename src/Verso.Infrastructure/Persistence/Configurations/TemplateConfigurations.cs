@@ -81,7 +81,7 @@ internal sealed class DocumentCategoryConfiguration : IEntityTypeConfiguration<D
         builder.ToTable("DocumentCategories", Schemas.Templates);
         builder.HasKey(c => c.Id);
         builder.Property(c => c.Id).ValueGeneratedNever();
-        builder.Property(c => c.Name).HasMaxLength(100).IsRequired();
+        builder.Property(c => c.Name).HasMaxLength(100).IsRequired().UseCollation("Latin1_General_100_CI_AS"); // names are unique case-insensitively, stated explicitly rather than left to the database default
         builder.HasIndex(c => c.Name).IsUnique().HasDatabaseName("UX_DocumentCategories_Name");
         builder.Property(c => c.CreatedBy).HasMaxLength(200).IsRequired();
     }

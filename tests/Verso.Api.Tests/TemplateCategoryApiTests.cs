@@ -23,6 +23,8 @@ public sealed class TemplateCategoryApiTests(MigratedDatabaseFixture fixture)
         Assert.Equal(template.GetProperty("id").GetGuid(), listed.GetProperty("id").GetGuid());
         Assert.Equal(category.Id, listed.GetProperty("categoryId").GetGuid());
         Assert.Equal(category.Name, listed.GetProperty("categoryName").GetString());
+        var createdAudit = await AuditEntriesAsync(template.GetProperty("id").GetGuid());
+        Assert.Equal(category.Id, createdAudit.Single(e => e.GetProperty("action").GetString() == "TemplateCreated").GetProperty("details").GetProperty("categoryId").GetGuid());
     }
 
     [Fact]
@@ -184,6 +186,12 @@ public sealed class TemplateCategoryApiTests(MigratedDatabaseFixture fixture)
         using var response = await _client.GetAsync(new Uri($"{TemplateRoute}?{query}", UriKind.Relative));
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return [.. (await ReadAsync(response)).GetProperty("items").EnumerateArray()];
+    }
+
+    private async Task<List<JsonElement>> AuditEntriesAsync(Guid id)
+    {
+        using var audit = await _client.GetAsync(new Uri($"/api/v1/audit?entityType=Template&entityId={id}", UriKind.Relative));
+        return [.. (await ReadAsync(audit)).GetProperty("items").EnumerateArray()];
     }
 
     private async Task<List<string?>> AuditActionsAsync(Guid id)

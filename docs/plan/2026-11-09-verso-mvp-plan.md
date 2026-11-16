@@ -587,7 +587,7 @@ Requested by the user as a separate feature. It is the first real (not simulated
 Requested by the product owner. Full decision record: [ADR 0013](../adr/0013-document-categories.md).
 - Optional, flat category on templates (`templates.DocumentCategories`, nullable `Template.CategoryId`; migration `AddDocumentCategories`), maintained in the first tab of the Configuration drawer. Chosen in the New template dialog and the designer, and used as a filter on the template list.
 - Never deleted, only deactivated (the API database login has no DELETE); not carried by export / import (ADR 0010); one category per template; no new package.
-- Known minor gaps: the list filter can't select a deactivated category, the `TemplateCreated` audit entry doesn't record the category, and assigning a category while it is being deactivated is a benign check-then-save race.
+- Known minor gaps: the list filter can't select a deactivated category, and assigning a category while it is being deactivated is a benign check-then-save race.
 
 ## 10. Assumptions and unresolved decisions
 
