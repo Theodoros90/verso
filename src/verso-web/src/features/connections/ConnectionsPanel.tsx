@@ -4,9 +4,12 @@ import { useState } from 'react'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/form'
+import { emailRelaysApi } from '@/lib/api/emailRelays'
+import type { EmailRelayDto } from '@/lib/api/generated'
 
 import { newLocalId, useConnections } from '../configuration/stores'
 import { ConnectionDialog, type ConnectionDraft } from './ConnectionDialog'
+import { RelayCard, RelayEditDialog, useEmailRelays } from './EmailRelayCards'
 import {
   abbreviate,
   CONNECTION_GROUPS,
@@ -21,6 +24,8 @@ export function ConnectionsPanel() {
   const [connections, setConnections] = useConnections()
   const [editing, setEditing] = useState<Connection | 'new' | null>(null)
   const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null)
+  const { relays, loadError, reload } = useEmailRelays()
+  const [editingRelay, setEditingRelay] = useState<EmailRelayDto | null>(null)
 
   const toggle = (id: string, enabled: boolean) => {
     setConnections((list) => list.map((c) => (c.id === id ? { ...c, enabled } : c)))
@@ -43,6 +48,18 @@ export function ConnectionsPanel() {
     setEditing(null)
   }
 
+  const toggleRelay = async (r: EmailRelayDto, active: boolean) => {
+    try {
+      await (active ? emailRelaysApi.activate(r.id) : emailRelaysApi.deactivate(r.id))
+      setNotice({ tone: 'ok', text: `${r.name} turned ${active ? 'on' : 'off'}.` })
+      await reload()
+    } catch {
+      setNotice({ tone: 'err', text: `Could not change ${r.name}.` })
+    }
+  }
+
+  const relayNames = relays.map((r) => r.name)
+
   return (
     <div className="px-5 py-4">
       <div className="mb-2 flex flex-wrap items-start gap-3">
@@ -63,7 +80,8 @@ export function ConnectionsPanel() {
 
       {CONNECTION_GROUPS.map((group) => {
         const items = connections.filter((c) => c.group === group.name)
-        if (items.length === 0) return null
+        const groupRelays = group.name === 'Delivery channels' ? relays : []
+        if (items.length === 0 && groupRelays.length === 0) return null
         return (
           <section key={group.name} aria-labelledby={groupId(group.name)} className="mt-5 first-of-type:mt-0">
             <div className="mb-3 flex items-baseline gap-2.5">
@@ -71,6 +89,9 @@ export function ConnectionsPanel() {
               <p className="m-0 text-[13px] text-ink-3">{group.description}</p>
             </div>
             <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(270px,1fr))] gap-3.5 p-0">
+              {groupRelays.map((r) => (
+                <RelayCard key={r.id} relay={r} onToggle={(active) => void toggleRelay(r, active)} onConfigure={() => setEditingRelay(r)} />
+              ))}
               {items.map((c) => {
                 const status = displayStatus(c)
                 return (
@@ -112,15 +133,35 @@ export function ConnectionsPanel() {
         )
       })}
 
-      <p className="mt-6 text-xs text-ink-3">Prototype: these connections are synthetic, kept in this browser only, and the test is simulated. No external service is contacted and no secret is stored.</p>
+      {loadError && <p role="alert" className="mt-4 text-[13px] text-err">Could not load the email connections.</p>}
+
+      <p className="mt-6 text-xs text-ink-3">Prototype: these connections are synthetic, kept in this browser only, and the test is simulated. No external service is contacted and no secret is stored. The exception is an email connection (authentication SMTP credentials): it is real, stored on the server, and its password is encrypted and never shown again.</p>
 
       {editing && (
         <ConnectionDialog
           key={editing === 'new' ? 'new' : editing.id}
           connection={editing === 'new' ? null : editing}
-          existingNames={connections.filter((c) => editing === 'new' || c.id !== editing.id).map((c) => c.name)}
+          existingNames={[...connections.filter((c) => editing === 'new' || c.id !== editing.id).map((c) => c.name), ...relayNames]}
           onSave={save}
+          onRelayCreated={(name) => {
+            setEditing(null)
+            setNotice({ tone: 'ok', text: `Email connection “${name}” created.` })
+            void reload()
+          }}
           onClose={() => setEditing(null)}
+        />
+      )}
+
+      {editingRelay && (
+        <RelayEditDialog
+          key={editingRelay.id}
+          relay={editingRelay}
+          onClose={() => setEditingRelay(null)}
+          onSaved={async (name) => {
+            setEditingRelay(null)
+            setNotice({ tone: 'ok', text: `Settings saved for ${name}.` })
+            await reload()
+          }}
         />
       )}
     </div>

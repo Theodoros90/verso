@@ -91,7 +91,7 @@ describe('Configuration drawer (the gear)', () => {
     const drawer = await openConfiguration('Connections')
 
     expect(within(drawer).getByRole('tab', { name: 'Connections' })).toHaveAttribute('aria-selected', 'true')
-    expect(await within(drawer).findByRole('heading', { name: 'SMTP relay' })).toBeInTheDocument()
+    expect(await within(drawer).findByRole('heading', { name: 'Print house SFTP' })).toBeInTheDocument()
 
     await userEvent.click(within(drawer).getByRole('button', { name: 'Close configuration' }))
     expect(screen.queryByRole('dialog', { name: 'Configuration' })).not.toBeInTheDocument()

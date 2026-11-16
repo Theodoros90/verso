@@ -841,7 +841,9 @@ public static class NodeCatalog
                 "body": { "type": "string", "title": "Message", "maxLength": 5000, "x-widget": "multiline",
                   "description": "Plain text; fields are written as {{customer.name}}. When an HTML email is attached this is its plain-text alternative." },
                 "attach": { "type": "string", "title": "Attach", "enum": {{{JsonSerializer.Serialize(EmailAttach.Keys)}}}, "x-enumLabels": {{{JsonSerializer.Serialize(EmailAttach.Values)}}},
-                  "description": "The document made by the Generate step before this one (up to 10 MB)." } },
+                  "description": "The document made by the Generate step before this one (up to 10 MB)." },
+                "relay": { "type": "string", "title": "Email connection", "maxLength": 64, "pattern": "^$|{{{Escape(Executions.EmailRelays.KeyPattern)}}}", "x-widget": "email-relay",
+                  "description": "Which email connection sends the message. Connections are created once in Configuration, Connections (authentication SMTP credentials). Default uses the relay the administrator set up for the Worker." } },
               "required": ["to", "subject", "attach"] }
             """,
             """{ "to": "{{customer.email}}", "subject": "Invoice {{invoice.number}}", "body": "Dear {{customer.name}},\n\nPlease find your invoice {{invoice.number}} attached.", "attach": "document" }"""),

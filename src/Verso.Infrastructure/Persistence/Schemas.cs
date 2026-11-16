@@ -12,6 +12,9 @@ public static class Schemas
     /// <summary>Folder input (approved locations, scans, ingested files, access tests). Created by AddFolderInput.</summary>
     public const string Ingestion = "ingestion";
 
+    /// <summary>Email relays managed in the app (ADR 0015). Created by the EmailRelays migration.</summary>
+    public const string Mail = "mail";
+
     /// <summary>Hangfire job storage (created by our migrations, not by Hangfire at startup).</summary>
     public const string Jobs = "hangfire";
 

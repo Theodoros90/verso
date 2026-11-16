@@ -21,6 +21,9 @@ internal sealed class VersoApiFactory(string connectionString) : WebApplicationF
 {
     public const string DefaultUser = "dev.admin";
 
+    /// <summary>A synthetic master key for the tests (the bytes 0 to 31 as base64). Not a secret.</summary>
+    public const string TestMasterKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+
     /// <summary>Records the "preview ready" notifications the relay sends (instead of pushing them over SignalR).</summary>
     public RecordingPreviewNotifier Notifications { get; } = new();
 
@@ -44,6 +47,7 @@ internal sealed class VersoApiFactory(string connectionString) : WebApplicationF
         builder.UseSetting("ConnectionStrings:Verso", connectionString);
         builder.UseSetting("Documents:RootPath", DocumentRoot);
         builder.UseSetting("Auth:Mode", "Development");
+        builder.UseSetting("Secrets:MasterKey", TestMasterKey); // synthetic test key (bytes 0..31), not a secret
         // The whole suite shares one host and one clock minute: the production default (120 submissions per user per minute) would
         // make late tests fail with 429 as the suite grows. LimitsTests sets its own small value to test the limiter.
         builder.UseSetting("Limits:SubmissionsPerMinute", "100000");

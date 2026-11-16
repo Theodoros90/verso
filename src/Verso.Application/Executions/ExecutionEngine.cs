@@ -816,17 +816,23 @@ public sealed partial class ExecutionEngine(
             attached = document.FileName;
         }
 
+        var relay = EmailRelays.Resolve(Text("relay"));
+        if (!EmailRelays.IsValidKey(relay))
+        {
+            throw new StepException("email.relay_unknown", "The 'Email connection' setting is not a valid relay key (lower-case letters, digits and hyphens).", retryable: false);
+        }
+
         string messageId;
         try
         {
-            messageId = await email.SendAsync(new EmailMessage(recipients, subjectLine, body.Text, html, attachments), ct);
+            messageId = await email.SendAsync(new EmailMessage(recipients, subjectLine, body.Text, html, attachments, relay), ct);
         }
         catch (EmailSendException ex)
         {
             throw new StepException(ex.Code, ex.Message, ex.Retryable);
         }
 
-        return new Outcome("sent", new { recipients = recipients.Count, attachment = attached, htmlBody = html is not null, messageId, warnings });
+        return new Outcome("sent", new { relay, recipients = recipients.Count, attachment = attached, htmlBody = html is not null, messageId, warnings });
     }
 
     /// <summary>Upload to SFTP is simulated: nothing connects to a server. The step succeeds and its result says that nothing was uploaded.</summary>

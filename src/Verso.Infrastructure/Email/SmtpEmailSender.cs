@@ -3,6 +3,7 @@ using System.Net.Mail;
 using System.Net.Mime;
 using Microsoft.Extensions.Options;
 using Verso.Application.Executions;
+using Verso.Application.Mail;
 
 namespace Verso.Infrastructure.Email;
 
@@ -27,25 +28,38 @@ public sealed class EmailOptions
     /// <summary>When not empty, only these recipient domains (such as <c>example.com</c>) can receive mail; any other recipient refuses the whole message.</summary>
     public string[] AllowedRecipientDomains { get; set; } = [];
     public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
+    /// <summary>
+    /// More relays, by key (<c>Email:Relays:{key}</c>, ADR 0006 addendum 1), each with its own settings and credentials. The settings above are the relay
+    /// <c>default</c>, used when a Send email step names none. A relay inside a relay is ignored.
+    /// </summary>
+    public Dictionary<string, EmailOptions> Relays { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>Sends through <see cref="SmtpClient"/> (built in; no extra package). One connection per message.</summary>
-public sealed class SmtpEmailSender(IOptions<EmailOptions> options) : IEmailSender
+public sealed class SmtpEmailSender(IEmailRelayStore relays) : IEmailSender
 {
     public async Task<string> SendAsync(EmailMessage message, CancellationToken ct)
     {
-        var o = options.Value;
-        if (string.IsNullOrWhiteSpace(o.Host) || string.IsNullOrWhiteSpace(o.From))
+        var key = EmailRelays.Resolve(message.Relay);
+        var o = EmailRelays.IsValidKey(key) ? await relays.FindAsync(key, ct) : null;
+        if (o is null)
         {
-            throw new EmailSendException("email.not_configured", "Email is not set up: the administrator must set Email:Host and Email:From for the Worker.", retryable: false);
+            throw new EmailSendException("email.relay_unknown", $"There is no active email relay '{key}': define it in Configuration, Connections, Email relays (or under Email:Relays for the Worker).", retryable: false);
         }
 
-        if (o.AllowedRecipientDomains.Length > 0)
+        if (string.IsNullOrWhiteSpace(o.Host) || string.IsNullOrWhiteSpace(o.From))
+        {
+            throw new EmailSendException("email.not_configured", key == EmailRelays.DefaultKey
+                ? "Email is not set up: the administrator must set Email:Host and Email:From for the Worker."
+                : $"Email relay '{key}' is not set up: it needs a server address and a sender.", retryable: false);
+        }
+
+        if (o.AllowedRecipientDomains.Count > 0)
         {
             var blocked = message.To.FirstOrDefault(a => !o.AllowedRecipientDomains.Contains(a[(a.LastIndexOf('@') + 1)..], StringComparer.OrdinalIgnoreCase));
             if (blocked is not null)
             {
-                throw new EmailSendException("email.recipient_not_allowed", "A recipient's domain is not on the list of domains Verso may send to (Email:AllowedRecipientDomains).", retryable: false);
+                throw new EmailSendException("email.recipient_not_allowed", "A recipient's domain is not on the relay's list of domains Verso may send to (AllowedRecipientDomains).", retryable: false);
             }
         }
 

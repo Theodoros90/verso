@@ -16,6 +16,8 @@ public static class DependencyInjection
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<TemplateService>();
         services.AddScoped<DocumentCategoryService>();
+        services.AddScoped<Mail.EmailRelayService>();
+        services.AddScoped<Mail.EmailRelayTests>();
         services.AddScoped<TemplatePreview>();
         services.AddScoped<PdfPreviews>();
         services.AddScoped<WorkflowService>();
@@ -44,6 +46,7 @@ public static class DependencyInjection
         services.TryAddSingleton(new FolderIngestionOptions());
         services.AddScoped<FolderIngestion>();
         services.AddScoped<FolderAccessTestRunner>();
+        services.AddScoped<Mail.EmailRelayTestRunner>();
         return services;
     }
 }

@@ -56,6 +56,43 @@ public sealed class ExecutionSendEmailTests(MigratedDatabaseFixture fixture) : I
     }
 
     [Fact]
+    public async Task WithoutARelaySetting_TheDefaultRelayIsUsed()
+    {
+        var done = await RunAsync(Send());
+
+        Assert.Equal("default", Assert.Single(_email.Sent).Relay);
+        var step = done.GetProperty("steps").EnumerateArray().Single(s => s.GetProperty("nodeId").GetString() == "send");
+        Assert.Equal("default", step.GetProperty("result").GetProperty("relay").GetString());
+    }
+
+    [Fact]
+    public async Task ANamedRelay_IsPassedToTheSender_AndRecordedInHistory()
+    {
+        var config = Send();
+        config["relay"] = "statements";
+
+        var done = await RunAsync(config);
+
+        Assert.Equal("statements", Assert.Single(_email.Sent).Relay);
+        var step = done.GetProperty("steps").EnumerateArray().Single(s => s.GetProperty("nodeId").GetString() == "send");
+        Assert.Equal("statements", step.GetProperty("result").GetProperty("relay").GetString());
+    }
+
+    [Fact]
+    public async Task AnUnknownRelay_FailsTheRun_WithoutRetry()
+    {
+        _email.Failure = new EmailSendException("email.relay_unknown", "No such relay.", retryable: false);
+        var config = Send();
+        config["relay"] = "no-such-relay";
+
+        var done = await RunAsync(config);
+
+        Assert.Equal("Failed", done.GetProperty("status").GetString());
+        Assert.Equal("email.relay_unknown", done.GetProperty("failureCode").GetString());
+        Assert.Empty(_email.Sent);
+    }
+
+    [Fact]
     public async Task NoAttachment_SendsTextOnly()
     {
         await RunAsync(Send(attach: "none"));

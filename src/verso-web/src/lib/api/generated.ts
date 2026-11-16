@@ -119,6 +119,44 @@ export interface DuplicateWorkflowRequest {
   name: string | null
 }
 
+export interface EmailRelayDto {
+  id: string
+  key: string
+  name: string
+  host: string
+  port: number
+  enableSsl: boolean
+  userName: string
+  fromAddress: string
+  fromName: string
+  timeoutSeconds: number
+  allowedRecipientDomains: string[]
+  isActive: boolean
+  hasPassword: boolean
+  updatedAt: string
+  updatedBy: string
+}
+
+export interface EmailRelayOptionDto {
+  key: string
+  name: string
+  isActive: boolean
+}
+
+export interface EmailRelayTestDto {
+  id: string
+  relayKey: string
+  status: string
+  code: string | null
+  message: string | null
+  requestedAt: string
+  completedAt: string | null
+}
+
+export interface EmailRelayTestRequest {
+  toAddress: string | null
+}
+
 export interface EntraConfigDto {
   authority: string
   clientId: string
@@ -470,6 +508,21 @@ export interface SaveDraftRequest {
   layout: null | JsonElement
   dataSchema: null | JsonElement
   sampleData: null | JsonElement
+}
+
+export interface SaveEmailRelayRequest {
+  key: string | null
+  name: string | null
+  host: string | null
+  port: number | null
+  enableSsl: boolean | null
+  userName: string | null
+  fromAddress: string | null
+  fromName: string | null
+  timeoutSeconds: number | null
+  allowedRecipientDomains: string[] | null
+  password: string | null
+  clearPassword: boolean | null
 }
 
 export interface SaveWorkflowDraftRequest {

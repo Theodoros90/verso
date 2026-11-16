@@ -319,6 +319,30 @@ An optional, flat label on templates (for example Invoices, Statements). Categor
 - Audited: `CategoryCreated`, `CategoryRenamed`, `CategoryDeactivated`, `CategoryActivated` (`entityType=DocumentCategory`) and `TemplateCategoryChanged` (`entityType=Template`). Repeating an action, or setting the category a template already has, changes nothing and writes no entry.
 - Assigning a category doesn't touch the draft or any version: no ETag or `If-Match` is involved.
 
+## Email relays
+
+SMTP relays the Send email step can use by key, managed in Configuration, Connections (ADR [0015](adr/0015-email-relays-in-the-app.md); ADR 0006 addendum 1). **Administrators only** (the Admin role) for every endpoint, including reading.
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/email-relays` | 200 `EmailRelay[]` | Active relays ordered by key. `?includeInactive=true` adds the deactivated ones |
+| POST | `/api/v1/email-relays` | 201 `EmailRelay`, `Location` | Create |
+| PUT | `/api/v1/email-relays/{id}` | 200 `EmailRelay` | Update (the key never changes) |
+| POST | `/api/v1/email-relays/{id}/deactivate` | 200 `EmailRelay` | The Worker stops using it: a step naming it fails with `email.relay_unknown` |
+| POST | `/api/v1/email-relays/{id}/activate` | 200 `EmailRelay` | Use it again |
+
+| POST | `/api/v1/email-relays/{id}/tests` | 202 `EmailRelayTest`, `Location` | "Test connection": the Worker sends one test message through the saved relay to `{ toAddress }` (one plain address) |
+| GET | `/api/v1/email-relays/tests/{testId}` | 200 `EmailRelayTest` | Poll the result. Tests are kept for 24 hours (404 afterwards) |
+| GET | `/api/v1/email-relay-options` | 200 `EmailRelayOption[]` | `{ key, name, isActive }` of every relay, for the Send email step's dropdown. **Any signed-in role**, no server or account detail |
+
+- Request (create and update): `{ key, name, host, port, enableSsl, userName, fromAddress, fromName, timeoutSeconds, allowedRecipientDomains[], password, clearPassword }`. `key` is used on create only: lower-case letters, digits and hyphens, 2 to 64 characters, unique case-insensitively (`default` replaces the top-level `Email` settings of the Worker). Defaults: port 587, `enableSsl` true, timeout 30 s (1 to 120), `fromName` "Verso". `allowedRecipientDomains` is optional (up to 50 domains such as `example.com`).
+- **The password is write-only.** `password` omitted or null keeps the stored one, a value replaces it, `clearPassword: true` removes it. No response, audit entry, log or history ever contains it; `EmailRelay` has only `hasPassword`. It is stored encrypted with AES-256-GCM; the master key is `Secrets:MasterKey` (environment variable `Secrets__MasterKey`), never in the database.
+- `EmailRelay`: `{ id, key, name, host, port, enableSsl, userName, fromAddress, fromName, timeoutSeconds, allowedRecipientDomains[], isActive, hasPassword, updatedAt, updatedBy }`.
+- Errors: 400 `validation` (`key`, `name`, `host`, `port`, `timeoutSeconds`, `userName`, `fromAddress`, `fromName`, `allowedRecipientDomains`, `password`; a password is refused with a message naming `Secrets:MasterKey` when no master key is set), 403 for any other role, 404 `email_relay.not_found`, 409 `email_relay.key_taken`.
+- Audited (`entityType=EmailRelay`): `EmailRelayCreated`, `EmailRelayUpdated` (the names of the changed fields only), `EmailRelayPasswordChanged` (`set` or `cleared`), `EmailRelayDeactivated`, `EmailRelayActivated`. Repeating the same change writes nothing.
+- `EmailRelayTest`: `{ id, relayKey, status, code, message, requestedAt, completedAt }`; `status` is `Queued`, `Running`, `Succeeded` or `Failed`. It never carries the recipient (held only until the test ends). Errors: 400 `validation` (`toAddress`), 404 `email_relay.not_found` / `email_relay_test.not_found`, 409 `email_relay.inactive`. Audited: `EmailRelayTestRequested` (`entityType=EmailRelayTest`, no address).
+- Worker side: a relay in the database wins over one with the same key under `Email:Relays` in configuration; a deactivated one is treated as unknown (no fall-back). A stored password the Worker can't open (missing or different master key) fails the step with `email.password_unreadable`, not retried.
+
 ## Workflows
 
 A workflow is a graph of steps: a trigger, then steps connected output → input. Its lifecycle is the same as a template's: **create** (a draft containing only an API / webhook trigger with default settings) → **save draft** (`If-Match`) → **publish** (version N, frozen) → **start draft** (copy of the latest published version). Every change is audited (`entityType=Workflow`).

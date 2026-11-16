@@ -1,5 +1,6 @@
 using System.Net.Mail;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Verso.Application.Executions;
 
@@ -8,10 +9,29 @@ public sealed record EmailAttachment(string FileName, string ContentType, byte[]
 
 /// <summary>
 /// An outgoing email. Subject and addresses are already validated (single line, plain addresses). <see cref="Html"/> is
-/// optional: when set the message is multipart with <see cref="Text"/> as the plain alternative.
+/// optional: when set the message is multipart with <see cref="Text"/> as the plain alternative. <see cref="Relay"/> is the key of the
+/// relay the administrator named in the Worker's configuration (ADR 0006 addendum 1); null or empty means <see cref="EmailRelays.DefaultKey"/>.
 /// </summary>
 public sealed record EmailMessage(
-    IReadOnlyList<string> To, string Subject, string Text, string? Html, IReadOnlyList<EmailAttachment> Attachments);
+    IReadOnlyList<string> To, string Subject, string Text, string? Html, IReadOnlyList<EmailAttachment> Attachments, string? Relay = null);
+
+/// <summary>Rules for the relay key of a Send email step (ADR 0006 addendum 1).</summary>
+public static partial class EmailRelays
+{
+    /// <summary>The relay used when a step names none: the top-level <c>Email</c> settings.</summary>
+    public const string DefaultKey = "default";
+
+    /// <summary>A relay key as typed in the step and as named under <c>Email:Relays</c>: lower-case letters, digits and hyphens.</summary>
+    public const string KeyPattern = "^[a-z0-9][a-z0-9-]{1,63}$";
+
+    public static bool IsValidKey(string? key) => key is not null && KeyRegex().IsMatch(key);
+
+    /// <summary>The key a step uses: its own, trimmed, or <see cref="DefaultKey"/> when empty.</summary>
+    public static string Resolve(string? key) => string.IsNullOrWhiteSpace(key) ? DefaultKey : key.Trim();
+
+    [GeneratedRegex(KeyPattern, RegexOptions.CultureInvariant)]
+    private static partial Regex KeyRegex();
+}
 
 /// <summary>An email that can't be sent. <see cref="Retryable"/>: a later attempt may work (server busy, network); otherwise it won't (not configured, refused address).</summary>
 public sealed class EmailSendException(string code, string message, bool retryable, Exception? inner = null) : Exception(message, inner)

@@ -36,6 +36,7 @@ public static class HangfireJobs
         services.AddScoped<IPreviewJobs, HangfirePreviewJobs>();
         services.AddScoped<IExecutionJobs, HangfireExecutionJobs>();
         services.AddScoped<IFolderAccessJobs, HangfireFolderAccessJobs>();
+        services.AddScoped<Verso.Application.Mail.IEmailRelayTestJobs, HangfireEmailRelayTestJobs>();
         return services;
     }
 
@@ -53,6 +54,8 @@ public static class HangfireJobs
         services.AddScoped<ExecutionJob>();
         services.AddScoped<ExecutionDispatchJob>();
         services.AddScoped<FolderAccessTestJob>();
+        services.AddScoped<EmailRelayTestJob>();
+        services.AddScoped<EmailRelayTestCleanupJob>();
         return services;
     }
 
@@ -61,10 +64,12 @@ public static class HangfireJobs
     {
         ArgumentNullException.ThrowIfNull(recurring);
         recurring.AddOrUpdate<PdfPreviewCleanupJob>(PreviewCleanupJobId, j => j.RunAsync(CancellationToken.None), Cron.Hourly());
+        recurring.AddOrUpdate<EmailRelayTestCleanupJob>(EmailRelayTestCleanupJobId, j => j.RunAsync(CancellationToken.None), Cron.Hourly());
         recurring.AddOrUpdate<ExecutionDispatchJob>(ExecutionDispatchJobId, j => j.RunAsync(CancellationToken.None), Cron.Minutely());
     }
 
     public const string ExecutionDispatchJobId = "execution-dispatch";
+    public const string EmailRelayTestCleanupJobId = "email-relay-test-cleanup";
 
     /// <summary>The SQL that creates the Hangfire schema; used by the migration so the schema is versioned with ours.</summary>
     internal static string InstallScript() => SqlServerObjectsInstaller.GetInstallScript(Schemas.Jobs, enableHeavyMigrations: false);
@@ -116,6 +121,25 @@ public sealed class FolderAccessTestJob(FolderAccessTestRunner runner)
 {
     [AutomaticRetry(Attempts = 0)]
     public Task RunAsync(Guid testId, CancellationToken cancellationToken) => runner.RunAsync(testId, cancellationToken);
+}
+
+internal sealed class HangfireEmailRelayTestJobs(IBackgroundJobClient client) : Verso.Application.Mail.IEmailRelayTestJobs
+{
+    public void Enqueue(Guid testId) => client.Enqueue<EmailRelayTestJob>(j => j.RunAsync(testId, CancellationToken.None));
+}
+
+/// <summary>Hangfire entry point for "Test connection" of an email relay: sends one test message as the Worker. Not retried (the user can test again).</summary>
+public sealed class EmailRelayTestJob(Verso.Application.Mail.EmailRelayTestRunner runner)
+{
+    [AutomaticRetry(Attempts = 0)]
+    public Task RunAsync(Guid testId, CancellationToken cancellationToken) => runner.RunAsync(testId, cancellationToken);
+}
+
+/// <summary>Hourly: deletes email relay tests older than 24 hours.</summary>
+public sealed class EmailRelayTestCleanupJob(Verso.Application.Mail.EmailRelayTestRunner runner)
+{
+    [AutomaticRetry(Attempts = 0)]
+    public Task RunAsync(CancellationToken cancellationToken) => runner.CleanupAsync(cancellationToken);
 }
 
 /// <summary>Every minute: re-queues executions whose job went missing (transactional outbox sweeper).</summary>

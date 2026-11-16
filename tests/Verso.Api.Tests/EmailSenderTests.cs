@@ -44,7 +44,7 @@ public sealed class EmailSenderTests
     [Fact]
     public async Task WithoutAHost_NothingIsSent_AndItIsNotRetried()
     {
-        var sender = new SmtpEmailSender(Options.Create(new EmailOptions()));
+        var sender = new SmtpEmailSender(new EmailRelayStore(Options.Create(new EmailOptions())));
 
         var ex = await Assert.ThrowsAsync<EmailSendException>(() => sender.SendAsync(Message("a@b.example"), CancellationToken.None));
 
@@ -52,10 +52,67 @@ public sealed class EmailSenderTests
         Assert.False(ex.Retryable);
     }
 
+    private static EmailOptions TwoRelays() => new()
+    {
+        Host = "default.invalid", From = "verso@bank.example",
+        Relays =
+        {
+            ["statements"] = new EmailOptions { Host = "statements.invalid", From = "statements@bank.example", AllowedRecipientDomains = ["customers.example"] },
+            ["half-set"] = new EmailOptions { Host = "half.invalid" },
+        },
+    };
+
+    [Theory]
+    [InlineData("no-such-relay")]
+    [InlineData("Bad Key")]
+    [InlineData("../x")]
+    public async Task AnUnknownOrInvalidRelay_IsRefused_AndNotRetried(string relay)
+    {
+        var sender = new SmtpEmailSender(new EmailRelayStore(Options.Create(TwoRelays())));
+
+        var ex = await Assert.ThrowsAsync<EmailSendException>(() => sender.SendAsync(Message("a@b.example") with { Relay = relay }, CancellationToken.None));
+
+        Assert.Equal("email.relay_unknown", ex.Code);
+        Assert.False(ex.Retryable);
+    }
+
+    [Fact]
+    public async Task ARelayWithoutHostOrFrom_IsNotConfigured_EvenWhenTheDefaultIsSetUp()
+    {
+        var sender = new SmtpEmailSender(new EmailRelayStore(Options.Create(TwoRelays())));
+
+        var ex = await Assert.ThrowsAsync<EmailSendException>(() => sender.SendAsync(Message("a@b.example") with { Relay = "half-set" }, CancellationToken.None));
+
+        Assert.Equal("email.not_configured", ex.Code);
+        Assert.Contains("half-set", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EachRelay_UsesItsOwnAllowedDomains()
+    {
+        var sender = new SmtpEmailSender(new EmailRelayStore(Options.Create(TwoRelays())));
+
+        // "statements" only allows customers.example; the default relay has no list, so it gets past the check (and then fails to connect, not with recipient_not_allowed).
+        var ex = await Assert.ThrowsAsync<EmailSendException>(() => sender.SendAsync(Message("a@bank.example") with { Relay = "statements" }, CancellationToken.None));
+
+        Assert.Equal("email.recipient_not_allowed", ex.Code);
+    }
+
+    [Fact]
+    public void RelayKeys_FollowTheSamePatternAsPrintQueues()
+    {
+        Assert.True(EmailRelays.IsValidKey("statements"));
+        Assert.True(EmailRelays.IsValidKey("internal-2"));
+        Assert.False(EmailRelays.IsValidKey("Statements"));
+        Assert.False(EmailRelays.IsValidKey("a"));
+        Assert.Equal(EmailRelays.DefaultKey, EmailRelays.Resolve("  "));
+        Assert.Equal(EmailRelays.DefaultKey, EmailRelays.Resolve(null));
+    }
+
     [Fact]
     public async Task ARecipientOutsideTheAllowedDomains_RefusesTheWholeMessage()
     {
-        var sender = new SmtpEmailSender(Options.Create(new EmailOptions { Host = "relay.invalid", From = "verso@bank.example", AllowedRecipientDomains = ["bank.example"] }));
+        var sender = new SmtpEmailSender(new EmailRelayStore(Options.Create(new EmailOptions { Host = "relay.invalid", From = "verso@bank.example", AllowedRecipientDomains = ["bank.example"] })));
 
         var ex = await Assert.ThrowsAsync<EmailSendException>(() => sender.SendAsync(Message("ok@bank.example", "x@elsewhere.example"), CancellationToken.None));
 

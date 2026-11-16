@@ -12,6 +12,7 @@ export type ConnectionHealth = 'ok' | 'warn' | 'err'
 
 export const AUTH_METHODS = ['OAuth 2.0 client credentials', 'API key', 'Bearer token', 'Mutual TLS', 'Managed identity', 'SSH key', 'SMTP credentials', 'Certificate'] as const
 
+
 export interface Connection {
   id: string
   group: ConnectionGroup
@@ -56,7 +57,6 @@ export function seedConnections(): Connection[] {
     c('core', 'Data sources', 'Core banking', 'ISO 20022 camt.053 · SQL database', 'Daily account statements and transaction history.', 'ok', 'Synced 01:12 today', true, 'Managed identity', 'sql-halcyon.database.windows.net / BillingCore', 0, '#1A3442', 'CB'),
     c('kafka', 'Data sources', 'Kafka', 'Topic billing.events · API / HTTP endpoint', 'Real-time trigger for single documents such as instant receipts.', 'ok', '1,204 events in the last hour', true, 'Mutual TLS', 'kafka.halcyon.internal:9093', 0, '#231F20', 'K'),
     c('sf', 'Data sources', 'Salesforce', 'REST API · API / HTTP endpoint', 'Opportunity data for quotes and proposals.', 'ok', 'Not connected', false, 'OAuth 2.0 client credentials', 'https://login.salesforce.com', 0, '#00A1E0', 'SF'),
-    c('smtp', 'Delivery channels', 'SMTP relay', 'Email · SMTP email', 'Sends HTML email with PDF attachments from billing@halcyon-energy.cy.', 'err', '37 rejections today', true, 'SMTP credentials', 'smtp-relay.halcyon-energy.cy:587', 3, '#BE3D37', '@'),
     c('sftp', 'Delivery channels', 'Print house SFTP', 'PCL 6 batches · SFTP', 'Nightly print and post files to Cyprus Print Services.', 'warn', 'Key expires in 6 days', true, 'SSH key', 'sftp.cyprusprintservices.com:22', 3, '#5B6773', 'SFTP'),
     c('portal', 'Delivery channels', 'Customer portal', 'Webhook · API / HTTP endpoint', 'Publishes documents to the self-service portal and notifies customers.', 'ok', 'Delivered 2 min ago', true, 'API key', 'https://portal.halcyon-energy.cy/api/hooks/verso', 3, '#0A6E8A', 'WEB'),
     c('peppol', 'Delivery channels', 'Peppol e-invoicing', 'Access point · API / HTTP endpoint', 'UBL 2.1 invoices for EU business customers.', 'ok', '48 sent today', true, 'Mutual TLS', 'https://peppol.halcyon-accesspoint.cy/v1', 2, '#2F7D4F', 'PEP'),
@@ -116,6 +116,7 @@ export function readConnections(list: unknown[]): { items: ExportedConnection[];
       skipped++
       continue
     }
+    const auth = str(raw.auth) || 'API key'
     items.push({
       group: raw.group,
       name,
@@ -124,7 +125,7 @@ export function readConnections(list: unknown[]): { items: ExportedConnection[];
       health: raw.health === 'warn' || raw.health === 'err' ? raw.health : 'ok',
       last: str(raw.last) || 'Not tested yet',
       enabled: raw.enabled !== false,
-      auth: str(raw.auth) || 'API key',
+      auth,
       endpoint,
       usedBySteps: 0,
       color: /^#[0-9a-fA-F]{6}$/.test(str(raw.color)) ? str(raw.color) : '#5B6773',

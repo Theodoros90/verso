@@ -15,6 +15,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Verso.Application.Executions;
+using Verso.Application.Mail;
 using Verso.Infrastructure.Persistence;
 
 namespace Verso.Api.Tests;
@@ -147,6 +148,35 @@ public sealed class LeastPrivilegeTests(LeastPrivilegeFixture grants) : IClassFi
 
 
     [Fact]
+    public async Task EmailRelayTest_RunsUnderTheApiAndWorkerRoles()
+    {
+        using var client = grants.Api.CreateClient();
+        var key = $"lp-{Guid.NewGuid():N}"[..20];
+        using var created = await client.PostAsJsonAsync(new Uri("/api/v1/email-relays", UriKind.Relative),                       // API: create a relay, encrypted password
+            new { key, name = "LP relay", host = "smtp.relay.example", fromAddress = "verso@bank.example", userName = "svc", password = "lp-secret-pass" });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var relayId = (await ExecutionTestKit.ReadAsync(created)).GetProperty("id").GetGuid();
+
+        using var test = await client.PostAsJsonAsync(new Uri($"/api/v1/email-relays/{relayId}/tests", UriKind.Relative), new { toAddress = "me@bank.example" }); // API: request a test
+        Assert.Equal(HttpStatusCode.Accepted, test.StatusCode);
+        var testId = (await ExecutionTestKit.ReadAsync(test)).GetProperty("id").GetGuid();
+
+        var email = new FakeEmailSender();
+        await using (var db = grants.WorkerDb())
+        {
+            await new EmailRelayTestRunner(db, email, TimeProvider.System).RunAsync(testId, CancellationToken.None);             // Worker: send it, record the result
+        }
+
+        Assert.Equal(key, Assert.Single(email.Sent).Relay);
+        using var done = await client.GetAsync(new Uri($"/api/v1/email-relays/tests/{testId}", UriKind.Relative));               // API: read the result
+        Assert.Equal("Succeeded", (await ExecutionTestKit.ReadAsync(done)).GetProperty("status").GetString());
+        await using (var db = grants.WorkerDb())
+        {
+            Assert.Equal(1, await new EmailRelayTestRunner(db, email, new ShiftedClock(TimeSpan.FromDays(2))).CleanupAsync(CancellationToken.None)); // Worker: cleanup
+        }
+    }
+
+    [Fact]
     public async Task FolderInput_RunsUnderTheApiAndWorkerRoles()
     {
         var root = Path.Combine(Path.GetTempPath(), "verso-test-folders", Guid.NewGuid().ToString("N"));
@@ -233,6 +263,11 @@ public sealed class LeastPrivilegeTests(LeastPrivilegeFixture grants) : IClassFi
     [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [documents].[ArchiveRecords]")]
     [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [documents].[Documents]")]
     [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [executions].[ExecutionEvents]")]
+    [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [mail].[EmailRelays]")]
+    [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [mail].[EmailRelays]")]
+    [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [mail].[EmailRelayTests]")]
+    [InlineData(LeastPrivilegeFixture.WorkerUser, "INSERT INTO [mail].[EmailRelayTests] ([Id], [RelayId], [RelayKey], [Status], [RequestedBy], [RequestedAt]) VALUES (NEWID(), NEWID(), N'x', N'Queued', N'x', SYSDATETIMEOFFSET())")]
+    [InlineData(LeastPrivilegeFixture.WorkerUser, "UPDATE [mail].[EmailRelays] SET [Host] = N'x'")]
     [InlineData(LeastPrivilegeFixture.ApiUser, "INSERT INTO [documents].[ArchiveRecords] ([Id], [DocumentId], [ArchivedAt], [Retention], [FolderPath], [Metadata], [SearchText]) VALUES (NEWID(), NEWID(), SYSDATETIMEOFFSET(), '7y', N'x', N'{{}}', N'')")] // {{}}: ExecuteSqlRaw reads braces as format placeholders
     [InlineData(LeastPrivilegeFixture.ApiUser, "UPDATE [documents].[Documents] SET [FileName] = N'x'")]
     [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [templates].[TemplateVersions]")]

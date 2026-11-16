@@ -31,6 +31,7 @@ GRANT SELECT, INSERT, UPDATE ON SCHEMA::templates  TO verso_api;  -- drafts, pub
 GRANT SELECT, INSERT, UPDATE ON SCHEMA::workflows  TO verso_api;
 GRANT SELECT, INSERT, UPDATE ON SCHEMA::executions TO verso_api;  -- submit, retry, events
 GRANT SELECT                 ON SCHEMA::documents  TO verso_api;  -- archive search, downloads
+GRANT SELECT, INSERT, UPDATE ON SCHEMA::mail       TO verso_api;  -- email relays managed in Configuration (ADR 0015)
 GRANT SELECT, INSERT         ON SCHEMA::audit      TO verso_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::hangfire TO verso_api;  -- the Hangfire client queues jobs
 GRANT SELECT                 ON SCHEMA::ingestion  TO verso_api;  -- approved locations, folder status (reported by the Worker)
@@ -41,6 +42,7 @@ GRANT INSERT, UPDATE         ON OBJECT::ingestion.TypedFolderPaths       TO vers
 GRANT SELECT                 ON SCHEMA::templates  TO verso_worker;
 GRANT UPDATE, DELETE         ON OBJECT::templates.PdfPreviews TO verso_worker;  -- render result; 24 h cleanup
 GRANT SELECT                 ON SCHEMA::workflows  TO verso_worker;
+GRANT SELECT                 ON SCHEMA::mail       TO verso_worker;  -- reads relays and their encrypted passwords; never changes them
 GRANT SELECT, INSERT, UPDATE ON SCHEMA::executions TO verso_worker;
 GRANT SELECT, INSERT, UPDATE ON OBJECT::documents.Documents      TO verso_worker;
 GRANT SELECT, INSERT         ON OBJECT::documents.ArchiveRecords TO verso_worker;
@@ -49,6 +51,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::hangfire TO verso_worker;  -- th
 GRANT SELECT, INSERT, UPDATE ON SCHEMA::ingestion  TO verso_worker;  -- folder input: locations, scans, files, access tests
 GRANT DELETE                 ON OBJECT::ingestion.FolderFiles       TO verso_worker;  -- releasing a claim on a file still being written
 GRANT DELETE                 ON OBJECT::ingestion.FolderAccessTests TO verso_worker;  -- 24 h cleanup
+GRANT UPDATE, DELETE         ON OBJECT::mail.EmailRelayTests        TO verso_worker;  -- runs the test and records the result; 24 h cleanup
 
 -- ----- Write-once and no-delete rules (DENY wins over any GRANT, including future ones) -----
 DENY UPDATE, DELETE ON OBJECT::audit.AuditEntries        TO verso_api, verso_worker;
@@ -59,6 +62,9 @@ DENY DELETE         ON SCHEMA::workflows                 TO verso_api, verso_wor
 DENY DELETE         ON OBJECT::templates.Templates       TO verso_api, verso_worker;
 DENY DELETE         ON OBJECT::templates.TemplateVersions TO verso_api, verso_worker;
 DENY DELETE         ON OBJECT::templates.DocumentCategories TO verso_api, verso_worker;  -- categories are deactivated, never deleted
+DENY DELETE         ON OBJECT::mail.EmailRelays          TO verso_api, verso_worker;  -- relays are deactivated, never deleted
+DENY DELETE         ON OBJECT::mail.EmailRelayTests      TO verso_api;                 -- only the Worker cleans up tests
+DENY INSERT         ON OBJECT::mail.EmailRelayTests      TO verso_worker;              -- only the API requests a test
 DENY DELETE         ON OBJECT::ingestion.FolderLocations  TO verso_api, verso_worker;  -- withdrawn locations are disabled, never deleted
 DENY UPDATE         ON OBJECT::ingestion.FolderFiles      TO verso_api;               -- only the Worker changes ingestion records
 

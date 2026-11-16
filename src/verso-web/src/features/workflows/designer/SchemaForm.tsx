@@ -1,8 +1,10 @@
 import { Plus, Trash2 } from 'lucide-react'
-import { useId } from 'react'
+import { useEffect, useId, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Field, Input, Select, Switch, Textarea } from '@/components/ui/form'
+import { emailRelaysApi } from '@/lib/api/emailRelays'
+import type { EmailRelayOptionDto } from '@/lib/api/generated'
 import { parseRetention, retentionUnits } from '@/lib/retention'
 import { cn } from '@/lib/utils'
 
@@ -18,7 +20,7 @@ export interface FieldSchema {
   items?: FieldSchema
   enum?: string[]
   'x-enumLabels'?: string[]
-  'x-widget'?: 'multiline' | 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches' | 'retention'
+  'x-widget'?: 'multiline' | 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches' | 'retention' | 'email-relay'
   maxItems?: number
 }
 
@@ -129,6 +131,37 @@ function PropertyField({
   )
 }
 
+/**
+ * The email connection of a Send email step: a dropdown of the global email connections (key and name only), or "Default" (empty) for the
+ * Worker's default relay. A key that is no longer in the list stays selectable and is marked, so an old workflow doesn't silently change.
+ */
+function EmailRelaySelect({ common, value, onChange }: { common: Record<string, unknown>; value: string; onChange: (v: string) => void }) {
+  const [options, setOptions] = useState<EmailRelayOptionDto[] | null>(null)
+  useEffect(() => {
+    const controller = new AbortController()
+    emailRelaysApi
+      .listOptions(controller.signal)
+      .then((items) => setOptions(Array.isArray(items) ? items : []))
+      .catch(() => setOptions([]))
+    return () => controller.abort()
+  }, [])
+
+  const list = options ?? []
+  const known = list.find((o) => o.key === value)
+  return (
+    <Select {...common} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">Default email connection</option>
+      {value && !known && options !== null && <option value={value}>{value} (not found)</option>}
+      {value && !known && options === null && <option value={value}>{value}</option>}
+      {list.map((o) => (
+        <option key={o.key} value={o.key}>
+          {o.name} ({o.key}){o.isActive ? '' : ', switched off'}
+        </option>
+      ))}
+    </Select>
+  )
+}
+
 function StringInput({
   id,
   path,
@@ -208,6 +241,10 @@ function StringInput({
         </Select>
       </div>
     )
+  }
+
+  if (field['x-widget'] === 'email-relay') {
+    return <EmailRelaySelect common={common} value={value} onChange={(v) => onChange(v, path)} />
   }
 
   if (field['x-widget'] === 'template') {

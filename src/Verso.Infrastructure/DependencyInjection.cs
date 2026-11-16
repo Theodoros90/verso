@@ -34,6 +34,9 @@ public static class DependencyInjection
             sql => sql.UseCompatibilityLevel(SqlServerCompatibilityLevel)));
         services.AddScoped<IVersoDbContext>(sp => sp.GetRequiredService<VersoDbContext>());
 
+        // Encrypts the passwords Verso stores (ADR 0015). The master key comes from the environment or a secret store, never from the database.
+        services.AddSingleton<Application.Mail.ISecretProtector>(new Security.AesGcmSecretProtector(configuration["Secrets:MasterKey"]));
+
         return services;
     }
 
@@ -59,8 +62,23 @@ public static class DependencyInjection
     public static IServiceCollection AddVersoEmail(this IServiceCollection services, IConfiguration configuration)
     {
         var section = configuration.GetSection(Email.EmailOptions.Section);
+        var options = ReadEmailRelay(section);
+        foreach (var child in section.GetSection(nameof(Email.EmailOptions.Relays)).GetChildren())
+        {
+            options.Relays[child.Key] = ReadEmailRelay(child);
+        }
+
+        services.AddSingleton(Options.Create(options));
+        services.AddSingleton<Application.Mail.IEmailRelayStore, Email.EmailRelayStore>();
+        services.AddSingleton<IEmailSender, Email.SmtpEmailSender>();
+        return services;
+    }
+
+    /// <summary>One relay's settings: the top-level <c>Email</c> section is the relay <c>default</c>, each <c>Email:Relays:{key}</c> another (ADR 0006 addendum 1).</summary>
+    private static Email.EmailOptions ReadEmailRelay(IConfiguration section)
+    {
         var defaults = new Email.EmailOptions();
-        var options = new Email.EmailOptions
+        return new Email.EmailOptions
         {
             Host = section[nameof(Email.EmailOptions.Host)] ?? "",
             Port = int.TryParse(section[nameof(Email.EmailOptions.Port)], CultureInfo.InvariantCulture, out var port) ? port : defaults.Port,
@@ -72,9 +90,6 @@ public static class DependencyInjection
             AllowedRecipientDomains = [.. section.GetSection(nameof(Email.EmailOptions.AllowedRecipientDomains)).GetChildren().Select(c => c.Value ?? "").Where(d => d.Length > 0)],
             Timeout = TimeSpan.TryParse(section[nameof(Email.EmailOptions.Timeout)], CultureInfo.InvariantCulture, out var timeout) ? timeout : defaults.Timeout,
         };
-        services.AddSingleton(Options.Create(options));
-        services.AddSingleton<IEmailSender, Email.SmtpEmailSender>();
-        return services;
     }
 
     /// <summary>

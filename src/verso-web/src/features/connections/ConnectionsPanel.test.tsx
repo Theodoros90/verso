@@ -16,10 +16,10 @@ describe('Connections tab', () => {
     for (const group of ['Data sources', 'Delivery channels', 'Signing & storage']) {
       expect(await screen.findByRole('heading', { level: 2, name: group })).toBeInTheDocument()
     }
-    const smtp = screen.getByRole('heading', { name: 'SMTP relay' }).closest('li')!
-    expect(within(smtp).getByText('Failing')).toBeInTheDocument()
-    expect(within(smtp).getByText('used by 3 steps')).toBeInTheDocument()
-    expect(within(smtp).getByText(/SMTP credentials · smtp-relay/)).toBeInTheDocument()
+    const sftp = screen.getByRole('heading', { name: 'Print house SFTP' }).closest('li')!
+    expect(within(sftp).getByText('Needs attention')).toBeInTheDocument()
+    expect(within(sftp).getByText('used by 3 steps')).toBeInTheDocument()
+    expect(within(sftp).getByText(/SSH key · sftp\.cyprusprintservices/)).toBeInTheDocument()
 
     const salesforce = screen.getByRole('heading', { name: 'Salesforce' }).closest('li')!
     expect(within(salesforce).getByText('Off')).toBeInTheDocument()
@@ -60,20 +60,19 @@ describe('Connections tab', () => {
 
   it('configures a connection and runs a simulated test, with no secret field', async () => {
     await renderPage()
-    await userEvent.click(await screen.findByRole('button', { name: 'Configure SMTP relay' }))
-    const dialog = screen.getByRole('dialog', { name: 'SMTP relay' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Configure Print house SFTP' }))
+    const dialog = screen.getByRole('dialog', { name: 'Print house SFTP' })
 
     expect(within(dialog).getByLabelText('Secret (managed outside Verso)')).toBeDisabled()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Test connection' }))
-    expect(await within(dialog).findByText(/Simulated: the endpoint answered but rejected/)).toBeInTheDocument()
+    expect(await within(dialog).findByText(/Simulated: connected in \d+ ms, but the credential needs attention/)).toBeInTheDocument()
 
     await userEvent.clear(within(dialog).getByLabelText('Endpoint / host'))
-    await userEvent.type(within(dialog).getByLabelText('Endpoint / host'), 'smtp.new.example.test:25')
+    await userEvent.type(within(dialog).getByLabelText('Endpoint / host'), 'sftp.new.example.test:22')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save settings' }))
-    expect(within(screen.getByRole('dialog', { name: 'Configuration' })).getByRole('status')).toHaveTextContent('Settings saved for SMTP relay.')
-    expect(screen.getByText(/smtp\.new\.example\.test:25/)).toBeInTheDocument()
+    expect(within(screen.getByRole('dialog', { name: 'Configuration' })).getByRole('status')).toHaveTextContent('Settings saved for Print house SFTP.')
+    expect(screen.getByText(/sftp\.new\.example\.test:22/)).toBeInTheDocument()
   })
-
 })
 
 describe('connections model', () => {

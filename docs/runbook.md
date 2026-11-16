@@ -211,6 +211,32 @@ The `send-email` step ([ADR 0006](adr/0006-send-email.md)) makes the **Worker** 
 4. **Every Worker needs the same settings**, because any Worker may run a step. Restart the Worker after changing them.
 5. **Check:** run a workflow with a Send email step to an internal address and look for the message; the step result in the execution history shows the message id (not the address).
 6. **Limits:** delivery is at-least-once (a duplicate is possible after a Worker stop or relay timeout); bounces are not tracked; attachments up to 10 MB.
+7. **More than one relay** ([ADR 0006 addendum 1](adr/0006-send-email.md)). The settings above are the relay named `default`, used by every Send email step that names none, so existing workflows keep working. To add others, give each a key (lower-case letters, digits and hyphens) under `Email:Relays`, with the same fields as above:
+
+   ```json
+   "Email": {
+     "Host": "smtp.bank.example", "From": "no-reply@bank.example",
+     "Relays": {
+       "statements": { "Host": "smtp-statements.bank.example", "UserName": "svc-verso-stmt", "From": "statements@bank.example", "AllowedRecipientDomains": [ "customers.example" ] },
+       "internal":   { "Host": "smtp.bank.example", "From": "verso-internal@bank.example", "AllowedRecipientDomains": [ "bank.example" ] }
+     }
+   }
+   ```
+
+   - Each relay has its own `AllowedRecipientDomains`, sender and credentials. Passwords only as environment variables: `Email__Relays__statements__Password`.
+   - Workflow authors type the key in the step's **Email relay** setting (empty means `default`). A key that is not configured ends the run **Failed** with `email.relay_unknown`; a relay without `Host` or `From` fails with `email.not_configured`. Neither is retried.
+   - **Keys must match on every server and Worker**, and across test and production, because the workflow stores the key, not the host. Restart the Worker after adding a relay.
+   - The step result in the execution history shows the relay key.
+
+8. **Relays managed in the app, and the master key** ([ADR 0015](adr/0015-email-relays-in-the-app.md)). An administrator can add relays and type their passwords in **Configuration, Connections, Email relays**; the API stores them in `mail.EmailRelays` and the password encrypted. This needs a **master key** that is **not** in the database:
+   1. Make a key once: `[Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))` (PowerShell).
+   2. Set it as the environment variable `Secrets__MasterKey` (or in the bank's secret store) for the **API and every Worker**: the same value everywhere. Restart them.
+   3. Keep a sealed copy. **If the key is lost, the stored passwords can't be read and must be typed again.** Changing it has the same effect. Never put it in the repository, a ticket or a chat.
+   - Without a master key the API refuses to save a password ("Secrets:MasterKey"), but a relay without a password still works. A Worker with a missing or different key fails the step with `email.password_unreadable` (not retried).
+   - Apply the migration first: `dotnet tool run dotnet-ef database update --project src/Verso.Infrastructure --startup-project src/Verso.Api` (creates `mail.EmailRelays`); on a locked-down database also run `tools/db/least-privilege.sql` again (the API can write the `mail` schema, the Worker only read it; nothing can delete a relay).
+   - **Test connection:** in Configure, type a synthetic address and press Test connection: the Worker sends one short message through the saved settings and the dialog shows `Succeeded` or the error code. It needs the Worker running (otherwise "The Worker has not run the test yet"). Workflow authors choose the connection in the Send email step from a dropdown.
+   - A relay in the app wins over one with the same key under `Email:Relays`; configuration-only setups keep working unchanged. Deactivating a relay in the app makes steps that name it fail with `email.relay_unknown`.
+   - Gmail needs an *app password* (2-step verification on); Microsoft 365 often requires OAuth, which Verso does not support. Use synthetic recipients while testing.
 
 ### B9. Print queue
 
