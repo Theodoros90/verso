@@ -73,6 +73,20 @@ public sealed class DocumentCategoryApiTests(MigratedDatabaseFixture fixture)
     }
 
     [Fact]
+    public async Task Create_SameNameConcurrently_OneWins_TheRestGet409_Never500()
+    {
+        var name = Unique("Race");
+        var responses = await Task.WhenAll(Enumerable.Range(0, 8).Select(async _ =>
+        {
+            using var response = await _client.PostAsJsonAsync(new Uri(Route, UriKind.Relative), new { name });
+            return response.StatusCode;
+        }));
+
+        Assert.Equal(1, responses.Count(s => s == HttpStatusCode.Created));
+        Assert.All(responses.Where(s => s != HttpStatusCode.Created), s => Assert.Equal(HttpStatusCode.Conflict, s));
+    }
+
+    [Fact]
     public async Task Rename_UnknownId_Returns404()
     {
         using var response = await _client.PutAsJsonAsync(new Uri($"{Route}/{Guid.NewGuid()}", UriKind.Relative), new { name = "Whatever" });

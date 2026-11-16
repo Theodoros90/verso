@@ -37,7 +37,7 @@ public sealed class DocumentCategoryService(IVersoDbContext db, ICurrentUser use
         var category = DocumentCategory.Create(name, user.Id, now);
         db.DocumentCategories.Add(category);
         Audit(Actions.Created, category.Id, now, new { name });
-        if (await TrySaveAsync(name, ct) is { } conflict)
+        if (await TrySaveAsync(name, null, ct) is { } conflict)
         {
             return conflict;
         }
@@ -82,7 +82,7 @@ public sealed class DocumentCategoryService(IVersoDbContext db, ICurrentUser use
             var from = category.Name;
             category.Rename(name);
             Audit(Actions.Renamed, id, clock.GetUtcNow(), new { from, to = name });
-            if (await TrySaveAsync(name, ct) is { } conflict)
+            if (await TrySaveAsync(name, id, ct) is { } conflict)
             {
                 return conflict;
             }
@@ -129,8 +129,11 @@ public sealed class DocumentCategoryService(IVersoDbContext db, ICurrentUser use
         // Runs in SQL, whose default collation is case-insensitive (the unique index compares the same way).
         db.DocumentCategories.AnyAsync(c => c.Id != exceptId && c.Name == name, ct);
 
-    /// <summary>The unique index is the backstop for two requests racing past the name check.</summary>
-    private async Task<AppError?> TrySaveAsync(string name, CancellationToken ct)
+    /// <summary>
+    /// The unique index is the backstop for two requests racing past the name check. Only a real name clash becomes
+    /// a 409: after a failed save the tracker is cleared and the name re-checked; any other failure is rethrown.
+    /// </summary>
+    private async Task<AppError?> TrySaveAsync(string name, Guid? exceptId, CancellationToken ct)
     {
         try
         {
@@ -139,7 +142,13 @@ public sealed class DocumentCategoryService(IVersoDbContext db, ICurrentUser use
         }
         catch (DbUpdateException)
         {
-            return NameTaken(name);
+            db.ChangeTracker.Clear();
+            if (await NameTakenAsync(name, exceptId, CancellationToken.None))
+            {
+                return NameTaken(name);
+            }
+
+            throw;
         }
     }
 
