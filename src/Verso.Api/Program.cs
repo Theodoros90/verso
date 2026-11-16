@@ -128,6 +128,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();
 app.MapTemplateEndpoints();
+app.MapDocumentCategoryEndpoints();
 app.MapPdfPreviewEndpoints();
 app.MapWorkflowEndpoints();
 app.MapConfigurationEndpoints();
