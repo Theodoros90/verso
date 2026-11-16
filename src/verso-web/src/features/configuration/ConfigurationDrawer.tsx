@@ -5,13 +5,17 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
+import { CategoriesPanel } from '../categories/CategoriesPanel'
 import { ConnectionsPanel } from '../connections/ConnectionsPanel'
 import { VariablesPanel } from '../variables/VariablesPanel'
 import { TransferPanel } from './TransferPanel'
 
-export type ConfigurationTab = 'connections' | 'variables' | 'transfer'
+export type ConfigurationTab = 'categories' | 'connections' | 'variables' | 'transfer'
 
+// Document categories come first and open by default: they are the one server-backed tab; Connections and
+// Global variables are simulated.
 const TABS: { id: ConfigurationTab; label: string }[] = [
+  { id: 'categories', label: 'Document categories' },
   { id: 'connections', label: 'Connections' },
   { id: 'variables', label: 'Global variables' },
   { id: 'transfer', label: 'Export / import' },
@@ -22,7 +26,7 @@ const TABS: { id: ConfigurationTab; label: string }[] = [
  * the configuration between environments (export / import).
  */
 export function ConfigurationDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const [tab, setTab] = useState<ConfigurationTab>('connections')
+  const [tab, setTab] = useState<ConfigurationTab>('categories')
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
@@ -32,7 +36,7 @@ export function ConfigurationDrawer({ open, onOpenChange }: { open: boolean; onO
             <Settings className="mt-0.5 size-5 text-ink-2" aria-hidden="true" />
             <div className="min-w-0 flex-1">
               <D.Title className="text-[15px] font-semibold">Configuration</D.Title>
-              <D.Description className="mt-0.5 text-[13px] text-ink-2">Connections, global variables, and moving settings between environments.</D.Description>
+              <D.Description className="mt-0.5 text-[13px] text-ink-2">Document categories, connections, global variables, and moving settings between environments.</D.Description>
             </div>
             <D.Close asChild>
               <Button variant="ghost" size="icon" aria-label="Close configuration" className="-mt-1 -mr-2">
@@ -62,6 +66,7 @@ export function ConfigurationDrawer({ open, onOpenChange }: { open: boolean; onO
           </div>
 
           <div role="tabpanel" id={`cfg-panel-${tab}`} aria-labelledby={`cfg-tab-${tab}`} className="min-h-0 flex-1 overflow-auto">
+            {tab === 'categories' && <CategoriesPanel />}
             {tab === 'connections' && <ConnectionsPanel />}
             {tab === 'variables' && <VariablesPanel />}
             {tab === 'transfer' && <TransferPanel />}

@@ -21,8 +21,16 @@ export interface DraftContent {
 }
 
 export const templatesApi = {
-  list: (page = 1, pageSize = 100, signal?: AbortSignal) =>
-    request<PageResultOfTemplateSummaryDto>(`${base}?page=${page}&pageSize=${pageSize}`, { signal }).then((r) => r.body),
+  /** `categoryId`: a category id, or 'none' for templates without a category. */
+  list: (page = 1, pageSize = 100, signal?: AbortSignal, categoryId?: string) =>
+    request<PageResultOfTemplateSummaryDto>(
+      `${base}?page=${page}&pageSize=${pageSize}${categoryId ? `&categoryId=${encodeURIComponent(categoryId)}` : ''}`,
+      { signal },
+    ).then((r) => r.body),
+
+  /** Puts the template in a category, or takes it out of its category with null. */
+  setCategory: (id: string, categoryId: string | null) =>
+    request<TemplateDto>(`${base}/${id}/category`, { method: 'PUT', body: { categoryId } }).then((r) => r.body),
 
   create: (body: CreateTemplateRequest) => request<TemplateDto>(base, { method: 'POST', body }).then((r) => r.body),
 

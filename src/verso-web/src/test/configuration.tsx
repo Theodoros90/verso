@@ -9,7 +9,7 @@ export const json = (body: unknown, status = 200) => new Response(JSON.stringify
 
 /** Renders the app at `/`, with the API answering via `handler` (health by default), and opens the gear drawer on a tab. */
 export async function openConfiguration(
-  tab: 'Connections' | 'Global variables' | 'Export / import',
+  tab: 'Document categories' | 'Connections' | 'Global variables' | 'Export / import',
   handler?: (url: string, init?: RequestInit) => Response | undefined | Promise<Response | undefined>,
 ) {
   vi.stubGlobal(
