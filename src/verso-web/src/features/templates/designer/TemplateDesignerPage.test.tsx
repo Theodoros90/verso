@@ -23,6 +23,8 @@ const template = (over: Partial<TemplateDto> = {}): TemplateDto => ({
   createdBy: 'dev.user',
   latestPublishedVersion: null,
   draftVersionId: VERSION_ID,
+  categoryId: null,
+  categoryName: null,
   ...over,
 })
 

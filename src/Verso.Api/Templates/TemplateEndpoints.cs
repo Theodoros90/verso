@@ -12,10 +12,11 @@ public static class TemplateEndpoints
     {
         var group = app.MapGroup("/api/v1/templates").WithTags("Templates").RequireAuthorization(Policies.Read);
 
-        group.MapGet("/", async (TemplateService service, CancellationToken ct, int page = 1, int pageSize = 25) =>
-                Results.Ok(await service.ListAsync(page, pageSize, ct)))
+        group.MapGet("/", async (TemplateService service, CancellationToken ct, int page = 1, int pageSize = 25, string? categoryId = null) =>
+                (await service.ListAsync(page, pageSize, categoryId, ct)).ToResult())
             .WithName("ListTemplates")
-            .Produces<PageResult<TemplateSummaryDto>>();
+            .Produces<PageResult<TemplateSummaryDto>>()
+            .ProducesValidationProblem();
 
         group.MapPost("/", async (CreateTemplateRequest request, TemplateService service, CancellationToken ct) =>
             {
@@ -36,7 +37,15 @@ public static class TemplateEndpoints
             .Produces<TemplateDto>()
             .ProducesProblem(StatusCodes.Status404NotFound);
 
-        group.MapGet("/{id:guid}/versions", async (Guid id, TemplateService service, CancellationToken ct) =>
+        group.MapPut("/{id:guid}/category", async (Guid id, SetTemplateCategoryRequest request, TemplateService service, CancellationToken ct) =>
+                (await service.SetCategoryAsync(id, request, ct)).ToResult())
+            .WithName("SetTemplateCategory")
+            .RequireAuthorization(Policies.TemplateAuthoring)
+            .Produces<TemplateDto>()
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{id:guid}/versions",async (Guid id, TemplateService service, CancellationToken ct) =>
                 (await service.ListVersionsAsync(id, ct)).ToResult())
             .WithName("ListTemplateVersions")
             .Produces<IReadOnlyList<TemplateVersionSummaryDto>>()

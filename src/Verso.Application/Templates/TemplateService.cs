@@ -18,6 +18,7 @@ public sealed class TemplateService(IVersoDbContext db, ICurrentUser user, TimeP
         public const string DraftCreated = "TemplateDraftCreated";
         public const string DraftSaved = "TemplateDraftSaved";
         public const string Published = "TemplatePublished";
+        public const string CategoryChanged = "TemplateCategoryChanged";
     }
 
     public async Task<Result<TemplateDto>> CreateAsync(CreateTemplateRequest request, CancellationToken ct)
@@ -25,6 +26,11 @@ public sealed class TemplateService(IVersoDbContext db, ICurrentUser user, TimeP
         if (TemplateValidation.ValidateCreate(request, out var documentType) is { } errors)
         {
             return AppError.Validation(errors);
+        }
+
+        if (await ValidateCategoryAsync(request.CategoryId, null, ct) is { } categoryErrors)
+        {
+            return AppError.Validation(categoryErrors);
         }
 
         var key = request.Key!;
@@ -35,19 +41,60 @@ public sealed class TemplateService(IVersoDbContext db, ICurrentUser user, TimeP
 
         var now = clock.GetUtcNow();
         var template = Template.Create(key, request.Name!.Trim(), request.Description?.Trim(), documentType, TemplateContent.Empty, user.Id, now);
+        template.SetCategory(request.CategoryId);
         db.Templates.Add(template);
         Audit(Actions.Created, template.Id, now, new { key });
         await db.SaveChangesAsync(ct);
 
-        return ToDto(template);
+        return ToDto(template, await CategoryNameAsync(template.CategoryId, ct));
     }
 
-    public async Task<PageResult<TemplateSummaryDto>> ListAsync(int page, int pageSize, CancellationToken ct)
+    public async Task<Result<TemplateDto>> SetCategoryAsync(Guid id, SetTemplateCategoryRequest request, CancellationToken ct)
+    {
+        if (await LoadAsync(id, ct) is not { } template)
+        {
+            return NotFound(id);
+        }
+
+        if (template.CategoryId != request.CategoryId) // setting the same value again is a no-op: no audit row
+        {
+            if (await ValidateCategoryAsync(request.CategoryId, template.CategoryId, ct) is { } errors)
+            {
+                return AppError.Validation(errors);
+            }
+
+            var from = template.CategoryId;
+            template.SetCategory(request.CategoryId);
+            Audit(Actions.CategoryChanged, id, clock.GetUtcNow(), new { from, to = request.CategoryId });
+            await db.SaveChangesAsync(ct);
+        }
+
+        return ToDto(template, await CategoryNameAsync(template.CategoryId, ct));
+    }
+
+    /// <param name="categoryId">null / "none" / a category id; anything else is a 400.</param>
+    public async Task<Result<PageResult<TemplateSummaryDto>>> ListAsync(int page, int pageSize, string? categoryId, CancellationToken ct)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = db.Templates.AsNoTracking();
+        if (categoryId is not null)
+        {
+            if (categoryId == "none")
+            {
+                query = query.Where(t => t.CategoryId == null);
+            }
+            else if (Guid.TryParse(categoryId, out var filterId))
+            {
+                query = query.Where(t => t.CategoryId == filterId);
+            }
+            else
+            {
+                return AppError.Validation(new Dictionary<string, string[]> { ["categoryId"] = ["Use a category id, or 'none' for templates without a category."] });
+            }
+        }
+
         var total = await query.CountAsync(ct);
         var rows = await query
             .OrderBy(t => t.Key)
@@ -62,15 +109,18 @@ public sealed class TemplateService(IVersoDbContext db, ICurrentUser user, TimeP
                 LatestPublished = t.Versions.Where(v => v.Status == TemplateVersionStatus.Published).Max(v => v.VersionNumber),
                 HasDraft = t.Versions.Any(v => v.Status == TemplateVersionStatus.Draft),
                 UpdatedAt = t.Versions.Max(v => v.UpdatedAt),
+                t.CategoryId,
+                CategoryName = db.DocumentCategories.Where(c => c.Id == t.CategoryId).Select(c => c.Name).FirstOrDefault(),
             })
             .ToListAsync(ct);
 
-        var items = rows.Select(r => new TemplateSummaryDto(r.Id, r.Key, r.Name, r.DocumentType.ToString(), r.LatestPublished, r.HasDraft, r.UpdatedAt)).ToList();
+        var items = rows.Select(r => new TemplateSummaryDto(
+            r.Id, r.Key, r.Name, r.DocumentType.ToString(), r.LatestPublished, r.HasDraft, r.UpdatedAt, r.CategoryId, r.CategoryName)).ToList();
         return new PageResult<TemplateSummaryDto>(items, page, pageSize, total);
     }
 
     public async Task<Result<TemplateDto>> GetAsync(Guid id, CancellationToken ct) =>
-        await LoadAsync(id, ct) is { } template ? ToDto(template) : NotFound(id);
+        await LoadAsync(id, ct) is { } template ? ToDto(template, await CategoryNameAsync(template.CategoryId, ct)) : NotFound(id);
 
     public async Task<Result<IReadOnlyList<TemplateVersionSummaryDto>>> ListVersionsAsync(Guid id, CancellationToken ct)
     {
@@ -234,9 +284,27 @@ public sealed class TemplateService(IVersoDbContext db, ICurrentUser user, TimeP
     private static AppError NoDraft() => AppError.Conflict("template.no_draft",
         "This template has no draft. Published versions cannot be changed; start a new draft with POST …/draft.");
 
-    private static TemplateDto ToDto(Template t) => new(
+    private Task<string?> CategoryNameAsync(Guid? categoryId, CancellationToken ct) =>
+        categoryId is null
+            ? Task.FromResult<string?>(null)
+            : db.DocumentCategories.AsNoTracking().Where(c => c.Id == categoryId).Select(c => c.Name).FirstOrDefaultAsync(ct);
+
+    /// <summary>Null category is always fine. An unknown one is not; a deactivated one only if it is the template's current one.</summary>
+    private async Task<IReadOnlyDictionary<string, string[]>?> ValidateCategoryAsync(Guid? categoryId, Guid? currentCategoryId, CancellationToken ct)
+    {
+        if (categoryId is not { } id || id == currentCategoryId)
+        {
+            return null;
+        }
+
+        var category = await db.DocumentCategories.AsNoTracking().Where(c => c.Id == id).Select(c => new { c.IsActive }).FirstOrDefaultAsync(ct);
+        var message = category is null ? "Unknown category." : category.IsActive ? null : "This category is deactivated.";
+        return message is null ? null : new Dictionary<string, string[]> { ["categoryId"] = [message] };
+    }
+
+    private static TemplateDto ToDto(Template t, string? categoryName) => new(
         t.Id, t.Key, t.Name, t.Description, t.DocumentType.ToString(), t.CreatedAt, t.CreatedBy,
-        t.LatestPublished?.VersionNumber, t.Draft?.Id);
+        t.LatestPublished?.VersionNumber, t.Draft?.Id, t.CategoryId, categoryName);
 
     private static Versioned<TemplateVersionDto> ToVersioned(TemplateVersion v)
     {

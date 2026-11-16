@@ -42,6 +42,7 @@ public sealed class RoleMatrixTests(MigratedDatabaseFixture fixture)
         { "GET", "/api/v1/templates/{id:guid}/versions", $"/api/v1/templates/{Id}/versions", AnyRole },
         { "GET", "/api/v1/templates/{id:guid}/versions/{versionId:guid}", $"/api/v1/templates/{Id}/versions/{Id}", AnyRole },
         { "GET", "/api/v1/templates/{id:guid}/draft", $"/api/v1/templates/{Id}/draft", AnyRole },
+        { "PUT", "/api/v1/templates/{id:guid}/category", $"/api/v1/templates/{Id}/category", "TX" },
         { "POST", "/api/v1/templates/{id:guid}/draft", $"/api/v1/templates/{Id}/draft", "TX" },
         { "PUT", "/api/v1/templates/{id:guid}/draft", $"/api/v1/templates/{Id}/draft", "TX" },
         { "POST", "/api/v1/templates/{id:guid}/draft/publish", $"/api/v1/templates/{Id}/draft/publish", "TX" },
