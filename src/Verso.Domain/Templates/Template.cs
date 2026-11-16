@@ -23,6 +23,9 @@ public sealed class Template
     public string Name { get; private set; } = "";
     public string? Description { get; private set; }
     public DocumentType DocumentType { get; private set; }
+
+    /// <summary>Optional <see cref="DocumentCategory"/>; null means uncategorised.</summary>
+    public Guid? CategoryId { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public string CreatedBy { get; private set; } = "";
 
@@ -52,6 +55,8 @@ public sealed class Template
         template._versions.Add(new TemplateVersion(template.Id, initialContent, actor, now));
         return template;
     }
+
+    public void SetCategory(Guid? categoryId) => CategoryId = categoryId;
 
     /// <summary>Starts a new draft from the latest published version.</summary>
     public TemplateVersion StartDraft(string actor, DateTimeOffset now)

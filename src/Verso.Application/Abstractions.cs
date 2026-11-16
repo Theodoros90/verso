@@ -13,6 +13,7 @@ public interface IVersoDbContext
 {
     DbSet<Template> Templates { get; }
     DbSet<TemplateVersion> TemplateVersions { get; }
+    DbSet<DocumentCategory> DocumentCategories { get; }
     DbSet<AuditEntry> AuditEntries { get; }
     DbSet<PdfPreview> PdfPreviews { get; }
     DbSet<Workflow> Workflows { get; }
