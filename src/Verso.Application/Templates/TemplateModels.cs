@@ -4,7 +4,10 @@ namespace Verso.Application.Templates;
 
 // Request and response shapes of the template API. Documented in docs/api.md; changes must update it.
 
-public sealed record CreateTemplateRequest(string? Key, string? Name, string? Description, string? DocumentType);
+public sealed record CreateTemplateRequest(string? Key, string? Name, string? Description, string? DocumentType, Guid? CategoryId = null);
+
+/// <summary>Assigns the template to a category, or clears it when <c>CategoryId</c> is null.</summary>
+public sealed record SetTemplateCategoryRequest(Guid? CategoryId);
 
 public sealed record MarginsDto(decimal Top, decimal Right, decimal Bottom, decimal Left);
 
@@ -14,11 +17,13 @@ public sealed record PageSettingsDto(string? Size, string? Orientation, MarginsD
 public sealed record SaveDraftRequest(PageSettingsDto? PageSettings, JsonElement? Layout, JsonElement? DataSchema, JsonElement? SampleData);
 
 public sealed record TemplateSummaryDto(
-    Guid Id, string Key, string Name, string DocumentType, int? LatestPublishedVersion, bool HasDraft, DateTimeOffset UpdatedAt);
+    Guid Id, string Key, string Name, string DocumentType, int? LatestPublishedVersion, bool HasDraft, DateTimeOffset UpdatedAt,
+    Guid? CategoryId, string? CategoryName);
 
 public sealed record TemplateDto(
     Guid Id, string Key, string Name, string? Description, string DocumentType,
-    DateTimeOffset CreatedAt, string CreatedBy, int? LatestPublishedVersion, Guid? DraftVersionId);
+    DateTimeOffset CreatedAt, string CreatedBy, int? LatestPublishedVersion, Guid? DraftVersionId,
+    Guid? CategoryId, string? CategoryName);
 
 public sealed record TemplateVersionSummaryDto(
     Guid VersionId, int? VersionNumber, string Status, string? ContentHash,

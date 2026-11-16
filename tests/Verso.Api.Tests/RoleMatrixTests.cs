@@ -42,6 +42,7 @@ public sealed class RoleMatrixTests(MigratedDatabaseFixture fixture)
         { "GET", "/api/v1/templates/{id:guid}/versions", $"/api/v1/templates/{Id}/versions", AnyRole },
         { "GET", "/api/v1/templates/{id:guid}/versions/{versionId:guid}", $"/api/v1/templates/{Id}/versions/{Id}", AnyRole },
         { "GET", "/api/v1/templates/{id:guid}/draft", $"/api/v1/templates/{Id}/draft", AnyRole },
+        { "PUT", "/api/v1/templates/{id:guid}/category", $"/api/v1/templates/{Id}/category", "TX" },
         { "POST", "/api/v1/templates/{id:guid}/draft", $"/api/v1/templates/{Id}/draft", "TX" },
         { "PUT", "/api/v1/templates/{id:guid}/draft", $"/api/v1/templates/{Id}/draft", "TX" },
         { "POST", "/api/v1/templates/{id:guid}/draft/publish", $"/api/v1/templates/{Id}/draft/publish", "TX" },
@@ -49,6 +50,12 @@ public sealed class RoleMatrixTests(MigratedDatabaseFixture fixture)
         { "POST", "/api/v1/templates/{id:guid}/draft/preview/pdf", $"/api/v1/templates/{Id}/draft/preview/pdf", "TX" },
         { "GET", "/api/v1/previews/{previewId:guid}", $"/api/v1/previews/{Id}", "TX" },
         { "GET", "/api/v1/previews/{previewId:guid}/content", $"/api/v1/previews/{Id}/content", "TX" },
+
+        { "GET", "/api/v1/document-categories/", "/api/v1/document-categories", AnyRole },
+        { "POST", "/api/v1/document-categories/", "/api/v1/document-categories", "TX" },
+        { "PUT", "/api/v1/document-categories/{id:guid}", $"/api/v1/document-categories/{Id}", "TX" },
+        { "POST", "/api/v1/document-categories/{id:guid}/deactivate", $"/api/v1/document-categories/{Id}/deactivate", "TX" },
+        { "POST", "/api/v1/document-categories/{id:guid}/activate", $"/api/v1/document-categories/{Id}/activate", "TX" },
 
         { "GET", "/api/v1/node-types", "/api/v1/node-types", AnyRole },
         { "GET", "/api/v1/workflows/", "/api/v1/workflows", AnyRole },

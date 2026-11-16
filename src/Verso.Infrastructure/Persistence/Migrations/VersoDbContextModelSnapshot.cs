@@ -720,6 +720,37 @@ namespace Verso.Infrastructure.Persistence.Migrations
                     b.ToTable("TypedFolderPaths", "ingestion");
                 });
 
+            modelBuilder.Entity("Verso.Domain.Templates.DocumentCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .UseCollation("Latin1_General_100_CI_AS");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("UX_DocumentCategories_Name");
+
+                    b.ToTable("DocumentCategories", "templates");
+                });
+
             modelBuilder.Entity("Verso.Domain.Templates.PdfPreview", b =>
                 {
                     b.Property<Guid>("Id")
@@ -836,6 +867,9 @@ namespace Verso.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -864,6 +898,8 @@ namespace Verso.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
 
                     b.HasIndex("Key")
                         .IsUnique();
@@ -1144,6 +1180,14 @@ namespace Verso.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TemplateVersionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Verso.Domain.Templates.Template", b =>
+                {
+                    b.HasOne("Verso.Domain.Templates.DocumentCategory", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Verso.Domain.Templates.TemplateVersion", b =>

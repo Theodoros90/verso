@@ -17,6 +17,7 @@ public sealed class VersoDbContext(DbContextOptions<VersoDbContext> options) : D
 {
     public DbSet<Template> Templates => Set<Template>();
     public DbSet<TemplateVersion> TemplateVersions => Set<TemplateVersion>();
+    public DbSet<DocumentCategory> DocumentCategories => Set<DocumentCategory>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<PdfPreview> PdfPreviews => Set<PdfPreview>();
     public DbSet<Workflow> Workflows => Set<Workflow>();

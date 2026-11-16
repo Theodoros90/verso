@@ -24,6 +24,9 @@ internal sealed class TemplateConfiguration : IEntityTypeConfiguration<Template>
             .OnDelete(DeleteBehavior.Restrict);
         builder.Navigation(t => t.Versions).HasField("_versions").UsePropertyAccessMode(PropertyAccessMode.Field);
 
+        builder.HasOne<DocumentCategory>().WithMany().HasForeignKey(t => t.CategoryId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(t => t.CategoryId);
+
         builder.Ignore(t => t.Draft);
         builder.Ignore(t => t.LatestPublished);
     }
@@ -68,5 +71,18 @@ internal sealed class TemplateVersionConfiguration : IEntityTypeConfiguration<Te
         // At most one draft per template, and version numbers unique per template: enforced by the database too.
         builder.HasIndex(v => v.TemplateId).IsUnique().HasFilter("[Status] = 'Draft'").HasDatabaseName("UX_TemplateVersions_OneDraft");
         builder.HasIndex(v => new { v.TemplateId, v.VersionNumber }).IsUnique().HasFilter("[VersionNumber] IS NOT NULL").HasDatabaseName("UX_TemplateVersions_Number");
+    }
+}
+
+internal sealed class DocumentCategoryConfiguration : IEntityTypeConfiguration<DocumentCategory>
+{
+    public void Configure(EntityTypeBuilder<DocumentCategory> builder)
+    {
+        builder.ToTable("DocumentCategories", Schemas.Templates);
+        builder.HasKey(c => c.Id);
+        builder.Property(c => c.Id).ValueGeneratedNever();
+        builder.Property(c => c.Name).HasMaxLength(100).IsRequired().UseCollation("Latin1_General_100_CI_AS"); // names are unique case-insensitively, stated explicitly rather than left to the database default
+        builder.HasIndex(c => c.Name).IsUnique().HasDatabaseName("UX_DocumentCategories_Name");
+        builder.Property(c => c.CreatedBy).HasMaxLength(200).IsRequired();
     }
 }

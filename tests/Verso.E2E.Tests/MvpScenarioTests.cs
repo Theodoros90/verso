@@ -50,6 +50,7 @@ public sealed partial class MvpScenarioTests(E2EEnvironment env)
         var workflowKey = $"e2e-{tag.ToLowerInvariant()}";
         await page.GotoAsync("/workflows");
         await page.GetByRole(AriaRole.Button, new() { Name = "New workflow" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start from scratch" }).ClickAsync(); // the start dialog offers ready-made starters or a blank workflow
         await page.GetByLabel("Key").FillAsync(workflowKey);
         await page.GetByLabel("Name").FillAsync($"E2E invoice standard {tag}");
         await page.GetByRole(AriaRole.Button, new() { Name = "Create", Exact = true }).ClickAsync();

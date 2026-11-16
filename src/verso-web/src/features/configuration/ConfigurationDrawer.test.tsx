@@ -1,7 +1,9 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 
+import { routes } from '@/app/routes'
 import { setSession } from '@/lib/auth'
 import type { ConfigurationPackage } from '@/lib/api/generated'
 import { json, openConfiguration } from '@/test/configuration'
@@ -65,10 +67,19 @@ function captureDownload() {
 }
 
 describe('Configuration drawer (the gear)', () => {
-  it('opens from the gear with its three tabs, on Connections first', async () => {
+  it('has a Document categories tab and opens on it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => (url.startsWith('/api/v1/document-categories') ? json([]) : json({ status: 'Healthy', totalDurationMs: 1, checks: [] }))))
+    render(<RouterProvider router={createMemoryRouter(routes, { initialEntries: ['/'] })} />)
+    await userEvent.click(screen.getByRole('button', { name: /^Configuration/ }))
+    const drawer = screen.getByRole('dialog', { name: 'Configuration' })
+
+    expect(within(drawer).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Document categories', 'Connections', 'Global variables', 'Export / import'])
+    expect(within(drawer).getByRole('tab', { name: 'Document categories' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('opens from the gear with its tabs; Connections shows the simulated connections', async () => {
     const drawer = await openConfiguration('Connections')
 
-    expect(within(drawer).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Connections', 'Global variables', 'Export / import'])
     expect(within(drawer).getByRole('tab', { name: 'Connections' })).toHaveAttribute('aria-selected', 'true')
     expect(await within(drawer).findByRole('heading', { name: 'SMTP relay' })).toBeInTheDocument()
 

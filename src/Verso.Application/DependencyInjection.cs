@@ -15,6 +15,7 @@ public static class DependencyInjection
     {
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<TemplateService>();
+        services.AddScoped<DocumentCategoryService>();
         services.AddScoped<TemplatePreview>();
         services.AddScoped<PdfPreviews>();
         services.AddScoped<WorkflowService>();

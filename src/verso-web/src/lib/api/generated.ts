@@ -72,11 +72,16 @@ export interface ConfigurationPackage {
   workflows: PackageWorkflow[] | null
 }
 
+export interface CreateCategoryRequest {
+  name: string | null
+}
+
 export interface CreateTemplateRequest {
   key: string | null
   name: string | null
   description: string | null
   documentType: string | null
+  categoryId?: string | null
 }
 
 export interface CreateWorkflowRequest {
@@ -96,6 +101,13 @@ export interface DevUserDto {
   name: string
   roles: string[]
   token: string
+}
+
+export interface DocumentCategoryDto {
+  id: string
+  name: string
+  isActive: boolean
+  templateCount: number
 }
 
 export interface DuplicateWorkflowRequest {
@@ -437,6 +449,10 @@ export interface ProblemDetails {
   instance?: string | null
 }
 
+export interface RenameCategoryRequest {
+  name: string | null
+}
+
 export interface RenderIssueDto {
   severity: string
   code: string
@@ -454,6 +470,10 @@ export interface SaveDraftRequest {
 
 export interface SaveWorkflowDraftRequest {
   definition: null | JsonElement
+}
+
+export interface SetTemplateCategoryRequest {
+  categoryId: string | null
 }
 
 export interface SubmissionDto {
@@ -478,6 +498,8 @@ export interface TemplateDto {
   createdBy: string
   latestPublishedVersion: number | null
   draftVersionId: string | null
+  categoryId: string | null
+  categoryName: string | null
 }
 
 export interface TemplateSummaryDto {
@@ -488,6 +510,8 @@ export interface TemplateSummaryDto {
   latestPublishedVersion: number | null
   hasDraft: boolean
   updatedAt: string
+  categoryId: string | null
+  categoryName: string | null
 }
 
 export interface TemplateVersionDto {

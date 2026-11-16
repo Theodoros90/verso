@@ -4,6 +4,8 @@ import { createMemoryRouter, RouterProvider } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { routes } from '@/app/routes'
+import { setSession } from '@/lib/auth'
+import { testAdmin } from '@/test/setup'
 import type { TemplateDto, TemplateVersionDto } from '@/lib/api/generated'
 
 import layoutRaw from '../../../../../../tests/fixtures/invoice/layout.json?raw'
@@ -23,6 +25,8 @@ const template = (over: Partial<TemplateDto> = {}): TemplateDto => ({
   createdBy: 'dev.user',
   latestPublishedVersion: null,
   draftVersionId: VERSION_ID,
+  categoryId: null,
+  categoryName: null,
   ...over,
 })
 
@@ -53,7 +57,7 @@ interface Call {
 }
 
 /** A tiny in-memory API: GET returns the stored draft, PUT stores it (like the real server). */
-function mockApi(initial: TemplateVersionDto, opts: { template?: TemplateDto; putStatus?: number } = {}) {
+function mockApi(initial: TemplateVersionDto, opts: { template?: TemplateDto; putStatus?: number; categoryStatus?: number } = {}) {
   let stored = initial
   let etag = 1
   const calls: Call[] = []
@@ -68,6 +72,18 @@ function mockApi(initial: TemplateVersionDto, opts: { template?: TemplateDto; pu
       const body = init.body ? JSON.parse(String(init.body)) : undefined
       calls.push({ method, url, headers, body })
       if (url === '/api/health') return json({ status: 'Healthy', totalDurationMs: 1, checks: [] })
+      if (url.startsWith('/api/v1/document-categories'))
+        return json([
+          { id: 'c1', name: 'Invoices', isActive: true, templateCount: 1 },
+          { id: 'c2', name: 'Statements', isActive: true, templateCount: 0 },
+          { id: 'c3', name: 'Retired', isActive: false, templateCount: 1 },
+          { id: 'c4', name: 'Also retired', isActive: false, templateCount: 0 },
+        ])
+      if (url === `/api/v1/templates/${TEMPLATE_ID}/category` && method === 'PUT') {
+        if (opts.categoryStatus) return json({ title: 'Category is not available', code: 'category.inactive' }, opts.categoryStatus)
+        const id = (body as { categoryId: string | null }).categoryId
+        return json({ ...(opts.template ?? template()), categoryId: id, categoryName: id === 'c2' ? 'Statements' : null })
+      }
       if (url === `/api/v1/templates/${TEMPLATE_ID}`) return json(opts.template ?? template())
       if (url === `/api/v1/templates/${TEMPLATE_ID}/draft` && method === 'GET') return json(stored, 200, { ETag: `"e${etag}"` })
       if (url === `/api/v1/templates/${TEMPLATE_ID}/draft` && method === 'PUT') {
@@ -257,5 +273,52 @@ describe('Template designer', { timeout: 20_000 }, () => {
     expect(screen.getByRole('button', { name: /Start new draft/ })).toBeEnabled()
     expect(screen.queryByRole('button', { name: /Save draft/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add Text' })).toBeDisabled()
+  })
+  it('shows the current category and changes it', async () => {
+    const api = mockApi(version(), { template: template({ categoryId: 'c1', categoryName: 'Invoices' }) })
+    const user = userEvent.setup()
+    await openDesigner()
+    const select = (await screen.findByLabelText('Category')) as HTMLSelectElement
+    expect(select.value).toBe('c1')
+    await waitFor(() => expect(within(select).getByRole('option', { name: 'Statements' })).toBeInTheDocument())
+    expect(within(select).queryByRole('option', { name: /Also retired/ })).toBeNull()
+    await user.selectOptions(select, 'Statements')
+    await waitFor(() => expect(api.calls.find((c) => c.method === 'PUT' && c.url.endsWith('/category'))?.body).toEqual({ categoryId: 'c2' }))
+    await waitFor(() => expect((screen.getByLabelText('Category') as HTMLSelectElement).value).toBe('c2'))
+    await user.selectOptions(screen.getByLabelText('Category'), 'No category')
+    await waitFor(() => expect(api.calls.filter((c) => c.url.endsWith('/category')).at(-1)?.body).toEqual({ categoryId: null }))
+  })
+
+  it('a template with a deactivated category still shows it', async () => {
+    mockApi(version(), { template: template({ categoryId: 'c3', categoryName: 'Retired' }) })
+    await openDesigner()
+    const select = (await screen.findByLabelText('Category')) as HTMLSelectElement
+    expect(select.selectedOptions[0]).toHaveTextContent('Retired (inactive)')
+    await waitFor(() => expect(within(select).getByRole('option', { name: 'Statements' })).toBeInTheDocument())
+    expect(select.value).toBe('c3')
+    expect(within(select).queryByRole('option', { name: /Also retired/ })).toBeNull()
+  })
+  it('shows an error and keeps the previous category when changing it fails', async () => {
+    mockApi(version(), { template: template({ categoryId: 'c1', categoryName: 'Invoices' }), categoryStatus: 422 })
+    const user = userEvent.setup()
+    await openDesigner()
+    const select = (await screen.findByLabelText('Category')) as HTMLSelectElement
+    await waitFor(() => expect(within(select).getByRole('option', { name: 'Statements' })).toBeInTheDocument())
+    await user.selectOptions(select, 'Statements')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Category is not available')
+    expect((screen.getByLabelText('Category') as HTMLSelectElement).value).toBe('c1')
+  })
+
+  it('shows the category as plain text, without a select, to a user without template authoring', async () => {
+    setSession({
+      mode: 'Development',
+      me: { ...testAdmin, id: 'dev.viewer', roles: ['Viewer'], permissions: { ...testAdmin.permissions, templateAuthoring: false } },
+      getToken: async () => 'dev:dev.viewer',
+      signOut: () => undefined,
+    })
+    mockApi(version(), { template: template({ categoryId: 'c1', categoryName: 'Invoices' }) })
+    await openDesigner()
+    expect(await screen.findByText('Invoices')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Category' })).toBeNull()
   })
 })
