@@ -19,10 +19,11 @@ import { Link, useBlocker, useParams } from 'react-router'
 import { usePermissions } from '@/app/AuthGate'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/form'
+import { Select, Switch } from '@/components/ui/form'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/lib/api/client'
-import type { TemplateDto, TemplateVersionDto } from '@/lib/api/generated'
+import { documentCategoriesApi } from '@/lib/api/documentCategories'
+import type { DocumentCategoryDto, TemplateDto, TemplateVersionDto } from '@/lib/api/generated'
 import { templatesApi } from '@/lib/api/templates'
 
 import type { ImportedDesign } from '../import'
@@ -474,6 +475,7 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
           </Link>
           <span className="mr-1.5 text-sm font-semibold">{template.name}</span>
           {statusPill}
+          <CategoryPicker template={template} canEdit={canEdit} />
           {dirty && <span className="text-xs text-ink-3">Unsaved changes</span>}
           <Sep />
           <Button variant="ghost" size="icon" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={readOnly || state.history.past.length === 0} onClick={actions.undo}>
@@ -675,4 +677,67 @@ function Sep() {
 
 function typeLabel(type: ElementType) {
   return TYPE_LABELS[type]
+}
+
+/**
+ * The template's category in the toolbar. Authors can change or clear it (saved straight away: it belongs to the
+ * template, not to the draft); others see it as text. Deactivated categories are offered only when they are the
+ * template's current one.
+ */
+function CategoryPicker({ template, canEdit }: { template: TemplateDto; canEdit: boolean }) {
+  const [current, setCurrent] = useState<{ id: string | null; name: string | null }>({ id: template.categoryId, name: template.categoryName })
+  const [categories, setCategories] = useState<DocumentCategoryDto[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!canEdit) return
+    const controller = new AbortController()
+    documentCategoriesApi
+      .list(true, controller.signal)
+      .then(setCategories)
+      .catch(() => undefined) // the current category is still shown without the list
+    return () => controller.abort()
+  }, [canEdit])
+
+  if (!canEdit)
+    return (
+      <span className="text-[12.5px] text-ink-3" aria-label="Category">
+        {current.name ?? 'Uncategorized'}
+      </span>
+    )
+
+  const options = categories.filter((c) => c.isActive || c.id === current.id)
+  if (current.id && !options.some((c) => c.id === current.id)) options.push({ id: current.id, name: current.name ?? '', isActive: false, templateCount: 0 })
+
+  const change = async (value: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const updated = await templatesApi.setCategory(template.id, value || null)
+      setCurrent({ id: updated.categoryId, name: updated.categoryName })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not change the category.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <Select aria-label="Category" value={current.id ?? ''} disabled={busy} onChange={(e) => void change(e.target.value)} className="h-7 w-auto max-w-48 py-0 text-[12.5px]">
+        <option value="">No category</option>
+        {options.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.isActive ? c.name : `${c.name} (inactive)`}
+          </option>
+        ))}
+      </Select>
+      {error && (
+        <span role="alert" className="text-xs text-err">
+          {error}
+        </span>
+      )}
+    </>
+  )
 }

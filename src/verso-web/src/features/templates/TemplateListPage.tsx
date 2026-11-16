@@ -1,14 +1,15 @@
 import { Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 
 import { usePermissions } from '@/app/AuthGate'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Field, Input, Textarea } from '@/components/ui/form'
+import { Field, Input, Select, Textarea } from '@/components/ui/form'
 import { ApiError } from '@/lib/api/client'
-import type { TemplateSummaryDto } from '@/lib/api/generated'
+import { documentCategoriesApi } from '@/lib/api/documentCategories'
+import type { DocumentCategoryDto, TemplateSummaryDto } from '@/lib/api/generated'
 import { templatesApi } from '@/lib/api/templates'
 
 type ListState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; items: TemplateSummaryDto[] }
@@ -34,26 +35,53 @@ function Thumb() {
 export function TemplateListPage() {
   const [state, setState] = useState<ListState>({ kind: 'loading' })
   const [creating, setCreating] = useState(false)
+  const [categories, setCategories] = useState<DocumentCategoryDto[]>([])
+  const [params, setParams] = useSearchParams()
+  const categoryFilter = params.get('category') ?? ''
   const canCreate = usePermissions().templateAuthoring
+
+  // Only active categories are offered; if the request fails the list and the dialog still work without them.
+  useEffect(() => {
+    const controller = new AbortController()
+    documentCategoriesApi
+      .list(false, controller.signal)
+      .then((items) => setCategories(items.filter((c) => c.isActive)))
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
     templatesApi
-      .list(1, 100, controller.signal)
+      .list(1, 100, controller.signal, categoryFilter || undefined)
       .then((page) => setState({ kind: 'ready', items: page.items }))
       .catch((e: unknown) => {
         if (e instanceof DOMException && e.name === 'AbortError') return
         setState({ kind: 'error', message: e instanceof Error ? e.message : 'Could not load templates.' })
       })
     return () => controller.abort()
-  }, [])
+  }, [categoryFilter])
+
+  const setFilter = (value: string) => {
+    setState({ kind: 'loading' })
+    setParams(value ? { category: value } : {}, { replace: true })
+  }
 
   return (
     <div className="max-w-[1440px] px-4 pt-6 pb-10 md:px-7">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <p className="max-w-prose text-ink-2">Invoice templates. Open one to edit its draft, or create a new one.</p>
+        <Select aria-label="Filter by category" value={categoryFilter} onChange={(e) => setFilter(e.target.value)} className="ml-auto w-auto">
+          <option value="">All categories</option>
+          <option value="none">Uncategorized</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </Select>
         {canCreate && (
-          <Button variant="primary" className="ml-auto" onClick={() => setCreating(true)}>
+          <Button variant="primary" onClick={() => setCreating(true)}>
             <Plus /> New template
           </Button>
         )}
@@ -67,8 +95,8 @@ export function TemplateListPage() {
       )}
       {state.kind === 'ready' && state.items.length === 0 && (
         <section className="max-w-xl rounded-lg border border-dashed border-line-strong bg-surface p-6">
-          <h2 className="mb-1 text-[14.5px] font-semibold">No templates yet</h2>
-          <p className="text-ink-2">Create the first template to start designing.</p>
+          <h2 className="mb-1 text-[14.5px] font-semibold">{categoryFilter ? 'No templates in this category' : 'No templates yet'}</h2>
+          <p className="text-ink-2">{categoryFilter ? 'Choose another category or show all templates.' : 'Create the first template to start designing.'}</p>
         </section>
       )}
       {state.kind === 'ready' && state.items.length > 0 && (
@@ -86,6 +114,7 @@ export function TemplateListPage() {
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {t.latestPublishedVersion != null && <StatusPill tone="ok">v{t.latestPublishedVersion}</StatusPill>}
                     {t.hasDraft && <StatusPill tone="warn">Draft</StatusPill>}
+                    {t.categoryName && <StatusPill tone="neutral">{t.categoryName}</StatusPill>}
                   </div>
                   <div className="mt-1 text-[12px] text-ink-3">Edited {dateFormat.format(new Date(t.updatedAt))}</div>
                 </div>
@@ -95,18 +124,19 @@ export function TemplateListPage() {
         </ul>
       )}
 
-      <NewTemplateDialog open={creating} onOpenChange={setCreating} />
+      <NewTemplateDialog open={creating} onOpenChange={setCreating} categories={categories} />
     </div>
   )
 }
 
 const KEY_PATTERN = /^[A-Z][A-Z0-9-]{1,31}$/
 
-function NewTemplateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+function NewTemplateDialog({ open, onOpenChange, categories }: { open: boolean; onOpenChange: (open: boolean) => void; categories: DocumentCategoryDto[] }) {
   const navigate = useNavigate()
   const [key, setKey] = useState('')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [categoryId, setCategoryId] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
 
@@ -120,7 +150,7 @@ function NewTemplateDialog({ open, onOpenChange }: { open: boolean; onOpenChange
 
     setBusy(true)
     try {
-      const created = await templatesApi.create({ key, name: name.trim(), description: description.trim() || null, documentType: 'Invoice' })
+      const created = await templatesApi.create({ key, name: name.trim(), description: description.trim() || null, documentType: 'Invoice', categoryId: categoryId || undefined })
       navigate(`/templates/${created.id}`)
     } catch (error) {
       if (error instanceof ApiError) {
@@ -160,6 +190,16 @@ function NewTemplateDialog({ open, onOpenChange }: { open: boolean; onOpenChange
         </Field>
         <Field label="Description (optional)" htmlFor="tpl-desc" error={errors.description}>
           <Textarea id="tpl-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
+        </Field>
+        <Field label="Category (optional)" htmlFor="tpl-category" error={errors.categoryid}>
+          <Select id="tpl-category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+            <option value="">None</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
         </Field>
         {errors.form && (
           <p role="alert" className="text-[13px] text-err">
