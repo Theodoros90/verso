@@ -87,7 +87,7 @@ public sealed class ArchiveRecord
     public Guid DocumentId { get; private set; }
     public DateTimeOffset ArchivedAt { get; private set; }
 
-    /// <summary><c>7y</c>, <c>10y</c> or <c>permanent</c>, as configured on the archive node.</summary>
+    /// <summary><c>permanent</c> or an amount and unit such as <c>90d</c>, <c>6m</c> or <c>7y</c>, as configured on the archive node.</summary>
     public string Retention { get; private set; } = "";
 
     /// <summary>Null when kept permanently. At expiry nothing is deleted in the MVP; the date is recorded only.</summary>
@@ -102,11 +102,37 @@ public sealed class ArchiveRecord
     /// <summary>File name and metadata values, one per line: what archive search matches against (keys are not searched).</summary>
     public string SearchText { get; private set; } = "";
 
-    public static ArchiveRecord Create(
-        Guid documentId, string retention, DateTimeOffset? retentionUntil, string folderPath, string metadataJson, string searchText, DateTimeOffset now) => new()
+    /// <summary>
+    /// The document category of the template the document was made from, copied when it was archived (ADR 0013 addendum 1).
+    /// Null = uncategorised (no template, e.g. an HTML email, or a template without a category). By value: no foreign key.
+    /// </summary>
+    public Guid? CategoryId { get; private set; }
+
+    /// <summary>
+    /// SHA-256 (hex) of the workflow and the metadata values the Archive step marked "match" (ADR 0014); null when the step replaces nothing.
+    /// A new record with the same key supersedes the older ones.
+    /// </summary>
+    public string? MatchKey { get; private set; }
+
+    /// <summary>Set when a later archived document with the same match key replaced this one. The record and its file are kept for the audit trail.</summary>
+    public DateTimeOffset? SupersededAt { get; private set; }
+
+    public Guid? SupersededByDocumentId { get; private set; }
+
+    public void Supersede(Guid byDocumentId, DateTimeOffset now)
     {
+        SupersededAt = now;
+        SupersededByDocumentId = byDocumentId;
+    }
+
+    public static ArchiveRecord Create(
+        Guid documentId, string retention, DateTimeOffset? retentionUntil, string folderPath, string metadataJson, string searchText, DateTimeOffset now,
+        Guid? categoryId = null, string? matchKey = null) => new()
+    {
+        MatchKey = matchKey,
         Id = Guid.CreateVersion7(now),
         DocumentId = documentId,
+        CategoryId = categoryId,
         ArchivedAt = now,
         Retention = retention,
         RetentionUntil = retentionUntil,

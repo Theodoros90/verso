@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/api/client'
 import { executionsApi } from '@/lib/api/executions'
 import type { ExecutionDocumentDto, ExecutionDto, ExecutionEventDto, ExecutionInputDto, ExecutionStepDto } from '@/lib/api/generated'
+import { formatRetention } from '@/lib/retention'
 import { cn } from '@/lib/utils'
 
 import { DownloadButton } from './DownloadButton'
@@ -298,7 +299,7 @@ function DocumentRow({ document: d }: { document: ExecutionDocumentDto }) {
             <Row label="Folder" mono>{d.archive.folderPath}</Row>
             <Row label="Archived">{formatDateTime(d.archive.archivedAt)}</Row>
             <Row label="Retention">
-              {d.archive.retentionUntil ? `Until ${formatDate(d.archive.retentionUntil)} (${d.archive.retention})` : 'Permanent'}
+              {d.archive.retentionUntil ? `Until ${formatDate(d.archive.retentionUntil)} (${formatRetention(d.archive.retention)})` : 'Permanent'}
             </Row>
             {Object.entries(d.archive.metadata).map(([key, value]) => (
               <Row key={key} label={key}>{value}</Row>

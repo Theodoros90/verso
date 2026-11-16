@@ -41,9 +41,9 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null, JsonNode? combineConfig = null, JsonNode? sendConfig = null, JsonNode? printConfig = null, bool parallelBranches = false, bool joinBranches = false)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null, JsonNode? combineConfig = null, JsonNode? sendConfig = null, JsonNode? printConfig = null, bool parallelBranches = false, bool joinBranches = false, Guid? templateCategoryId = null, bool archiveMatchInvoice = false)
     {
-        var templateId = await PublishInvoiceTemplateAsync();
+        var templateId = await PublishInvoiceTemplateAsync(templateCategoryId);
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
         using var create = await client.PostAsJsonAsync(new Uri("/api/v1/workflows", UriKind.Relative), new { key, name = "Invoice standard" });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
@@ -121,6 +121,12 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
             edges.Add(JsonNode.Parse("""{ "id": "e3", "source": "pdf", "sourcePort": "success", "target": "pdf2", "targetPort": "in" }"""));
             edges.Add(JsonNode.Parse("""{ "id": "e4", "source": "pdf2", "sourcePort": "success", "target": "combine", "targetPort": "in" }"""));
             edges.Add(JsonNode.Parse("""{ "id": "e5", "source": "combine", "sourcePort": "success", "target": "archive", "targetPort": "in" }"""));
+        }
+
+        if (archiveMatchInvoice)
+        {
+            // Archive replaces an earlier document of this workflow with the same invoice number (ADR 0014).
+            definition["nodes"]!.AsArray().Single(n => (string?)n!["id"] == "archive")!["config"]!["metadata"]![0]!["match"] = true;
         }
 
         definition["nodes"]![1]!["config"] = (rules ?? StandardRules).DeepClone();
@@ -259,10 +265,10 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
         return key;
     }
 
-    public async Task<Guid> PublishInvoiceTemplateAsync()
+    public async Task<Guid> PublishInvoiceTemplateAsync(Guid? categoryId = null)
     {
         var key = "X" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
-        using var create = await client.PostAsJsonAsync(new Uri("/api/v1/templates", UriKind.Relative), new { key, name = "Commercial invoice" });
+        using var create = await client.PostAsJsonAsync(new Uri("/api/v1/templates", UriKind.Relative), new { key, name = "Commercial invoice", categoryId });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var id = (await ReadAsync(create)).GetProperty("id").GetGuid();
         using var draft = await client.GetAsync(new Uri($"/api/v1/templates/{id}/draft", UriKind.Relative));

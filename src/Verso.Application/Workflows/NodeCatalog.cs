@@ -111,13 +111,6 @@ public static class NodeCatalog
         ["iban"] = "IBAN",
     };
 
-    public static readonly IReadOnlyDictionary<string, string> Retention = new Dictionary<string, string>
-    {
-        ["7y"] = "7 years",
-        ["10y"] = "10 years",
-        ["permanent"] = "Permanently",
-    };
-
     /// <summary>How callers of the (mock) webhook authenticate. Descriptive only: nothing listens at the mock path.</summary>
     public static readonly IReadOnlyDictionary<string, string> AuthMethods = new Dictionary<string, string>
     {
@@ -919,12 +912,15 @@ public static class NodeCatalog
               "properties": {
                 "folderPattern": { "type": "string", "title": "Folder pattern", "minLength": 1, "maxLength": 300, "x-widget": "pattern",
                   "description": "Filters: |year, |month, |day." },
-                "retention": { "type": "string", "title": "Keep for", "enum": {{JsonSerializer.Serialize(Retention.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(Retention.Values)}} },
+                "retention": { "type": "string", "title": "Keep for", "x-widget": "retention", "pattern": "^(permanent|[1-9][0-9]{0,3}[dmy])$",
+                  "description": "An amount of days, months or years (for example 6 months), or permanently." },
                 "metadata": { "type": "array", "title": "Metadata", "maxItems": 20,
                   "items": { "type": "object", "required": ["key", "value"],
                     "properties": {
                       "key": { "type": "string", "title": "Key", "pattern": "^[A-Za-z][A-Za-z0-9]{0,63}$" },
-                      "value": { "type": "string", "title": "Value", "maxLength": 300, "x-widget": "pattern" } } } } },
+                      "value": { "type": "string", "title": "Value", "maxLength": 300, "x-widget": "pattern" },
+                      "match": { "type": "boolean", "title": "Replace when this matches",
+                        "description": "When every row ticked here has the same value as an earlier archived document of this workflow, that document is replaced by this one. It stays in the audit trail." } } } } },
               "required": ["folderPattern", "retention", "metadata"] }
             """,
             """

@@ -6,17 +6,18 @@ import { Button } from '@/components/ui/button'
 import { Field, Input, Select, Switch } from '@/components/ui/form'
 import { ApiError } from '@/lib/api/client'
 import { configurationApi } from '@/lib/api/configuration'
-import type { ConfigurationImportResult, ConfigurationPackage } from '@/lib/api/generated'
+import { documentCategoriesApi } from '@/lib/api/documentCategories'
+import type { ConfigurationImportResult, ConfigurationPackage, DocumentCategoryDto } from '@/lib/api/generated'
 import { templatesApi } from '@/lib/api/templates'
 import { workflowsApi } from '@/lib/api/workflows'
 import { usePermissions } from '@/app/AuthGate'
 
 import { placeholder } from '../variables/variables'
-import { applyLocal, buildFile, countConflicts, PACKAGE_PRODUCT, PACKAGE_VERSION, readFile, type ApplyMode, type ConfigurationFile } from './package'
+import { applyLocal, buildFile, countConflicts, newCategories, PACKAGE_PRODUCT, PACKAGE_VERSION, readFile, type ApplyMode, type ConfigurationFile } from './package'
 import { connectionsStore, ENVIRONMENTS, useConnections, useEnvironment, useVariables, variablesStore, type Environment } from './stores'
 
 interface Item {
-  /** Prefixed with its kind (`t:` template, `w:` workflow, `c:` connection, `v:` variable) so one set can hold every unticked id. */
+  /** Prefixed with its kind (`t:` template, `w:` workflow, `c:` connection, `v:` variable, `k:` document category) so one set can hold every unticked id. */
   key: string
   id: string
   label: string
@@ -31,7 +32,7 @@ const describeError = (e: unknown) => {
   return e instanceof Error ? e.message : 'Something went wrong.'
 }
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`
 
 function download(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
@@ -72,6 +73,20 @@ function useCatalog() {
     return () => ctl.abort()
   }, [])
   return state
+}
+
+/** Document categories, active and inactive: real records from the API. */
+function useCategories(reload: number) {
+  const [categories, setCategories] = useState<DocumentCategoryDto[]>([])
+  useEffect(() => {
+    const ctl = new AbortController()
+    documentCategoriesApi
+      .list(true, ctl.signal)
+      .then(setCategories)
+      .catch(() => undefined) // the group just stays empty
+    return () => ctl.abort()
+  }, [reload])
+  return categories
 }
 
 function Group({
@@ -150,6 +165,8 @@ export function TransferPanel() {
   const [variables, setVariables] = useVariables()
   const [environment, setEnvironment] = useEnvironment()
   const catalog = useCatalog()
+  const [categoriesVersion, setCategoriesVersion] = useState(0)
+  const categories = useCategories(categoriesVersion)
   const [unticked, setUnticked] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
   const [exporting, setExporting] = useState(false)
@@ -158,7 +175,8 @@ export function TransferPanel() {
 
   const connectionItems: Item[] = useMemo(() => connections.map((c) => ({ key: `c:${c.id}`, id: c.id, label: c.name, sub: c.category || c.group })), [connections])
   const variableItems: Item[] = useMemo(() => variables.map((v) => ({ key: `v:${v.id}`, id: v.id, label: placeholder(v.name), sub: v.type })), [variables])
-  const all = [...connectionItems, ...variableItems, ...catalog.templates, ...catalog.workflows]
+  const categoryItems: Item[] = useMemo(() => categories.map((c) => ({ key: `k:${c.id}`, id: c.id, label: c.name, sub: c.isActive ? 'Active' : 'Inactive' })), [categories])
+  const all = [...categoryItems, ...connectionItems, ...variableItems, ...catalog.templates, ...catalog.workflows]
   const chosen = (items: Item[]) => items.filter((i) => !unticked.has(i.key))
   const total = chosen(all).length
   const q = query.trim().toLowerCase()
@@ -180,11 +198,12 @@ export function TransferPanel() {
         server,
         connections.filter((c) => picked.has(c.id)),
         variables.filter((v) => picked.has(v.id)),
+        categories.filter((c) => !unticked.has(`k:${c.id}`)),
       )
       download(`verso-config-${environment.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(file, null, 2))
       setExportNotice({
         tone: 'ok',
-        text: `Exported ${plural(file.connections.length, 'connection')}, ${plural(file.variables.length, 'variable')}, ${plural(file.templates?.length ?? 0, 'template')} and ${plural(file.workflows?.length ?? 0, 'workflow')}. Secrets are never included.`,
+        text: `Exported ${plural(file.categories.length, 'category', 'categories')}, ${plural(file.connections.length, 'connection')}, ${plural(file.variables.length, 'variable')}, ${plural(file.templates?.length ?? 0, 'template')} and ${plural(file.workflows?.length ?? 0, 'workflow')}. Secrets are never included.`,
       })
     } catch (e) {
       setExportNotice({ tone: 'err', text: describeError(e) })
@@ -238,6 +257,7 @@ export function TransferPanel() {
             Templates and workflows could not be loaded: {catalog.error}
           </p>
         )}
+        <Group title="Document categories" items={categoryItems} unticked={unticked} setUnticked={setUnticked} query={q} empty="No document categories yet." />
         <Group title="Connections" items={connectionItems} unticked={unticked} setUnticked={setUnticked} query={q} />
         <Group title="Global variables" items={variableItems} unticked={unticked} setUnticked={setUnticked} query={q} />
         <Group title="Templates" items={catalog.templates} unticked={unticked} setUnticked={setUnticked} query={q} empty="No templates yet." />
@@ -255,6 +275,8 @@ export function TransferPanel() {
         <ImportSection
           connections={connections}
           variables={variables}
+          categories={categories}
+          onCategoriesChanged={() => setCategoriesVersion((v) => v + 1)}
           onApplied={(next) => {
             setConnections(next.connections)
             setVariables(next.variables)
@@ -275,13 +297,17 @@ export function TransferPanel() {
 function ImportSection({
   connections,
   variables,
+  categories,
+  onCategoriesChanged,
   onApplied,
 }: {
   connections: ReturnType<typeof connectionsStore.get>
   variables: ReturnType<typeof variablesStore.get>
+  categories: DocumentCategoryDto[]
+  onCategoriesChanged: () => void
   onApplied: (next: ReturnType<typeof applyLocal>) => void
 }) {
-  const [parsed, setParsed] = useState<{ file: ConfigurationFile; skipped: { connections: number; variables: number } } | null>(null)
+  const [parsed, setParsed] = useState<{ file: ConfigurationFile; skipped: { connections: number; variables: number; categories: number } } | null>(null)
   const [mode, setMode] = useState<ApplyMode>('merge')
   const [includeWorkflows, setIncludeWorkflows] = useState(true)
   const [preview, setPreview] = useState<ConfigurationImportResult | null>(null)
@@ -335,11 +361,23 @@ function ImportSection({
       let imported: ConfigurationImportResult | null = null
       if (hasServerContent(parsed.file)) imported = await configurationApi.import({ package: serverPart(parsed.file), includeWorkflows }, false)
       onApplied(applyLocal(parsed.file, mode, connections, variables))
+      // Categories: only the names this environment lacks are created (never changed or removed); an inactive one is created, then deactivated.
+      let createdCategories = 0
+      for (const c of newCategories(parsed.file, categories)) {
+        try {
+          const made = await documentCategoriesApi.create(c.name)
+          if (!c.isActive) await documentCategoriesApi.deactivate(made.id)
+          createdCategories++
+        } catch (e) {
+          if (!(e instanceof ApiError && e.status === 409)) throw e // 409 = the name appeared meanwhile: nothing to do
+        }
+      }
+      if (parsed.file.categories.length > 0) onCategoriesChanged()
       const count = (kind: string) => imported?.items.filter((i) => i.kind === kind && (i.outcome === 'created' || i.outcome === 'updated')).length ?? 0
       const skipped = imported?.items.filter((i) => i.outcome === 'skipped').length ?? 0
       setResult({
         tone: 'ok',
-        text: `Imported ${plural(parsed.file.connections.length, 'connection')}, ${plural(parsed.file.variables.length, 'variable')}, ${plural(count('template'), 'template')} and ${plural(count('workflow'), 'workflow')}${skipped ? ` (${skipped} skipped)` : ''}.`,
+        text: `Imported ${plural(createdCategories, 'new category', 'new categories')}, ${plural(parsed.file.connections.length, 'connection')}, ${plural(parsed.file.variables.length, 'variable')}, ${plural(count('template'), 'template')} and ${plural(count('workflow'), 'workflow')}${skipped ? ` (${skipped} skipped)` : ''}.`,
         warnings: imported?.warnings,
       })
       setParsed(null)
@@ -351,7 +389,7 @@ function ImportSection({
   }
 
   const conflicts = parsed ? countConflicts(parsed.file, connections, variables) : null
-  const dropped = parsed ? parsed.skipped.connections + parsed.skipped.variables : 0
+  const dropped = parsed ? parsed.skipped.connections + parsed.skipped.variables + parsed.skipped.categories : 0
   return (
     <section aria-labelledby="cfg-import" className="flex flex-col gap-3">
       <h3 id="cfg-import" className="m-0 text-[14.5px] font-semibold">
@@ -369,7 +407,7 @@ function ImportSection({
           if (file) void onFile(file)
         }}
       />
-      <Field label="How to apply" htmlFor="cfg-mode" hint="Applies to connections and variables. Templates and workflows are matched by key and never removed.">
+      <Field label="How to apply" htmlFor="cfg-mode" hint="Applies to connections and variables. Categories are only added, never changed or removed. Templates and workflows are matched by key and never removed.">
         <Select id="cfg-mode" value={mode} onChange={(e) => setMode(e.target.value as ApplyMode)}>
           <option value="merge">Merge — add new items, update items with the same name</option>
           <option value="replace">Replace — make this environment’s connections and variables match the package</option>
@@ -386,13 +424,13 @@ function ImportSection({
           </dd>
           <dt className="text-ink-3">Contents</dt>
           <dd className="m-0">
-            {plural(parsed.file.connections.length, 'connection')}, {plural(parsed.file.variables.length, 'variable')}, {plural(parsed.file.templates?.length ?? 0, 'template')},{' '}
+            {plural(parsed.file.categories.length, 'category', 'categories')}, {plural(parsed.file.connections.length, 'connection')}, {plural(parsed.file.variables.length, 'variable')}, {plural(parsed.file.templates?.length ?? 0, 'template')},{' '}
             {plural(parsed.file.workflows?.length ?? 0, 'workflow')}
             {dropped > 0 && <span className="text-warn"> · {dropped} invalid entries ignored</span>}
           </dd>
           <dt className="text-ink-3">Already here</dt>
           <dd className="m-0">
-            {plural(conflicts.connections, 'connection')} and {plural(conflicts.variables, 'variable')} with the same name
+            {plural(conflicts.connections, 'connection')} and {plural(conflicts.variables, 'variable')} with the same name; {plural(parsed.file.categories.length - newCategories(parsed.file, categories).length, 'category', 'categories')} already exist and are kept as they are
           </dd>
           {preview && (
             <>

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -223,6 +224,78 @@ public sealed class ExecutionHistoryApiTests(MigratedDatabaseFixture fixture) : 
 
         using var missing = await api.GetAsync(new Uri($"/api/v1/documents/{Guid.NewGuid()}", UriKind.Relative));
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+    }
+
+    [Fact]
+    public async Task ArchiveSearch_RecordsTheTemplateCategory_AndFiltersByIt()
+    {
+        var api = DocumentApi();
+        var tag = Guid.NewGuid().ToString("N")[..8];
+        using var created = await _client.PostAsJsonAsync(new Uri("/api/v1/document-categories", UriKind.Relative), new { name = $"Statements {tag}" });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var categoryId = (await ExecutionTestKit.ReadAsync(created)).GetProperty("id").GetGuid();
+
+        var categorised = await ArchiveAsync(await Kit.PublishInvoiceWorkflowAsync(templateCategoryId: categoryId), $"INV-{tag}-1", $"Customer {tag}");
+        var uncategorised = await ArchiveAsync(await Kit.PublishInvoiceWorkflowAsync(), $"INV-{tag}-2", $"Customer {tag}");
+
+        Assert.Equal([categorised], await SearchIdsAsync(api, $"q={tag}&categoryId={categoryId}"));
+        Assert.Equal([uncategorised], await SearchIdsAsync(api, $"q={tag}&categoryId=none"));
+        Assert.Equal([uncategorised, categorised], await SearchIdsAsync(api, $"q={tag}"));
+
+        using var detail = await api.GetAsync(new Uri($"/api/v1/documents/{categorised}", UriKind.Relative));
+        var body = await ExecutionTestKit.ReadAsync(detail);
+        Assert.Equal(categoryId, body.GetProperty("categoryId").GetGuid());
+        Assert.Equal($"Statements {tag}", body.GetProperty("categoryName").GetString());
+
+        using var other = await api.GetAsync(new Uri($"/api/v1/documents/{uncategorised}", UriKind.Relative));
+        var otherBody = await ExecutionTestKit.ReadAsync(other);
+        Assert.Equal(JsonValueKind.Null, otherBody.GetProperty("categoryId").ValueKind);
+        Assert.Equal(JsonValueKind.Null, otherBody.GetProperty("categoryName").ValueKind);
+
+        using var bad = await api.GetAsync(new Uri("/api/v1/documents?categoryId=invoices", UriKind.Relative));
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+    }
+
+    [Fact]
+    public async Task Archive_ReplacesTheEarlierDocumentWithTheSameMatchValues_AndKeepsItForTheAuditTrail()
+    {
+        var api = DocumentApi();
+        var tag = Guid.NewGuid().ToString("N")[..8];
+        var key = await Kit.PublishInvoiceWorkflowAsync(archiveMatchInvoice: true);
+        var other = await Kit.PublishInvoiceWorkflowAsync(archiveMatchInvoice: true); // another workflow never replaces this one's documents
+
+        var first = await ArchiveAsync(key, $"INV-{tag}-1", "Customer A");
+        var unrelated = await ArchiveAsync(key, $"INV-{tag}-2", "Customer A");
+        var otherWorkflow = await ArchiveAsync(other, $"INV-{tag}-1", "Customer A");
+        Assert.Equal([otherWorkflow, unrelated, first], await SearchIdsAsync(api, $"q={tag}"));
+
+        var second = await ArchiveAsync(key, $"INV-{tag}-1", "Customer B"); // same invoice number: replaces the first
+        Assert.Equal([second, otherWorkflow, unrelated], await SearchIdsAsync(api, $"q={tag}"));
+        Assert.Equal([second, otherWorkflow, unrelated, first], await SearchIdsAsync(api, $"q={tag}&includeSuperseded=true"));
+
+        using var detail = await api.GetAsync(new Uri($"/api/v1/documents/{first}", UriKind.Relative)); // still readable
+        var body = await ExecutionTestKit.ReadAsync(detail);
+        Assert.Equal(second, body.GetProperty("supersededByDocumentId").GetGuid());
+        Assert.NotEqual(JsonValueKind.Null, body.GetProperty("supersededAt").ValueKind);
+        using var content = await api.GetAsync(new Uri($"/api/v1/documents/{first}/content", UriKind.Relative));
+        Assert.Equal(HttpStatusCode.OK, content.StatusCode);
+
+        var audit = await Kit.WithDbAsync(db => db.AuditEntries
+            .Where(a => a.EntityId == first.ToString() && a.Action == DocumentService.SupersededAction).CountAsync());
+        Assert.Equal(1, audit);
+    }
+
+    [Fact]
+    public async Task Archive_ReplacesNothing_WhenNoRowIsTicked()
+    {
+        var api = DocumentApi();
+        var tag = Guid.NewGuid().ToString("N")[..8];
+        var key = await Kit.PublishInvoiceWorkflowAsync();
+
+        var first = await ArchiveAsync(key, $"INV-{tag}-1", "Customer A");
+        var second = await ArchiveAsync(key, $"INV-{tag}-1", "Customer A");
+
+        Assert.Equal([second, first], await SearchIdsAsync(api, $"q={tag}"));
     }
 
     [Fact]

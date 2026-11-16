@@ -14,8 +14,8 @@ public static class DocumentEndpoints
 
         group.MapGet("/", async (
                     DocumentService service, CancellationToken ct,
-                    string? q = null, DateTimeOffset? from = null, DateTimeOffset? to = null, int page = 1, int pageSize = 25) =>
-                (await service.SearchAsync(q, from, to, page, pageSize, ct)).ToResult())
+                    string? q = null, DateTimeOffset? from = null, DateTimeOffset? to = null, int page = 1, int pageSize = 25, string? categoryId = null, bool includeSuperseded = false) =>
+                (await service.SearchAsync(q, from, to, page, pageSize, ct, categoryId, includeSuperseded)).ToResult())
             .WithName("SearchDocuments")
             .Produces<PageResult<ArchivedDocumentDto>>()
             .ProducesValidationProblem();

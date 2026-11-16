@@ -46,8 +46,14 @@ export const executionsApi = {
 }
 
 export const documentsApi = {
-  search: (text: string, from: string | undefined, to: string | undefined, page = 1, pageSize = 25, signal?: AbortSignal) =>
-    request<PageResultOfArchivedDocumentDto>(`/api/v1/documents${query({ q: text.trim(), from, to, page, pageSize })}`, { signal }).then((r) => r.body),
+  /** `categoryId`: a category id, `'none'` for uncategorized documents, or undefined for all. */
+  search: (
+    text: string, from: string | undefined, to: string | undefined, page = 1, pageSize = 25, signal?: AbortSignal, categoryId?: string, includeSuperseded = false,
+  ) =>
+    request<PageResultOfArchivedDocumentDto>(
+      `/api/v1/documents${query({ q: text.trim(), from, to, page, pageSize, categoryId, includeSuperseded: includeSuperseded ? 'true' : undefined })}`,
+      { signal },
+    ).then((r) => r.body),
 
   get: (id: string, signal?: AbortSignal) => request<ArchivedDocumentDto>(`/api/v1/documents/${id}`, { signal }).then((r) => r.body),
 

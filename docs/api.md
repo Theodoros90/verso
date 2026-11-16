@@ -392,7 +392,7 @@ Saving checks only the **structure** (400 `validation` with paths like `definiti
 | `deliver-api` ("Deliver via API") | output | `in` → `delivered`, `failed` | `url` (required, an `https://` address such as `https://api.partner.com/documents`: host, optional port and path; no user name, password, query string or fragment). A new step has an empty URL. **Simulated**: nothing is sent over the network and no credentials are stored; the step takes the `delivered` path and its result is `{ simulated: true, sent: false, url }`. |
 | `assemble-pack` ("Assemble document pack") | doc | `in` → `success`, `failed` (`failed` optional) | `name` (required, ≤ 100 chars), `files` (required, one plain file name per line, no folders, at most 20), `format` (`zip` = ZIP package, `pdf` = Combined PDF), `filename` (required, a plain file name that ends in `.zip` or `.pdf` to match `format`). **Simulated**: the file names are examples, nothing is assembled and no file or document is made (use **Combine PDFs** to really join the run's PDFs); the step takes the `success` path and its result is `{ simulated: true, assembled: false, files, format, fileName }`. |
 | `request-signature` ("Request e-signature") | output | `in` → `submitted`, `failed` (`failed` optional) | `conn` (required, the name of a shared signing connection such as `Qualified e-signature`: no connection string or password, ≤ 100 chars), `document` (required, a plain file name such as `agreement.pdf`, no path, ≤ 200 chars), `signers` (required, up to 10 plain addresses separated by commas or semicolons: no display names), `order` (`sequential`, `any`), `expires` (`3d`, `7d`, `30d`). **Simulated**: nothing is sent to a signing provider and no credentials are stored; the step takes the `submitted` path and its result is `{ simulated: true, sent: false, document, signers, order }` (`signers` is the count, never the addresses). |
-| `archive` | output | `in` → — | `folderPattern`; `retention`: `7y`, `10y` or `permanent`; `metadata`: `[{ key, value }]` (at most 20) |
+| `archive` | output | `in` → — | `folderPattern`; `retention`: `permanent`, or an amount and a unit: `90d` (days), `6m` (months), `7y` (years), 1 to 9999; `metadata`: `[{ key, value }]` (at most 20) |
 
 `configSchema` is a JSON Schema subset (`type`, `properties`, `required`, `items`, `minItems`/`maxItems`, `minLength`/`maxLength`, `pattern`, `enum`, `format: uuid`) plus designer hints `x-widget` and `x-enumLabels`.
 
@@ -581,13 +581,16 @@ Archived documents only: a PDF that is generated but not yet archived isn't list
 | GET | `/api/v1/documents/{id}` | 200 `ArchivedDocument` | Metadata: hash, retention, source execution |
 | GET | `/api/v1/documents/{id}/content` | 200 `application/pdf` | The PDF (verified, audited) |
 
-**Search:** `q` (optional) matches the file name and the archive metadata **values** (invoice number, customer…; keys aren't searched), case-insensitively, as plain text: `%` and `_` are literal. `from` (inclusive) and `to` (exclusive) filter on the archive time; `page`, `pageSize` as usual.
+**Search:** `q` (optional) matches the file name and the archive metadata **values** (invoice number, customer…; keys aren't searched), case-insensitively, as plain text: `%` and `_` are literal. `from` (inclusive) and `to` (exclusive) filter on the archive time; `categoryId=<guid>` keeps one [document category](#document-categories), `categoryId=none` the uncategorised documents (anything else is 400 `validation` (`categoryId`)); `includeSuperseded=true` also lists documents a later archived document replaced (default: left out; see ADR 0014); `page`, `pageSize` as usual. Each document carries `supersededAt` and `supersededByDocumentId` (null unless replaced); a replaced document stays readable and downloadable.
+
+**Category:** when the Archive step runs, the category of the template the document was made from is copied onto the archive record (ADR 0013 addendum 1). A document without a template (HTML email) or from a template without a category is uncategorised (`categoryId` and `categoryName` null). Changing a template's category later doesn't move documents already archived; `categoryName` is the category's current name.
 
 ```json
 { "id": "…", "executionId": "…", "nodeId": "pdf", "templateVersionId": "…", "fileName": "INV-2026-003901.pdf", "contentType": "application/pdf",
   "sizeBytes": 21284, "sha256": "d0b3…", "status": "Archived", "createdAt": "…", "archivedAt": "…",
   "folderPath": "invoices/2026/11", "retention": "7y", "retentionUntil": "2033-11-10T10:03:12+00:00",
-  "metadata": { "InvoiceNumber": "INV-2026-003901", "Customer": "Kestrel Logistics Ltd" } }
+  "metadata": { "InvoiceNumber": "INV-2026-003901", "Customer": "Kestrel Logistics Ltd" },
+  "categoryId": "…", "categoryName": "Invoices" }
 ```
 
 **Content:** the API reads the archived file and checks its SHA-256 against the recorded one **before** sending anything. Headers: `Content-Disposition: attachment; filename=…`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`. A missing file is 409 `document.content_missing`, a mismatch 409 `document.integrity_failed` (nothing is served and nothing is audited). A served download is audited as `DocumentDownloaded` (document, execution, file name, SHA-256). The API only reads the store; the Worker writes. Both must use the same `Documents:RootPath`.

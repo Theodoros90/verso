@@ -1,4 +1,4 @@
-import type { ConfigurationPackage } from '@/lib/api/generated'
+import type { ConfigurationPackage, DocumentCategoryDto } from '@/lib/api/generated'
 
 import { readConnections, toExported, type Connection, type ExportedConnection } from '../connections/connections'
 import { validateVariable, VARIABLE_ENVIRONMENTS, VARIABLE_SCOPES, VARIABLE_TYPES, type GlobalVariable } from '../variables/variables'
@@ -13,9 +13,19 @@ export const PACKAGE_VERSION = 1
 
 export type ExportedVariable = Omit<GlobalVariable, 'id'>
 
+/** A document category travels by name (ADR 0013 addendum 2): ids are environment-local. */
+export interface ExportedCategory {
+  name: string
+  isActive: boolean
+}
+
+const MAX_CATEGORY_NAME = 100
+
 export interface ConfigurationFile extends ConfigurationPackage {
   connections: ExportedConnection[]
   variables: ExportedVariable[]
+  /** Absent in packages made before categories were included. */
+  categories: ExportedCategory[]
 }
 
 export type ApplyMode = 'merge' | 'replace'
@@ -23,11 +33,21 @@ export type ApplyMode = 'merge' | 'replace'
 const toExportedVariable = ({ id: _id, ...rest }: GlobalVariable): ExportedVariable => ({ ...rest, value: rest.sensitive ? '' : rest.value })
 
 /** The server's part (templates, workflows) plus the selected connections and variables. */
-export function buildFile(server: ConfigurationPackage, connections: Connection[], variables: GlobalVariable[]): ConfigurationFile {
-  return { ...server, connections: connections.map(toExported), variables: variables.map(toExportedVariable) }
+export function buildFile(
+  server: ConfigurationPackage,
+  connections: Connection[],
+  variables: GlobalVariable[],
+  categories: DocumentCategoryDto[] = [],
+): ConfigurationFile {
+  return {
+    ...server,
+    connections: connections.map(toExported),
+    variables: variables.map(toExportedVariable),
+    categories: categories.map((c) => ({ name: c.name, isActive: c.isActive })),
+  }
 }
 
-export type ReadResult = { file: ConfigurationFile; skipped: { connections: number; variables: number } } | { error: string }
+export type ReadResult = { file: ConfigurationFile; skipped: { connections: number; variables: number; categories: number } } | { error: string }
 
 /** Parses and checks a configuration file. Invalid connections and variables are dropped and counted, never guessed. */
 export function readFile(text: string): ReadResult {
@@ -46,6 +66,7 @@ export function readFile(text: string): ReadResult {
 
   const conns = readConnections(raw.connections as unknown[])
   const vars = readVariables(raw.variables as unknown[])
+  const cats = readCategories(Array.isArray(raw.categories) ? raw.categories : [])
   return {
     file: {
       product: PACKAGE_PRODUCT,
@@ -56,9 +77,25 @@ export function readFile(text: string): ReadResult {
       workflows: raw.workflows as ConfigurationFile['workflows'],
       connections: conns.items,
       variables: vars.items,
+      categories: cats.items,
     },
-    skipped: { connections: conns.skipped, variables: vars.skipped },
+    skipped: { connections: conns.skipped, variables: vars.skipped, categories: cats.skipped },
   }
+}
+
+/** Invalid and repeated (case-insensitive) names are dropped and counted. */
+function readCategories(list: unknown[]): { items: ExportedCategory[]; skipped: number } {
+  const items: ExportedCategory[] = []
+  let skipped = 0
+  for (const raw of list as Record<string, unknown>[]) {
+    const name = typeof raw?.name === 'string' ? raw.name.trim() : ''
+    if (!name || name.length > MAX_CATEGORY_NAME || items.some((i) => sameName(i.name, name))) {
+      skipped++
+      continue
+    }
+    items.push({ name, isActive: raw.isActive !== false })
+  }
+  return { items, skipped }
 }
 
 function readVariables(list: unknown[]): { items: ExportedVariable[]; skipped: number } {
@@ -128,4 +165,9 @@ export function applyLocal(file: ConfigurationFile, mode: ApplyMode, connections
           ...file.variables.filter((v) => !variables.some((l) => sameName(l.name, v.name))).map((v) => ({ ...v, id: newLocalId() })),
         ]
   return { connections: nextConnections, variables: nextVariables }
+}
+
+/** The file's categories this environment doesn't have yet (matched by name, ignoring case). Existing ones are left as they are. */
+export function newCategories(file: ConfigurationFile, existing: DocumentCategoryDto[]): ExportedCategory[] {
+  return file.categories.filter((c) => !existing.some((e) => sameName(e.name, c.name)))
 }

@@ -2711,6 +2711,21 @@
               "format": "int32",
               "default": 25
             }
+          },
+          {
+            "name": "categoryId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "includeSuperseded",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
           }
         ],
         "responses": {
@@ -2974,7 +2989,9 @@
           "folderPath",
           "retention",
           "retentionUntil",
-          "metadata"
+          "metadata",
+          "categoryId",
+          "categoryName"
         ],
         "type": "object",
         "properties": {
@@ -3042,6 +3059,33 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "categoryId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "categoryName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "supersededAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "supersededByDocumentId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },

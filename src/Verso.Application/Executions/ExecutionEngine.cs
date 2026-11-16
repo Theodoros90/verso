@@ -939,13 +939,30 @@ public sealed partial class ExecutionEngine(
         var folder = PatternText.Resolve(node.Config.GetProperty("folderPattern").GetString()!, run.Data);
         warnings.AddRange(folder.Missing.Select(p => $"folderPattern: no value for '{p}'"));
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
+        var matched = new List<KeyValuePair<string, string>>();
+        var matchIncomplete = false;
         foreach (var pair in node.Config.GetProperty("metadata").EnumerateArray())
         {
             var key = pair.GetProperty("key").GetString()!;
             var value = PatternText.Resolve(pair.GetProperty("value").GetString()!, run.Data);
             warnings.AddRange(value.Missing.Select(p => $"metadata {key}: no value for '{p}'"));
             metadata[key] = value.Text.Length > 300 ? value.Text[..300] : value.Text;
+            if (pair.TryGetProperty("match", out var match) && match.ValueKind == JsonValueKind.True)
+            {
+                // A match value that is missing or blank must not replace anything: an empty AccountID would match every other empty one.
+                if (value.Missing.Count > 0 || string.IsNullOrWhiteSpace(value.Text))
+                {
+                    matchIncomplete = true;
+                    warnings.Add($"metadata {key}: no value to match on, so nothing was replaced");
+                }
+                else
+                {
+                    matched.Add(new KeyValuePair<string, string>(key, metadata[key]));
+                }
+            }
         }
+
+        var matchKey = matchIncomplete ? null : ArchiveMatch.Key(run.Execution.WorkflowId, matched);
 
         // Commit: staging → archive location, verifying the hash on the way in and after writing.
         var content = await store.ReadAsync(document.StorageKey, ct)
@@ -965,20 +982,37 @@ public sealed partial class ExecutionEngine(
 
         var now = clock.GetUtcNow();
         var retention = node.Config.GetProperty("retention").GetString()!;
-        DateTimeOffset? retentionUntil = retention switch
-        {
-            "7y" => now.AddYears(7),
-            "10y" => now.AddYears(10),
-            _ => null,
-        };
+        var retentionUntil = RetentionPeriod.Until(retention, now);
         var folderPath = DocumentNames.FolderPath(folder.Text);
         var searchText = string.Join('\n', metadata.Values.Prepend(document.FileName));
-        var record = ArchiveRecord.Create(document.Id, retention, retentionUntil, folderPath, JsonSerializer.Serialize(metadata), searchText, now);
+        // The template's category at the moment of archiving; a document without a template (HTML email) is uncategorised.
+        var categoryId = document.TemplateVersionId is { } versionId
+            ? await (from v in db.TemplateVersions.AsNoTracking()
+                     join t in db.Templates.AsNoTracking() on v.TemplateId equals t.Id
+                     where v.Id == versionId
+                     select t.CategoryId).FirstOrDefaultAsync(ct)
+            : null;
+        var record = ArchiveRecord.Create(document.Id, retention, retentionUntil, folderPath, JsonSerializer.Serialize(metadata), searchText, now, categoryId, matchKey);
         var stagingKey = document.StorageKey;
         document.MarkArchived(archiveKey, now);
         db.ArchiveRecords.Add(record);
 
-        return new Outcome(null, new { documentId = document.Id, folderPath, retentionUntil, warnings },
+        // Replace (ADR 0014): older records of this workflow with the same match values are superseded, never deleted; the file stays, the audit trail says who replaced what.
+        var supersededIds = new List<Guid>();
+        if (matchKey is not null)
+        {
+            var older = await db.ArchiveRecords.Where(a => a.MatchKey == matchKey && a.SupersededAt == null && a.DocumentId != document.Id).ToListAsync(ct);
+            foreach (var old in older)
+            {
+                old.Supersede(document.Id, now);
+                supersededIds.Add(old.DocumentId);
+                db.AuditEntries.Add(AuditEntry.Record(
+                    DocumentService.SupersededAction, DocumentService.EntityType, old.DocumentId.ToString(), ActorId, ActorName, now,
+                    JsonSerializer.Serialize(new { supersededBy = document.Id, executionId = run.Execution.Id }), run.Execution.CorrelationId));
+            }
+        }
+
+        return new Outcome(null, new { documentId = document.Id, folderPath, retentionUntil, replacedDocumentIds = supersededIds, warnings },
             AfterSave: () => DeleteStagingAsync(stagingKey));
     }
 

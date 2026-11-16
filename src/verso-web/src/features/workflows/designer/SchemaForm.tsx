@@ -3,6 +3,7 @@ import { useId } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Field, Input, Select, Switch, Textarea } from '@/components/ui/form'
+import { parseRetention, retentionUnits } from '@/lib/retention'
 import { cn } from '@/lib/utils'
 
 import { jsonObjectProblem } from '../model/payloadSchema'
@@ -17,7 +18,7 @@ export interface FieldSchema {
   items?: FieldSchema
   enum?: string[]
   'x-enumLabels'?: string[]
-  'x-widget'?: 'multiline' | 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches'
+  'x-widget'?: 'multiline' | 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches' | 'retention'
   maxItems?: number
 }
 
@@ -167,6 +168,48 @@ function StringInput({
     )
   }
 
+  if (field['x-widget'] === 'retention') {
+    const parsed = parseRetention(value)
+    const permanent = value === 'permanent'
+    const unit = parsed?.unit ?? 'y'
+    return (
+      <div className="flex gap-2">
+        <Input
+          aria-label="Keep for amount"
+          type="number"
+          min={1}
+          max={9999}
+          className="w-24 flex-none"
+          disabled={ctx.readOnly || permanent}
+          aria-invalid={invalid}
+          value={parsed ? String(parsed.amount) : ''}
+          onChange={(e) => {
+            const n = Math.floor(Number(e.target.value))
+            onChange(n >= 1 ? `${Math.min(n, 9999)}${unit}` : '', path)
+          }}
+        />
+        <Select
+          id={id}
+          aria-label="Keep for unit"
+          aria-invalid={invalid}
+          disabled={ctx.readOnly}
+          value={permanent ? 'permanent' : unit}
+          onChange={(e) => {
+            const u = e.target.value
+            onChange(u === 'permanent' ? 'permanent' : `${parsed?.amount ?? 1}${u}`, path)
+          }}
+        >
+          {retentionUnits.map((u) => (
+            <option key={u.value} value={u.value}>
+              {parsed?.amount === 1 ? u.one : u.many}
+            </option>
+          ))}
+          <option value="permanent">Permanently</option>
+        </Select>
+      </div>
+    )
+  }
+
   if (field['x-widget'] === 'template') {
     const known = ctx.templates.some((t) => t.id === value)
     return (
@@ -235,7 +278,7 @@ function StringInput({
 function emptyItem(items: FieldSchema): unknown {
   if (items.type === 'string') return ''
   const obj: Value = {}
-  for (const [k, f] of Object.entries(items.properties ?? {})) obj[k] = f.enum ? f.enum[0] : ''
+  for (const [k, f] of Object.entries(items.properties ?? {})) obj[k] = f.type === 'boolean' ? false : f.enum ? f.enum[0] : ''
   return obj
 }
 
@@ -276,6 +319,19 @@ function ArrayField({
                   Object.entries(items.properties ?? {}).map(([k, f]) => {
                     const sub = `${itemPath}.${k}`
                     const subErrors = ctx.errorsFor(sub)
+                    if (f.type === 'boolean') {
+                      return (
+                        <div key={k} className="col-span-2 min-w-0" title={f.description}>
+                          <Switch
+                            checked={(item as Value)[k] === true}
+                            onCheckedChange={(v) => setItem(i, { ...(item as Value), [k]: v }, sub)}
+                            label={f.title ?? k}
+                            disabled={ctx.readOnly}
+                          />
+                          {subErrors[0] && <p className="mt-0.5 text-xs text-err">{subErrors[0]}</p>}
+                        </div>
+                      )
+                    }
                     return (
                       <div key={k} className="min-w-0">
                         <StringInput

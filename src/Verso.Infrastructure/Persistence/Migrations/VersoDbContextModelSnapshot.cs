@@ -88,6 +88,9 @@ namespace Verso.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("ArchivedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("DocumentId")
                         .HasColumnType("uniqueidentifier");
 
@@ -95,6 +98,11 @@ namespace Verso.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("MatchKey")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
 
                     b.Property<string>("Metadata")
                         .IsRequired()
@@ -113,14 +121,27 @@ namespace Verso.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTimeOffset?>("SupersededAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("SupersededByDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ArchivedAt")
                         .HasDatabaseName("IX_ArchiveRecords_ArchivedAt");
 
+                    b.HasIndex("CategoryId")
+                        .HasDatabaseName("IX_ArchiveRecords_CategoryId");
+
                     b.HasIndex("DocumentId")
                         .IsUnique()
                         .HasDatabaseName("UX_ArchiveRecords_Document");
+
+                    b.HasIndex("MatchKey")
+                        .HasDatabaseName("IX_ArchiveRecords_MatchKey")
+                        .HasFilter("[MatchKey] IS NOT NULL");
 
                     b.ToTable("ArchiveRecords", "documents");
                 });

@@ -42,6 +42,11 @@ internal sealed class ArchiveRecordConfiguration : IEntityTypeConfiguration<Arch
         builder.Property(a => a.Metadata).IsRequired();
         builder.Property(a => a.SearchText).IsRequired();
         builder.HasIndex(a => a.ArchivedAt).HasDatabaseName("IX_ArchiveRecords_ArchivedAt"); // archive search by date
+        builder.Property(a => a.MatchKey).HasMaxLength(64).IsUnicode(false);
+        builder.HasIndex(a => a.MatchKey).HasDatabaseName("IX_ArchiveRecords_MatchKey").HasFilter("[MatchKey] IS NOT NULL"); // replace lookup
+
+        // The category id references the templates schema: by value, no foreign key (plan §3). Indexed for the category filter.
+        builder.HasIndex(a => a.CategoryId).HasDatabaseName("IX_ArchiveRecords_CategoryId");
         builder.HasOne<Document>().WithOne().HasForeignKey<ArchiveRecord>(a => a.DocumentId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(a => a.DocumentId).IsUnique().HasDatabaseName("UX_ArchiveRecords_Document");
     }

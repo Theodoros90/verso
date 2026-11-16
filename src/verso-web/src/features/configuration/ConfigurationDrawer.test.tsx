@@ -33,6 +33,16 @@ interface Call {
 function api(calls: Call[], outcomes = [{ kind: 'template', key: 'INV-STD', name: 'Commercial invoice', outcome: 'created', message: 'Published as version 1.' }]) {
   return (url: string, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined
+    if (url.includes('/api/v1/document-categories')) {
+      if (init?.method === 'POST') {
+        calls.push({ url, body })
+        return json({ id: `new-${calls.length}`, name: body?.name ?? '', isActive: true }, 201)
+      }
+      return json([
+        { id: 'cat-1', name: 'Statements', isActive: true, templateCount: 0 },
+        { id: 'cat-2', name: 'Old letters', isActive: false, templateCount: 0 },
+      ])
+    }
     if (url.includes('/api/v1/templates')) return json({ items: [{ id: TEMPLATE_ID, key: 'INV-STD', name: 'Commercial invoice', documentType: 'Invoice', latestPublishedVersion: 2, hasDraft: false, updatedAt: '2026-11-01T00:00:00Z' }], page: 1, pageSize: 100, total: 1 })
     if (url.includes('/api/v1/workflows')) {
       const inactive = url.includes('inactive=true')
@@ -96,11 +106,12 @@ describe('Configuration drawer (the gear)', () => {
     await userEvent.selectOptions(within(drawer).getByLabelText('Current environment'), 'Production')
     await userEvent.click(within(drawer).getByRole('button', { name: /^Export \d+ items$/ }))
 
-    await waitFor(() => expect(within(drawer).getByRole('status', { name: 'Export result' })).toHaveTextContent(/Exported \d+ connections, 6 variables, 1 template and 1 workflow\. Secrets are never included\./))
+    await waitFor(() => expect(within(drawer).getByRole('status', { name: 'Export result' })).toHaveTextContent(/Exported 2 categories, \d+ connections, 6 variables, 1 template and 1 workflow\. Secrets are never included\./))
     expect(calls).toEqual([{ url: expect.stringContaining('/api/v1/configuration/export'), body: { templateIds: [TEMPLATE_ID], workflowIds: [WORKFLOW_ID], environment: 'Production' } }])
     const file = JSON.parse(await read())
     expect(file.product).toBe(PACKAGE_PRODUCT)
     expect(file.templates[0].key).toBe('INV-STD')
+    expect(file.categories).toEqual([{ name: 'Statements', isActive: true }, { name: 'Old letters', isActive: false }])
     expect(file.variables.find((v: { name: string }) => v.name === 'portalApiKey')).toMatchObject({ sensitive: true, value: '' })
     expect(JSON.stringify(file)).not.toMatch(/password|"secret":/i)
   })
@@ -116,7 +127,7 @@ describe('Configuration drawer (the gear)', () => {
     await userEvent.click(within(drawer).getByRole('checkbox', { name: 'Select all global variables' }))
     await userEvent.click(within(drawer).getByRole('button', { name: 'Export 6 items' }))
 
-    await waitFor(() => expect(within(drawer).getByRole('status', { name: 'Export result' })).toHaveTextContent('Exported 0 connections, 6 variables, 0 templates and 0 workflows.'))
+    await waitFor(() => expect(within(drawer).getByRole('status', { name: 'Export result' })).toHaveTextContent('Exported 0 categories, 0 connections, 6 variables, 0 templates and 0 workflows.'))
     expect(calls).toEqual([])
     expect(JSON.parse(await read()).connections).toEqual([])
   })
@@ -127,6 +138,10 @@ describe('Configuration drawer (the gear)', () => {
     const file = buildFile(serverPackage, seedConnections().slice(0, 1), [
       ...seedVariables().slice(0, 1).map((v) => ({ ...v, value: 'Changed Ltd' })),
       { ...seedVariables()[0]!, name: 'brandNew', value: 'x' },
+    ], [
+      { id: 'a', name: 'statements', isActive: true, templateCount: 0 }, // already here (matched ignoring case): kept as it is
+      { id: 'b', name: 'Advices', isActive: true, templateCount: 0 },
+      { id: 'c', name: 'Dormant', isActive: false, templateCount: 0 },
     ])
 
     await userEvent.upload(within(drawer).getByLabelText('Import configuration file'), new File([JSON.stringify(file)], 'cfg.json', { type: 'application/json' }))
@@ -134,15 +149,19 @@ describe('Configuration drawer (the gear)', () => {
     expect(await within(drawer).findByText('created')).toBeInTheDocument() // the server's dry run
     expect(within(drawer).getByText('Published as version 1.')).toBeInTheDocument()
     expect(within(drawer).getByText(/1 connection and 1 variable with the same name/)).toBeInTheDocument()
+    expect(within(drawer).getByText(/1 category already exist and are kept as they are/)).toBeInTheDocument()
     expect(calls).toHaveLength(1)
     expect(calls[0]!.url).toContain('dryRun=true')
 
     await userEvent.click(within(drawer).getByRole('button', { name: 'Apply package' }))
 
-    await waitFor(() => expect(within(drawer).getByRole('status', { name: 'Import result' })).toHaveTextContent('Imported 1 connection, 2 variables, 1 template and 0 workflows.'))
-    expect(calls).toHaveLength(2)
-    expect(calls[1]!.url).toContain('dryRun=false')
-    expect(calls[1]!.body).toMatchObject({ includeWorkflows: true, package: { templates: [{ key: 'INV-STD' }] } })
+    await waitFor(() => expect(within(drawer).getByRole('status', { name: 'Import result' })).toHaveTextContent('Imported 2 new categories, 1 connection, 2 variables, 1 template and 0 workflows.'))
+    // Only the missing names are created, in file order; the inactive one is then deactivated; nothing existing is touched.
+    const created = calls.filter((c) => c.url.endsWith('/document-categories')).map((c) => (c.body as { name: string }).name)
+    expect(created).toEqual(['Advices', 'Dormant'])
+    expect(calls.some((c) => c.url.includes('/deactivate'))).toBe(true)
+    const apply = calls.find((c) => c.url.includes('dryRun=false'))!
+    expect(apply.body).toMatchObject({ includeWorkflows: true, package: { templates: [{ key: 'INV-STD' }] } })
 
     await userEvent.click(within(drawer).getByRole('tab', { name: 'Global variables' }))
     expect(within(drawer).getByText('{{brandNew}}')).toBeInTheDocument()

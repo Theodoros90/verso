@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { seedConnections } from '../connections/connections'
 import { seedVariables } from '../variables/variables'
-import { applyLocal, buildFile, countConflicts, PACKAGE_PRODUCT, readFile } from './package'
+import { applyLocal, buildFile, countConflicts, newCategories, PACKAGE_PRODUCT, readFile } from './package'
 
 const server = { product: PACKAGE_PRODUCT, schemaVersion: 1, environment: 'Test', exportedAt: '2026-11-14T10:00:00Z', templates: [], workflows: [] }
 const text = (over: Record<string, unknown> = {}) => JSON.stringify({ ...buildFile(server, seedConnections(), seedVariables()), ...over })
@@ -23,7 +23,7 @@ describe('configuration file', () => {
     expect(read.file.connections).toHaveLength(seedConnections().length)
     expect(read.file.variables).toHaveLength(seedVariables().length)
     expect(read.file.environment).toBe('Test')
-    expect(read.skipped).toEqual({ connections: 0, variables: 0 })
+    expect(read.skipped).toEqual({ connections: 0, variables: 0, categories: 0 })
   })
 
   it.each([
@@ -51,7 +51,7 @@ describe('configuration file', () => {
 
     expect(read.file.variables.map((v) => v.name)).toEqual(['ok', 'token'])
     expect(read.file.variables[1]).toMatchObject({ sensitive: true, value: '' })
-    expect(read.skipped).toEqual({ connections: 1, variables: 2 })
+    expect(read.skipped).toEqual({ connections: 1, variables: 2, categories: 0 })
   })
 })
 
@@ -86,5 +86,34 @@ describe('applying a file', () => {
     expect(next.connections).toEqual([])
     expect(next.variables.map((v) => v.name)).toEqual(['vatRate'])
     expect(next.variables[0]!.id).toBe(variables.find((v) => v.name === 'vatRate')!.id)
+  })
+})
+
+describe('document categories in the package', () => {
+  const cat = (name: string, isActive = true) => ({ id: `id-${name}`, name, isActive }) as never
+
+  it('exports names and active state, never ids', () => {
+    const file = buildFile(server, [], [], [cat('Statements'), cat('Old letters', false)])
+
+    expect(file.categories).toEqual([{ name: 'Statements', isActive: true }, { name: 'Old letters', isActive: false }])
+    expect(JSON.stringify(file.categories)).not.toMatch(/"id"/)
+  })
+
+  it('reads a package without categories (made before they were included)', () => {
+    const read = readFile(text({ categories: undefined }))
+    if ('error' in read) throw new Error(read.error)
+
+    expect(read.file.categories).toEqual([])
+  })
+
+  it('drops blank, too long and repeated names, and offers only the missing ones', () => {
+    const read = readFile(
+      text({ categories: [{ name: 'Statements' }, { name: ' statements ' }, { name: '' }, { name: 'x'.repeat(101) }, { name: 'Advices', isActive: false }] }),
+    )
+    if ('error' in read) throw new Error(read.error)
+
+    expect(read.file.categories).toEqual([{ name: 'Statements', isActive: true }, { name: 'Advices', isActive: false }])
+    expect(read.skipped.categories).toBe(3)
+    expect(newCategories(read.file, [cat('STATEMENTS')])).toEqual([{ name: 'Advices', isActive: false }])
   })
 })

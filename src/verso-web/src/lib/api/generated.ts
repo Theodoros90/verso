@@ -25,6 +25,10 @@ export interface ArchivedDocumentDto {
   retention: string
   retentionUntil: string | null
   metadata: Record<string, string>
+  categoryId: string | null
+  categoryName: string | null
+  supersededAt?: string | null
+  supersededByDocumentId?: string | null
 }
 
 export interface AuditEntryDto {

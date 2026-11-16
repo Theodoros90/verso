@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 
+import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
-import { Field, Input } from '@/components/ui/form'
+import { Field, Input, Select, Switch } from '@/components/ui/form'
+import { documentCategoriesApi } from '@/lib/api/documentCategories'
 import { documentsApi } from '@/lib/api/executions'
-import type { ArchivedDocumentDto } from '@/lib/api/generated'
+import type { ArchivedDocumentDto, DocumentCategoryDto } from '@/lib/api/generated'
 
 import { DownloadButton } from './DownloadButton'
 import { dayEndIso, dayStartIso, formatBytes, formatDate, formatDateTime, shortId } from './format'
@@ -20,15 +22,30 @@ interface Filters {
   text: string
   from: string
   to: string
+  /** '' = all, 'none' = uncategorized, otherwise a category id. */
+  category: string
+  /** Also list documents a later archived document replaced (ADR 0014). */
+  replaced: boolean
 }
 
-const NO_FILTERS: Filters = { text: '', from: '', to: '' }
+const NO_FILTERS: Filters = { text: '', from: '', to: '', category: '', replaced: false }
 
 export function ArchivePage() {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   const [applied, setApplied] = useState<Filters>(NO_FILTERS)
   const [page, setPage] = useState(1)
   const [state, setState] = useState<ListState>({ kind: 'loading' })
+  const [categories, setCategories] = useState<DocumentCategoryDto[]>([])
+
+  // Deactivated categories are offered too: documents archived under them keep them. If this fails, the filter just has fewer options.
+  useEffect(() => {
+    const controller = new AbortController()
+    documentCategoriesApi
+      .list(true, controller.signal)
+      .then(setCategories)
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [])
 
   useEffect(() => {
     const timer = setTimeout(() => setApplied(filters), 300)
@@ -38,7 +55,7 @@ export function ArchivePage() {
   useEffect(() => {
     const controller = new AbortController()
     documentsApi
-      .search(applied.text, dayStartIso(applied.from), dayEndIso(applied.to), page, PAGE_SIZE, controller.signal)
+      .search(applied.text, dayStartIso(applied.from), dayEndIso(applied.to), page, PAGE_SIZE, controller.signal, applied.category || undefined, applied.replaced)
       .then((result) => setState({ kind: 'ready', items: result.items, total: result.total }))
       .catch((e: unknown) => {
         if (e instanceof DOMException && e.name === 'AbortError') return
@@ -64,11 +81,28 @@ export function ArchivePage() {
 
       <form
         aria-label="Search the archive"
-        className="mb-4 grid grid-cols-[minmax(220px,2fr)_repeat(2,minmax(150px,1fr))_auto] items-end gap-3 rounded-[10px] border border-line bg-surface p-3.5 max-md:grid-cols-1"
+        className="mb-4 grid grid-cols-[minmax(220px,2fr)_repeat(3,minmax(150px,1fr))_auto] items-end gap-3 rounded-[10px] border border-line bg-surface p-3.5 max-lg:grid-cols-2 max-md:grid-cols-1 [&>button]:h-9 [&_input]:h-9 [&_select]:h-9"
         onSubmit={(e) => e.preventDefault()}
       >
-        <Field label="Search" htmlFor="a-text" hint="File name, invoice number, customer…">
-          <Input id="a-text" type="search" value={filters.text} onChange={(e) => change({ text: e.target.value })} />
+        <Field label="Search" htmlFor="a-text">
+          <Input
+            id="a-text"
+            type="search"
+            placeholder="File name, invoice number, customer…"
+            value={filters.text}
+            onChange={(e) => change({ text: e.target.value })}
+          />
+        </Field>
+        <Field label="Category" htmlFor="a-category">
+          <Select id="a-category" value={filters.category} onChange={(e) => change({ category: e.target.value })}>
+            <option value="">All categories</option>
+            <option value="none">Uncategorized</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.isActive ? c.name : `${c.name} (inactive)`}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label="Archived from" htmlFor="a-from">
           <Input id="a-from" type="date" value={filters.from} max={filters.to || undefined} onChange={(e) => change({ from: e.target.value })} />
@@ -79,6 +113,9 @@ export function ArchivePage() {
         <Button type="button" disabled={!filtered} onClick={() => change(NO_FILTERS)}>
           Clear
         </Button>
+        <div className="col-span-full">
+          <Switch checked={filters.replaced} onCheckedChange={(replaced) => change({ replaced })} label="Show replaced documents" />
+        </div>
       </form>
 
       {state.kind === 'loading' && <p className="text-ink-3">Searching…</p>}
@@ -101,6 +138,7 @@ export function ArchivePage() {
               <thead>
                 <tr className="border-b border-line text-xs text-ink-3">
                   <th scope="col" className="px-3.5 py-2.5 font-medium">Document</th>
+                  <th scope="col" className="px-3.5 py-2.5 font-medium">Category</th>
                   <th scope="col" className="px-3.5 py-2.5 font-medium">Metadata</th>
                   <th scope="col" className="px-3.5 py-2.5 font-medium">Folder</th>
                   <th scope="col" className="px-3.5 py-2.5 font-medium">Archived</th>
@@ -113,13 +151,23 @@ export function ArchivePage() {
                 {state.items.map((d) => (
                   <tr key={d.id} className="border-b border-line last:border-b-0 hover:bg-surface-2">
                     <td className="px-3.5 py-2.5">
-                      <div className="font-medium">{d.fileName}</div>
+                      <div className="font-medium">
+                        {d.fileName}
+                        {d.supersededAt && (
+                          <span className="ml-2 align-middle">
+                            <StatusPill tone="neutral">Replaced {formatDate(d.supersededAt)}</StatusPill>
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-ink-3">
                         {formatBytes(d.sizeBytes)} ·{' '}
                         <Link to={`/executions/${d.executionId}`} className="font-mono text-cyan-strong" aria-label={`Open run ${shortId(d.executionId)}`}>
                           run {shortId(d.executionId)}
                         </Link>
                       </div>
+                    </td>
+                    <td className="px-3.5 py-2.5 whitespace-nowrap">
+                      {d.categoryName ? <StatusPill tone="neutral">{d.categoryName}</StatusPill> : <span className="text-xs text-ink-3">Uncategorized</span>}
                     </td>
                     <td className="px-3.5 py-2.5 text-xs text-ink-2">
                       {Object.entries(d.metadata).map(([key, value]) => (

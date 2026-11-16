@@ -35,6 +35,11 @@ function stubApi(handler: (url: URL) => unknown) {
       if (url.pathname === '/api/health') return json({ status: 'Healthy', totalDurationMs: 1, checks: [] })
       if (url.pathname === '/api/v1/workflows')
         return json({ items: [{ id: 'w1', key: 'invoice-standard', name: 'Invoice standard', latestPublishedVersion: 2, hasDraft: false, updatedAt: '2026-11-09T08:00:00Z' }], page: 1, pageSize: 100, total: 1 })
+      if (url.pathname === '/api/v1/document-categories')
+        return json([
+          { id: 'cat-st', name: 'Statements', isActive: true, templateCount: 2 },
+          { id: 'cat-old', name: 'Old letters', isActive: false, templateCount: 0 },
+        ])
       return json(handler(url))
     }),
   )
@@ -163,6 +168,8 @@ const doc = (id: string, extra: Partial<ArchivedDocumentDto> = {}): ArchivedDocu
   retention: '7y',
   retentionUntil: '2033-11-10T09:00:04Z',
   metadata: { InvoiceNumber: 'INV-2026-003901', Customer: 'Kestrel Logistics Ltd' },
+  categoryId: null,
+  categoryName: null,
   ...extra,
 })
 
@@ -197,6 +204,48 @@ describe('Archive', () => {
     expect(q.get('q')).toBe('kestrel')
     expect(new Date(q.get('from')!).getTime()).toBe(new Date('2026-11-01T00:00:00').getTime())
     expect(q.has('to')).toBe(false)
+  })
+
+  it('shows each document category, or Uncategorized', async () => {
+    stubApi(() => ({ items: [doc('d1', { categoryId: 'cat-st', categoryName: 'Statements' }), doc('d2')], page: 1, pageSize: 25, total: 2 }))
+    render(<RouterProvider router={createMemoryRouter(routes, { initialEntries: ['/archive'] })} />)
+
+    const table = await screen.findByRole('table', { name: 'Archived documents' })
+    expect(within(table).getByRole('columnheader', { name: 'Category' })).toBeInTheDocument()
+    const rows = within(table).getAllByRole('row').slice(1)
+    expect(within(rows[0]!).getByText('Statements')).toBeInTheDocument()
+    expect(within(rows[1]!).getByText('Uncategorized')).toBeInTheDocument()
+  })
+
+  it('filters by category, including uncategorized and inactive categories', async () => {
+    const calls = stubApi(() => ({ items: [doc('d1')], page: 1, pageSize: 25, total: 1 }))
+    render(<RouterProvider router={createMemoryRouter(routes, { initialEntries: ['/archive'] })} />)
+    const user = userEvent.setup()
+    await screen.findByRole('table', { name: 'Archived documents' })
+    await screen.findByRole('option', { name: 'Old letters (inactive)' })
+    expect(lastQuery(calls, '/api/v1/documents').has('categoryId')).toBe(false)
+
+    await user.selectOptions(screen.getByLabelText('Category'), 'Statements')
+    await waitFor(() => expect(lastQuery(calls, '/api/v1/documents').get('categoryId')).toBe('cat-st'))
+    expect(lastQuery(calls, '/api/v1/documents').get('page')).toBe('1')
+
+    await user.selectOptions(screen.getByLabelText('Category'), 'Uncategorized')
+    await waitFor(() => expect(lastQuery(calls, '/api/v1/documents').get('categoryId')).toBe('none'))
+
+    await user.click(screen.getByRole('button', { name: 'Clear' }))
+    await waitFor(() => expect(lastQuery(calls, '/api/v1/documents').has('categoryId')).toBe(false))
+  })
+
+  it('hides replaced documents unless asked, and marks them', async () => {
+    const calls = stubApi(() => ({ items: [doc('d1', { supersededAt: '2026-11-12T09:00:00Z', supersededByDocumentId: 'd2' })], page: 1, pageSize: 25, total: 1 }))
+    render(<RouterProvider router={createMemoryRouter(routes, { initialEntries: ['/archive'] })} />)
+    const user = userEvent.setup()
+    const table = await screen.findByRole('table', { name: 'Archived documents' })
+    expect(within(table).getByText(/^Replaced /)).toBeInTheDocument()
+    expect(lastQuery(calls, '/api/v1/documents').has('includeSuperseded')).toBe(false)
+
+    await user.click(screen.getByRole('switch', { name: 'Show replaced documents' }))
+    await waitFor(() => expect(lastQuery(calls, '/api/v1/documents').get('includeSuperseded')).toBe('true'))
   })
 
   it('shows an empty state for an empty archive', async () => {

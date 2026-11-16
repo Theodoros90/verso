@@ -10,7 +10,7 @@ namespace Verso.Application.Documents;
 public sealed record ArchivedDocumentDto(
     Guid Id, Guid ExecutionId, string NodeId, Guid? TemplateVersionId, string FileName, string ContentType, long SizeBytes, string Sha256,
     string Status, DateTimeOffset CreatedAt, DateTimeOffset ArchivedAt, string FolderPath, string Retention, DateTimeOffset? RetentionUntil,
-    IReadOnlyDictionary<string, string> Metadata);
+    IReadOnlyDictionary<string, string> Metadata, Guid? CategoryId, string? CategoryName, DateTimeOffset? SupersededAt = null, Guid? SupersededByDocumentId = null);
 
 /// <summary>An archived document's bytes, already checked against the recorded SHA-256.</summary>
 public sealed record DocumentContent(string FileName, string ContentType, byte[] Bytes);
@@ -20,9 +20,12 @@ public sealed class DocumentService(IVersoDbContext db, IDocumentStore store, IC
 {
     public const string EntityType = "Document";
     public const string DownloadedAction = "DocumentDownloaded";
+    public const string SupersededAction = "DocumentSuperseded";
 
+    /// <param name="categoryId">null = any category; "none" = uncategorised; otherwise a category id (anything else is a 400).</param>
+    /// <param name="includeSuperseded">Documents replaced by a later one (ADR 0014) are left out unless this is true.</param>
     public async Task<Result<PageResult<ArchivedDocumentDto>>> SearchAsync(
-        string? text, DateTimeOffset? from, DateTimeOffset? to, int page, int pageSize, CancellationToken ct)
+        string? text, DateTimeOffset? from, DateTimeOffset? to, int page, int pageSize, CancellationToken ct, string? categoryId = null, bool includeSuperseded = false)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
@@ -36,6 +39,27 @@ public sealed class DocumentService(IVersoDbContext db, IDocumentStore store, IC
             join a in db.ArchiveRecords.AsNoTracking() on d.Id equals a.DocumentId
             where d.Status == DocumentStatus.Archived
             select new { Document = d, Archive = a };
+        if (!includeSuperseded)
+        {
+            query = query.Where(x => x.Archive.SupersededAt == null);
+        }
+
+        if (!string.IsNullOrEmpty(categoryId))
+        {
+            if (categoryId == "none")
+            {
+                query = query.Where(x => x.Archive.CategoryId == null);
+            }
+            else if (Guid.TryParse(categoryId, out var filterId))
+            {
+                query = query.Where(x => x.Archive.CategoryId == filterId);
+            }
+            else
+            {
+                return AppError.Validation(new Dictionary<string, string[]> { ["categoryId"] = ["Use a category id, or 'none' for uncategorised documents."] });
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(text))
         {
             // Matches the file name and metadata values (not keys), case-insensitively, as plain text.
@@ -56,7 +80,8 @@ public sealed class DocumentService(IVersoDbContext db, IDocumentStore store, IC
         var total = await query.CountAsync(ct);
         var rows = await query.OrderByDescending(x => x.Archive.ArchivedAt).ThenByDescending(x => x.Document.Id)
             .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
-        return new PageResult<ArchivedDocumentDto>([.. rows.Select(x => ToDto(x.Document, x.Archive))], page, pageSize, total);
+        var names = await CategoryNamesAsync(rows.Select(x => x.Archive.CategoryId), ct);
+        return new PageResult<ArchivedDocumentDto>([.. rows.Select(x => ToDto(x.Document, x.Archive, names))], page, pageSize, total);
     }
 
     public async Task<Result<ArchivedDocumentDto>> GetAsync(Guid id, CancellationToken ct)
@@ -66,7 +91,7 @@ public sealed class DocumentService(IVersoDbContext db, IDocumentStore store, IC
             join a in db.ArchiveRecords.AsNoTracking() on d.Id equals a.DocumentId
             where d.Id == id && d.Status == DocumentStatus.Archived
             select new { Document = d, Archive = a }).SingleOrDefaultAsync(ct);
-        return row is null ? NotArchived(id) : ToDto(row.Document, row.Archive);
+        return row is null ? NotArchived(id) : ToDto(row.Document, row.Archive, await CategoryNamesAsync([row.Archive.CategoryId], ct));
     }
 
     /// <summary>
@@ -106,9 +131,19 @@ public sealed class DocumentService(IVersoDbContext db, IDocumentStore store, IC
         return new DocumentContent(document.FileName, document.ContentType, bytes);
     }
 
-    private static ArchivedDocumentDto ToDto(Document d, ArchiveRecord a) => new(
+    /// <summary>Current names of the given categories (categories are never deleted, only renamed or deactivated).</summary>
+    private async Task<IReadOnlyDictionary<Guid, string>> CategoryNamesAsync(IEnumerable<Guid?> categoryIds, CancellationToken ct)
+    {
+        var ids = categoryIds.OfType<Guid>().Distinct().ToList();
+        return ids.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await db.DocumentCategories.AsNoTracking().Where(c => ids.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+    }
+
+    private static ArchivedDocumentDto ToDto(Document d, ArchiveRecord a, IReadOnlyDictionary<Guid, string> categoryNames) => new(
         d.Id, d.ExecutionId, d.NodeId, d.TemplateVersionId, d.FileName, d.ContentType, d.SizeBytes, d.Sha256, d.Status.ToString(), d.CreatedAt,
-        a.ArchivedAt, a.FolderPath, a.Retention, a.RetentionUntil, JsonSerializer.Deserialize<Dictionary<string, string>>(a.Metadata) ?? []);
+        a.ArchivedAt, a.FolderPath, a.Retention, a.RetentionUntil, JsonSerializer.Deserialize<Dictionary<string, string>>(a.Metadata) ?? [],
+        a.CategoryId, a.CategoryId is { } c ? categoryNames.GetValueOrDefault(c) : null, a.SupersededAt, a.SupersededByDocumentId);
 
     private static string EscapeLike(string text) =>
         text.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("%", "\\%", StringComparison.Ordinal)

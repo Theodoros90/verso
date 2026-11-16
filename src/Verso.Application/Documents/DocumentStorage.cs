@@ -37,6 +37,25 @@ public static class DocumentKeys
     public static string Sha256Hex(byte[] content) => Convert.ToHexStringLower(SHA256.HashData(content));
 }
 
+/// <summary>The key an Archive step uses to find the document a new one replaces (ADR 0014).</summary>
+public static class ArchiveMatch
+{
+    /// <summary>
+    /// SHA-256 (hex) over the workflow and the ticked metadata (key, value) pairs, ordered by key, so row order in the settings doesn't matter.
+    /// Null when nothing is ticked.
+    /// </summary>
+    public static string? Key(Guid workflowId, IReadOnlyCollection<KeyValuePair<string, string>> matched)
+    {
+        if (matched.Count == 0)
+        {
+            return null;
+        }
+
+        var parts = matched.OrderBy(p => p.Key, StringComparer.Ordinal).SelectMany(p => new[] { p.Key, p.Value }).Prepend(workflowId.ToString("N"));
+        return DocumentKeys.Sha256Hex(System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(parts)));
+    }
+}
+
 /// <summary>Turns resolved name patterns into safe file names and archive folder paths.</summary>
 public static partial class DocumentNames
 {

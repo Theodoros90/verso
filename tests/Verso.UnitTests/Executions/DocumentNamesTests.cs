@@ -87,3 +87,24 @@ public sealed class DocumentNamesTests
         return document.RootElement.Clone();
     }
 }
+
+public sealed class ArchiveMatchTests
+{
+    private static readonly Guid Workflow = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+    [Fact]
+    public void Key_IsNullWhenNothingIsTicked() => Assert.Null(ArchiveMatch.Key(Workflow, []));
+
+    [Fact]
+    public void Key_IgnoresRowOrder_ButNotValuesKeysOrWorkflow()
+    {
+        KeyValuePair<string, string> a = new("AccountID", "C1"), b = new("Name", "Kestrel");
+        var key = ArchiveMatch.Key(Workflow, [a, b]);
+
+        Assert.Equal(key, ArchiveMatch.Key(Workflow, [b, a]));
+        Assert.NotEqual(key, ArchiveMatch.Key(Workflow, [new("AccountID", "C2"), b]));
+        Assert.NotEqual(key, ArchiveMatch.Key(Workflow, [a]));
+        Assert.NotEqual(key, ArchiveMatch.Key(Guid.NewGuid(), [a, b]));
+        Assert.NotEqual(ArchiveMatch.Key(Workflow, [new("A", "BC")]), ArchiveMatch.Key(Workflow, [new("AB", "C")]));
+    }
+}

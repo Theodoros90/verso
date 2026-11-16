@@ -476,7 +476,7 @@ Decisions made while implementing M6 (2026-11-09):
 - Node catalog in code, served by `GET /node-types`. Settings follow the prototype:
   - `validate`: required fields plus type checks (text, number, date, email, EU VAT, IBAN).
   - `generate-pdf`: template, version (`latest-published` or a specific published version), filename pattern.
-  - `archive`: folder pattern, retention (7y/10y/permanent), metadata pairs.
+  - `archive`: folder pattern, retention (an amount of days/months/years such as `6m` or `7y`, or permanent), metadata pairs.
   - `invalid` and `failed` are optional outputs; leaving them unconnected is a warning.
 - Settings schemas use a JSON Schema subset, checked by an in-house validator (`ConfigSchemaValidator`), so no JSON Schema library was added.
 - Saving checks structure only, so unfinished graphs can be saved. Graph and settings problems are issues from `POST …/draft/validate`. That endpoint also accepts an unsaved definition (an extension of §5.2), which the designer uses to show issues live. Publishing re-validates; it returns 409 `workflow.invalid` with the issue list.
