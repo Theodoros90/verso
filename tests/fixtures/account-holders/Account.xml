@@ -1,0 +1,67 @@
+
+<?xml version="1.0" encoding="UTF-8"?>
+<AccountHolders>
+    <AccountHolder>
+        <AccountID>1001</AccountID>
+        <Name>John Smith</Name>
+        <AccountType>Individual</AccountType>
+        <Country>USA</Country>
+        <Balance>15000.00</Balance>
+    </AccountHolder>
+
+    <AccountHolder>
+        <AccountID>1002</AccountID>
+        <Name>Mary Johnson</Name>
+        <AccountType>Individual</AccountType>
+        <Country>UK</Country>
+        <Balance>8500.00</Balance>
+    </AccountHolder>
+
+    <AccountHolder>
+        <AccountID>C001</AccountID>
+        <Name>ABC Technologies Ltd</Name>
+        <AccountType>Corporate</AccountType>
+        <Country>USA</Country>
+        <Balance>250000.00</Balance>
+    </AccountHolder>
+
+    <AccountHolder>
+        <AccountID>1003</AccountID>
+        <Name>David Brown</Name>
+        <AccountType>Individual</AccountType>
+        <Country>Canada</Country>
+        <Balance>12000.00</Balance>
+    </AccountHolder>
+
+    <AccountHolder>
+        <AccountID>C002</AccountID>
+        <Name>Global Finance Corp</Name>
+        <AccountType>Corporate</AccountType>
+        <Country>UK</Country>
+        <Balance>500000.00</Balance>
+    </AccountHolder>
+
+    <AccountHolder>
+        <AccountID>C003</AccountID>
+        <Name>XYZ Solutions Ltd</Name>
+        <AccountType>Corporate</AccountType>
+        <Country>Germany</Country>
+        <Balance>175000.00</Balance>
+    </AccountHolder>
+
+    <AccountHolder>
+        <AccountID>1004</AccountID>
+        <Name>Sarah Wilson</Name>
+        <AccountType>Individual</AccountType>
+        <Country>Australia</Country>
+        <Balance>22000.00</Balance>
+    </AccountHolder>
+
+    <AccountHolder>
+        <AccountID>C004</AccountID>
+        <Name>International Trading Group</Name>
+        <AccountType>Corporate</AccountType>
+        <Country>Singapore</Country>
+        <Balance>750000.00</Balance>
+    </AccountHolder>
+</AccountHolders>

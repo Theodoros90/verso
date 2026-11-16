@@ -482,7 +482,7 @@ public static class NodeCatalog
                 "sourcePath": { "type": "string", "title": "Source folder", "maxLength": {{Ingestion.FolderPaths.MaxPathLength}}, "x-widget": "folder-path",
                   "description": "Absolute path as the Worker's server sees it, such as D:\\Invoices\\in, \\\\fileserver\\share\\in or /mnt/verso/in. The Worker's service account needs Modify access." },
                 "pattern": { "type": "string", "title": "File pattern", "minLength": 1, "maxLength": 100, "pattern": "{{Escape(Ingestion.FolderPaths.FilePatternPattern)}}", "x-widget": "mono",
-                  "description": "For example *.json. Senders write under a temporary name (such as .tmp) and rename when the file is complete." },
+                  "description": "For example *.json or *.xml (XML and CSV files reach a Parse step as text). Senders write under a temporary name (such as .tmp) and rename when the file is complete." },
                 "includeSubfolders": { "type": "boolean", "title": "Include subfolders" },
                 "interval": { "type": "string", "title": "Scan interval", "enum": {{JsonSerializer.Serialize(FolderScanIntervals.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(FolderScanIntervals.Values)}} },
                 "processedPath": { "type": "string", "title": "Processed files go to", "maxLength": {{Ingestion.FolderPaths.MaxPathLength}}, "x-widget": "folder-path",

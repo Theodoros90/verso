@@ -1,0 +1,31 @@
+{
+  "layoutSchemaVersion": 1,
+  "header": {
+    "heightMm": 24,
+    "elements": [
+      { "id": "bank", "type": "text", "xMm": 0, "yMm": 1, "widthMm": 100, "heightMm": 10,
+        "props": { "text": "Account holder summary", "style": { "fontSizePt": 20, "bold": true, "font": "serif" } } },
+      { "id": "sub", "type": "text", "xMm": 0, "yMm": 12, "widthMm": 100, "heightMm": 6,
+        "props": { "text": "Synthetic sample data", "style": { "fontSizePt": 9, "color": "#66727E" } } },
+      { "id": "header-rule", "type": "divider", "xMm": 0, "yMm": 21, "widthMm": 178, "heightMm": 1,
+        "props": { "thicknessPt": 0.75, "color": "#1A232C" } }
+    ]
+  },
+  "body": {
+    "blocks": [
+      { "id": "id", "type": "field", "props": { "label": "Account ID", "binding": "AccountID", "style": { "bold": true } } },
+      { "id": "name", "type": "field", "props": { "label": "Account holder", "binding": "Name" } },
+      { "id": "type", "type": "field", "props": { "label": "Account type", "binding": "AccountType" } },
+      { "id": "country", "type": "field", "props": { "label": "Country", "binding": "Country" } },
+      { "id": "balance", "type": "field", "spaceBeforeMm": 4,
+        "props": { "label": "Balance", "binding": "Balance", "filter": "money", "style": { "align": "right", "bold": true, "fontSizePt": 12 } } }
+    ]
+  },
+  "footer": {
+    "heightMm": 10,
+    "elements": [
+      { "id": "footer-text", "type": "text", "xMm": 0, "yMm": 2, "widthMm": 178, "heightMm": 6,
+        "props": { "text": "Account {{AccountID}} · {{Name}}", "style": { "fontSizePt": 8, "color": "#66727E", "align": "center" } } }
+    ]
+  }
+}

@@ -11,6 +11,9 @@ public sealed class LocalFolderAccessTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "verso-test-folders", Guid.NewGuid().ToString("N"));
     private readonly LocalFolderAccess _folders;
 
+    /// <summary>Where in-flight files are kept: the processed folder (a hidden .verso-inflight folder inside it).</summary>
+    private static readonly FolderRef Work = new("out", "");
+
     public LocalFolderAccessTests()
     {
         Directory.CreateDirectory(Path.Combine(_root, "in"));
@@ -115,7 +118,7 @@ public sealed class LocalFolderAccessTests : IDisposable
     [Fact]
     public void RelativePathsFromTheDatabase_CantLeaveTheFolder()
     {
-        var ex = Assert.Throws<FolderException>(() => _folders.TryMoveToInFlight(new FolderRef("in", ""), "../out/x.json", Guid.NewGuid()));
+        var ex = Assert.Throws<FolderException>(() => _folders.TryMoveToInFlight(new FolderRef("in", ""), "../out/x.json", Work, Guid.NewGuid()));
         Assert.Equal(FolderErrors.OutsideLocation, ex.Code);
     }
 
@@ -158,11 +161,36 @@ public sealed class LocalFolderAccessTests : IDisposable
         {
             if (OperatingSystem.IsWindows())
             {
-                Assert.False(_folders.TryMoveToInFlight(new FolderRef("in", ""), "busy.json", Guid.NewGuid()));
+                Assert.False(_folders.TryMoveToInFlight(new FolderRef("in", ""), "busy.json", Work, Guid.NewGuid()));
             }
         }
 
-        Assert.True(_folders.TryMoveToInFlight(new FolderRef("in", ""), "busy.json", Guid.NewGuid()));
+        Assert.True(_folders.TryMoveToInFlight(new FolderRef("in", ""), "busy.json", Work, Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task Claiming_CreatesNothingInTheSourceFolder_AndKeepsTheFileInTheProcessedFolder()
+    {
+        Write("in/a.json", "{}");
+        var id = Guid.NewGuid();
+
+        Assert.True(_folders.TryMoveToInFlight(new FolderRef("in", ""), "a.json", Work, id));
+
+        Assert.Empty(Directory.GetFileSystemEntries(Path.Combine(_root, "in"))); // no .verso-inflight folder, and the file is gone
+        Assert.True(File.Exists(Path.Combine(_root, "out", ".verso-inflight", id.ToString("N"))));
+        Assert.Empty(Directory.GetFiles(Path.Combine(_root, "out", ".verso-inflight"), ".*")); // no temporary file left
+        Assert.True((await _folders.ReadInFlightAsync(new FolderRef("in", ""), Work, id, 1024, CancellationToken.None)).Content is not null);
+    }
+
+    [Fact]
+    public void AFileClaimedBeforeTheWorkingFolderMoved_IsStillFoundInTheOldPlace()
+    {
+        var id = Guid.NewGuid();
+        Write($"in/.verso-inflight/{id:N}", "{}");
+
+        Assert.True(_folders.InFlightExists(new FolderRef("in", ""), Work, id));
+        Assert.Equal(id.ToString("N"), _folders.Deliver(new FolderRef("in", ""), Work, id, new FolderRef("out", "done"), id.ToString("N") + ".json", null)[..32]);
+        Assert.False(_folders.InFlightExists(new FolderRef("in", ""), Work, id));
     }
 
     [Fact]
@@ -170,8 +198,8 @@ public sealed class LocalFolderAccessTests : IDisposable
     {
         Write("in/a.json");
         var source = new FolderRef("in", "");
-        Assert.True(_folders.TryMoveToInFlight(source, "a.json", Guid.NewGuid()));
-        Assert.False(_folders.TryMoveToInFlight(source, "a.json", Guid.NewGuid()));
+        Assert.True(_folders.TryMoveToInFlight(source, "a.json", Work, Guid.NewGuid()));
+        Assert.False(_folders.TryMoveToInFlight(source, "a.json", Work, Guid.NewGuid()));
     }
 
     [Fact]
@@ -183,20 +211,20 @@ public sealed class LocalFolderAccessTests : IDisposable
         Write("in/a.json", """{ "n": 1 }""");
         var id = Guid.NewGuid();
 
-        Assert.True(_folders.TryMoveToInFlight(source, "a.json", id));
+        Assert.True(_folders.TryMoveToInFlight(source, "a.json", Work, id));
         Assert.False(File.Exists(Path.Combine(_root, "in", "a.json")));
-        var content = await _folders.ReadInFlightAsync(source, id, 1024, CancellationToken.None);
+        var content = await _folders.ReadInFlightAsync(source, Work, id, 1024, CancellationToken.None);
         Assert.Equal("""{ "n": 1 }""", System.Text.Encoding.UTF8.GetString(content.Content!));
 
-        var name = _folders.Deliver(source, id, done, "a.json", content.Sha256);
+        var name = _folders.Deliver(source, Work, id, done, "a.json", content.Sha256);
 
         Assert.Equal($"a.{id.ToString("N")[..8]}.json", name);
         Assert.Equal("someone else's file", File.ReadAllText(Path.Combine(_root, "out", "done", "a.json")));
-        Assert.False(_folders.InFlightExists(source, id));
+        Assert.False(_folders.InFlightExists(source, Work, id));
         Assert.Empty(Directory.GetFiles(Path.Combine(_root, "out", "done"), ".*")); // no temporary files left
 
         // A Worker that crashed after moving, before recording it, gets the same answer again.
-        Assert.Equal(name, _folders.Deliver(source, id, done, "a.json", content.Sha256));
+        Assert.Equal(name, _folders.Deliver(source, Work, id, done, "a.json", content.Sha256));
     }
 
     [Fact]
@@ -205,19 +233,19 @@ public sealed class LocalFolderAccessTests : IDisposable
         var source = new FolderRef("in", "");
         Write("in/b.json", "{}");
         var id = Guid.NewGuid();
-        _folders.TryMoveToInFlight(source, "b.json", id);
-        var sha = (await _folders.ReadInFlightAsync(source, id, 1024, CancellationToken.None)).Sha256;
+        _folders.TryMoveToInFlight(source, "b.json", Work, id);
+        var sha = (await _folders.ReadInFlightAsync(source, Work, id, 1024, CancellationToken.None)).Sha256;
         Directory.CreateDirectory(Path.Combine(_root, "out"));
-        File.Copy(Path.Combine(_root, "in", ".verso-inflight", id.ToString("N")), Path.Combine(_root, "out", "b.json"));
+        File.Copy(Path.Combine(_root, "out", ".verso-inflight", id.ToString("N")), Path.Combine(_root, "out", "b.json"));
 
-        Assert.Equal("b.json", _folders.Deliver(source, id, new FolderRef("out", ""), "b.json", sha));
-        Assert.False(_folders.InFlightExists(source, id));
+        Assert.Equal("b.json", _folders.Deliver(source, Work, id, new FolderRef("out", ""), "b.json", sha));
+        Assert.False(_folders.InFlightExists(source, Work, id));
     }
 
     [Fact]
     public void Deliver_OfAVanishedFile_IsFileMissing()
     {
-        var ex = Assert.Throws<FolderException>(() => _folders.Deliver(new FolderRef("in", ""), Guid.NewGuid(), new FolderRef("out", ""), "x.json", new string('0', 64)));
+        var ex = Assert.Throws<FolderException>(() => _folders.Deliver(new FolderRef("in", ""), Work, Guid.NewGuid(), new FolderRef("out", ""), "x.json", new string('0', 64)));
         Assert.Equal(FolderErrors.FileMissing, ex.Code);
     }
 
@@ -226,9 +254,9 @@ public sealed class LocalFolderAccessTests : IDisposable
     {
         Write("in/big.json", new string('x', 5000));
         var id = Guid.NewGuid();
-        _folders.TryMoveToInFlight(new FolderRef("in", ""), "big.json", id);
+        _folders.TryMoveToInFlight(new FolderRef("in", ""), "big.json", Work, id);
 
-        var content = await _folders.ReadInFlightAsync(new FolderRef("in", ""), id, 1000, CancellationToken.None);
+        var content = await _folders.ReadInFlightAsync(new FolderRef("in", ""), Work, id, 1000, CancellationToken.None);
 
         Assert.Null(content.Content);
         Assert.Equal(5000, content.SizeBytes);

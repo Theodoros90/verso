@@ -151,7 +151,8 @@ public sealed class FolderInputTests : IDisposable
         Assert.Equal(FolderFileStatus.Completed, row.Status);
         Assert.Equal(FolderFileOutcome.Processed, row.Outcome);
         Assert.Equal(["inv-001.json"], FilesIn("out/processed"));
-        Assert.Empty(FilesIn("in/.verso-inflight"));
+        Assert.False(Directory.Exists(Path.Combine(_root, "in", ".verso-inflight"))); // nothing is created in the source folder
+        Assert.Empty(FilesIn("out/processed/.verso-inflight")); // the working folder sits in the processed folder
         Assert.Equal("Succeeded", (await _kit.GetExecutionAsync(row.ExecutionId!.Value)).GetProperty("status").GetString());
 
         var status = await StatusAsync(key);
@@ -211,16 +212,39 @@ public sealed class FolderInputTests : IDisposable
         var key = await PublishAsync(Trigger(pattern: "*"));
         Drop("not-json.json", "{ this isn't json");
         Drop("array.json", "[1, 2]");
-        Drop("invoice.xml", "<invoice/>");
+        Drop("invoice.docx", "not a text format");
 
         await PassAsync();
 
         var rows = await RowsAsync(key);
         Assert.Equal(3, rows.Count);
         Assert.All(rows, r => Assert.Equal((FolderFileStatus.Completed, FolderFileOutcome.Failed, "file.invalid_json", (Guid?)null), (r.Status, r.Outcome, r.ErrorCode, r.ExecutionId)));
-        Assert.Contains("XML and CSV", rows.Single(r => r.FileName == "invoice.xml").ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("JSON, XML and CSV", rows.Single(r => r.FileName == "invoice.docx").ErrorMessage, StringComparison.Ordinal);
         Assert.Empty(_jobs.Enqueued);
         Assert.Equal(6, FilesIn("out/failed").Length); // three files and three error files
+    }
+
+    [Fact]
+    public async Task XmlAndCsvFiles_AreSubmittedAsTheContentField_ForTheParseStep()
+    {
+        var key = await PublishAsync(Trigger(pattern: "*"));
+        // A byte-order mark and a blank line before the declaration are what Windows editors and exports produce.
+        File.WriteAllBytes(Path.Combine(_root, "in", "accounts.xml"), [.. new byte[] { 0xEF, 0xBB, 0xBF }, .. System.Text.Encoding.UTF8.GetBytes("\r\n<?xml version=\"1.0\"?><A><B>1</B></A>\r\n")]);
+        File.SetLastWriteTimeUtc(Path.Combine(_root, "in", "accounts.xml"), DateTime.UtcNow.AddSeconds(-5));
+        Drop("rows.CSV", "id,name\n1,Ann\n");
+
+        await PassAsync();
+
+        // Both were read and started a run (this workflow has no Parse step, so the invoice check then rejects the {content} data).
+        var rows = await RowsAsync(key);
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r => Assert.NotNull(r.ExecutionId));
+        Assert.Equal(2, _jobs.Enqueued.Count);
+        await using var scope = _fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VersoDbContext>();
+        var inputs = await db.Executions.AsNoTracking().Where(e => rows.Select(r => r.ExecutionId).Contains(e.Id)).Select(e => e.InputPayload).ToListAsync();
+        Assert.Contains(inputs, i => JsonNode.Parse(i)!["content"]!.GetValue<string>() == "<?xml version=\"1.0\"?><A><B>1</B></A>");
+        Assert.Contains(inputs, i => JsonNode.Parse(i)!["content"]!.GetValue<string>() == "id,name\n1,Ann");
     }
 
     [Fact]
@@ -318,7 +342,7 @@ public sealed class FolderInputTests : IDisposable
         var file = FolderFile.Claim(workflowId, key, "trigger", _in, "", "crash.json", "crash.json", 10, DateTimeOffset.UtcNow,
             _out, "processed", _out, "failed", "dead-worker", DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2));
         await WithDb(async db => { db.FolderFiles.Add(file); await db.SaveChangesAsync(); });
-        Assert.True(_folders.TryMoveToInFlight(new FolderRef(_in, ""), "crash.json", file.Id));
+        Assert.True(_folders.TryMoveToInFlight(new FolderRef(_in, ""), "crash.json", new FolderRef(_out, "processed"), file.Id));
 
         await PassAsync();
         Assert.Equal(FolderFileStatus.Claimed, Assert.Single(await RowsAsync(key)).Status); // the lease is still held
@@ -339,7 +363,7 @@ public sealed class FolderInputTests : IDisposable
         var file = FolderFile.Claim(workflowId, key, "trigger", _in, "", "crash2.json", "crash2.json", 10, DateTimeOffset.UtcNow,
             _out, "processed", _out, "failed", "dead-worker", DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2));
         await WithDb(async db => { db.FolderFiles.Add(file); await db.SaveChangesAsync(); });
-        _folders.TryMoveToInFlight(new FolderRef(_in, ""), "crash2.json", file.Id);
+        _folders.TryMoveToInFlight(new FolderRef(_in, ""), "crash2.json", new FolderRef(_out, "processed"), file.Id);
 
         // ...and it had submitted the run, but died before recording it on the file.
         using var doc = JsonDocument.Parse(data);

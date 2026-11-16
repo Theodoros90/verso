@@ -202,11 +202,13 @@ public sealed class LocalFolderAccess : IFolderAccess
         }
     }
 
-    public bool TryMoveToInFlight(FolderRef source, string relativePath, Guid id)
+    public bool TryMoveToInFlight(FolderRef source, string relativePath, FolderRef working, Guid id)
     {
         ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(working);
         var folder = Resolve(source, FolderAccessMode.Input);
         var file = Inside(folder, relativePath);
+        var workingFolder = InFlightFolder(Resolve(working, FolderAccessMode.Output));
         try
         {
             if (!File.Exists(file))
@@ -214,14 +216,18 @@ public sealed class LocalFolderAccess : IFolderAccess
                 return false;
             }
 
-            Directory.CreateDirectory(InFlightFolder(folder));
+            Directory.CreateDirectory(workingFolder);
 
             // Still open for writing? (Windows: a writer's handle blocks this; elsewhere the rename convention covers it.)
             using (new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None))
             {
             }
 
-            File.Move(file, InFlightPath(folder, id), overwrite: false); // atomic rename within the folder's volume
+            // Under a temporary name first, then renamed: on another volume the move is a copy, and a crash in the middle
+            // must not leave a half file under the real name (the source file is only deleted once the copy is complete).
+            var temp = Path.Combine(workingFolder, $".{id:N}.verso-partial");
+            File.Move(file, temp, overwrite: true);
+            File.Move(temp, Path.Combine(workingFolder, id.ToString("N")), overwrite: false);
             return true;
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
@@ -238,13 +244,29 @@ public sealed class LocalFolderAccess : IFolderAccess
         }
     }
 
-    public bool InFlightExists(FolderRef source, Guid id) => File.Exists(InFlightPath(Resolve(source, FolderAccessMode.Input), id));
+    public bool InFlightExists(FolderRef source, FolderRef working, Guid id) => File.Exists(FindInFlight(source, working, id));
+
+    /// <summary>
+    /// The in-flight file: in the working folder, or, for a file claimed before the working folder moved into the processed
+    /// folder, in the old <c>.verso-inflight</c> folder inside the source. Returns the working path when neither exists.
+    /// </summary>
+    private string FindInFlight(FolderRef source, FolderRef working, Guid id)
+    {
+        var current = InFlightPath(Resolve(working, FolderAccessMode.Output), id);
+        if (File.Exists(current))
+        {
+            return current;
+        }
+
+        var legacy = InFlightPath(Resolve(source, FolderAccessMode.Input), id);
+        return File.Exists(legacy) ? legacy : current;
+    }
 
     public bool SourceExists(FolderRef source, string relativePath) => File.Exists(Inside(Resolve(source, FolderAccessMode.Input), relativePath));
 
-    public async Task<InFlightContent> ReadInFlightAsync(FolderRef source, Guid id, long maxBytes, CancellationToken ct)
+    public async Task<InFlightContent> ReadInFlightAsync(FolderRef source, FolderRef working, Guid id, long maxBytes, CancellationToken ct)
     {
-        var path = InFlightPath(Resolve(source, FolderAccessMode.Input), id);
+        var path = FindInFlight(source, working, id);
         try
         {
             await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
@@ -271,10 +293,10 @@ public sealed class LocalFolderAccess : IFolderAccess
         }
     }
 
-    public string Deliver(FolderRef source, Guid id, FolderRef destination, string fileName, string? sha256)
+    public string Deliver(FolderRef source, FolderRef working, Guid id, FolderRef destination, string fileName, string? sha256)
     {
         ArgumentNullException.ThrowIfNull(fileName);
-        var inFlight = InFlightPath(Resolve(source, FolderAccessMode.Input), id);
+        var inFlight = FindInFlight(source, working, id);
         var folder = Resolve(destination, FolderAccessMode.Output);
         var stem = Path.GetFileNameWithoutExtension(fileName);
         var ext = Path.GetExtension(fileName);
@@ -374,13 +396,12 @@ public sealed class LocalFolderAccess : IFolderAccess
             {
                 if (mode == FolderAccessMode.Input)
                 {
-                    // What ingestion does: move the file into Verso's working folder (needs modify rights), then remove it.
-                    var working = InFlightFolder(folder);
-                    Directory.CreateDirectory(working);
-                    var moved = Path.Combine(working, Path.GetFileName(probe));
+                    // What ingestion does to a source file: move it away (needs modify rights; the working folder is in the
+                    // processed folder, which the output test covers), then remove it.
+                    var moved = Path.Combine(folder, $"{ProbePrefix}{Guid.NewGuid():N}.moved.tmp");
                     File.Move(probe, moved);
                     probe = moved;
-                    checks.Add(new("modify", true, "Files can be created, moved into Verso's working folder and deleted."));
+                    checks.Add(new("modify", true, "Files can be created, moved and deleted."));
                 }
                 else
                 {

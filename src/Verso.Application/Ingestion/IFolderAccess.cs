@@ -68,14 +68,17 @@ public interface IFolderAccess
     /// <exception cref="FolderException">The folder is unknown, unavailable or access is denied.</exception>
     IReadOnlyList<FoundFile> List(FolderRef source, string pattern, bool includeSubfolders, TimeSpan settle, DateTimeOffset now, int max);
 
-    /// <summary>Moves the file into the in-flight folder as <paramref name="id"/>. False if it vanished or is in use.</summary>
-    bool TryMoveToInFlight(FolderRef source, string relativePath, Guid id);
+    /// <summary>
+    /// Moves the file into Verso's working folder (a hidden <c>.verso-inflight</c> folder inside <paramref name="working"/>, the processed
+    /// folder, so nothing is created in the source folder) as <paramref name="id"/>. False if it vanished or is in use.
+    /// </summary>
+    bool TryMoveToInFlight(FolderRef source, string relativePath, FolderRef working, Guid id);
 
-    bool InFlightExists(FolderRef source, Guid id);
+    bool InFlightExists(FolderRef source, FolderRef working, Guid id);
 
     bool SourceExists(FolderRef source, string relativePath);
 
-    Task<InFlightContent> ReadInFlightAsync(FolderRef source, Guid id, long maxBytes, CancellationToken ct);
+    Task<InFlightContent> ReadInFlightAsync(FolderRef source, FolderRef working, Guid id, long maxBytes, CancellationToken ct);
 
     /// <summary>
     /// Moves the in-flight file to <paramref name="destination"/> as <paramref name="fileName"/> (or, when that name
@@ -84,7 +87,7 @@ public interface IFolderAccess
     /// <paramref name="sha256"/> exists) it returns that name.
     /// </summary>
     /// <exception cref="FolderException">Destination unknown/unavailable/denied, or the file is gone (<see cref="FolderErrors.FileMissing"/>).</exception>
-    string Deliver(FolderRef source, Guid id, FolderRef destination, string fileName, string? sha256);
+    string Deliver(FolderRef source, FolderRef working, Guid id, FolderRef destination, string fileName, string? sha256);
 
     /// <summary>Writes a small text file next to a delivered file (best effort; throws on failure).</summary>
     void WriteSidecar(FolderRef destination, string fileName, string content);

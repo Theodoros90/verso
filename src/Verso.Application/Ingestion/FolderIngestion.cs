@@ -42,7 +42,7 @@ public sealed record FolderPassResult(int Scanned, int Claimed, int Submitted, i
 /// trigger, when its interval is due, and ingests new files.</item>
 /// </list>
 /// Ingesting a file: a <see cref="FolderFile"/> row is inserted first (a filtered unique index on the source file
-/// means only one Worker can claim it), then the file is moved into the folder's <c>.verso-inflight</c> folder, read,
+/// means only one Worker can claim it), then the file is moved into the <c>.verso-inflight</c> folder inside the processed folder, read,
 /// and submitted as a run. The run's idempotency key is derived from the content, so identical data never starts a
 /// second run (a duplicate goes to the failed location), and resubmitting after a crash finds the same run.
 /// </summary>
@@ -275,7 +275,7 @@ public sealed partial class FolderIngestion(
             bool moved;
             try
             {
-                moved = folders.TryMoveToInFlight(Source(file), file.RelativePath, file.Id);
+                moved = folders.TryMoveToInFlight(Source(file), file.RelativePath, Working(file), file.Id);
             }
             catch (FolderException ex)
             {
@@ -307,10 +307,11 @@ public sealed partial class FolderIngestion(
     private async Task ProcessClaimedAsync(FolderFile file, Counters counters, CancellationToken ct)
     {
         var source = Source(file);
+        var working = Working(file);
         try
         {
-            if (!folders.InFlightExists(source, file.Id)
-                && !(folders.SourceExists(source, file.RelativePath) && folders.TryMoveToInFlight(source, file.RelativePath, file.Id)))
+            if (!folders.InFlightExists(source, working, file.Id)
+                && !(folders.SourceExists(source, file.RelativePath) && folders.TryMoveToInFlight(source, file.RelativePath, working, file.Id)))
             {
                 file.Lost("The file was removed from the folder before Verso read it.", clock.GetUtcNow());
                 await SaveOrSkipAsync(ct);
@@ -329,7 +330,7 @@ public sealed partial class FolderIngestion(
         InFlightContent content;
         try
         {
-            content = await folders.ReadInFlightAsync(source, file.Id, options.MaxFileBytes, ct);
+            content = await folders.ReadInFlightAsync(source, working, file.Id, options.MaxFileBytes, ct);
         }
         catch (FolderException ex)
         {
@@ -343,11 +344,11 @@ public sealed partial class FolderIngestion(
         {
             file.Route(FolderFileOutcome.Failed, "file.too_large", $"The file is larger than {options.MaxFileBytes:N0} bytes.");
         }
-        else if (ParseObject(content.Content) is not { } data)
+        else if ((IsTextName(file.FileName) ? WrapText(content.Content) : ParseObject(content.Content)) is not { } data)
         {
             file.Route(FolderFileOutcome.Failed, "file.invalid_json", IsJsonName(file.FileName)
                 ? "The file isn't a JSON object (synthetic invoice data is expected)."
-                : "Only JSON files can be read in this version; XML and CSV need a field mapping, which isn't built yet.");
+                : "Only JSON, XML and CSV files can be read (.json, .xml, .csv).");
         }
         else
         {
@@ -415,7 +416,7 @@ public sealed partial class FolderIngestion(
         var destination = new FolderRef(location, subfolder);
         try
         {
-            var name = folders.Deliver(Source(file), file.Id, destination, file.FileName, file.Sha256);
+            var name = folders.Deliver(Source(file), Working(file), file.Id, destination, file.FileName, file.Sha256);
             file.Delivered(name, clock.GetUtcNow());
             if (file.Outcome == FolderFileOutcome.Failed)
             {
@@ -518,7 +519,30 @@ public sealed partial class FolderIngestion(
 
     private static FolderRef Source(FolderFile f) => new(f.SourceLocation, f.SourceSubfolder);
 
+    /// <summary>Where in-flight files are kept: inside the processed folder, so the source folder gets no extra folder.</summary>
+    private static FolderRef Working(FolderFile f) => new(f.ProcessedLocation, f.ProcessedSubfolder);
+
     private static bool IsJsonName(string fileName) => fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>XML and CSV files are passed on as text; a Parse step later in the workflow turns them into data (ADR 0001, addendum 3).</summary>
+    private static bool IsTextName(string fileName) =>
+        fileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The run's data for an XML or CSV file: <c>{ "content": "&lt;the file's text&gt;" }</c>, the field the Parse step reads by default.
+    /// The text is UTF-8 without a byte-order mark and without leading or trailing blank space (an XML declaration must be first).
+    /// </summary>
+    private static JsonDocument? WrapText(byte[] content)
+    {
+        var bytes = content.AsSpan();
+        if (bytes.StartsWith<byte>([0xEF, 0xBB, 0xBF]))
+        {
+            bytes = bytes[3..];
+        }
+
+        var text = new System.Text.UTF8Encoding(false, throwOnInvalidBytes: false).GetString(bytes).Trim();
+        return text.Length == 0 ? null : JsonDocument.Parse(JsonSerializer.Serialize(new Dictionary<string, string> { ["content"] = text }));
+    }
 
     private static JsonDocument? ParseObject(byte[] content)
     {

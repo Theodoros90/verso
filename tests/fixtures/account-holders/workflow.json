@@ -1,0 +1,27 @@
+{
+  "_comment": "Synthetic sample. __TEMPLATE_ID__ is replaced with the template id by tools/samples/load-account-holders.ps1. The folder paths are examples: the Worker's service account needs Modify access.",
+  "nodes": [
+    { "id": "trigger", "type": "folder-input", "title": "Account files", "position": { "x": 0, "y": 120 },
+      "config": { "sourcePath": "C:\\LN\\DocGen\\test\\Input", "pattern": "*.xml", "includeSubfolders": false, "interval": "every-minute",
+                  "processedPath": "C:\\LN\\DocGen\\test\\Processed", "failedPath": "C:\\LN\\DocGen\\test\\Failed" } },
+    { "id": "parse", "type": "parse", "title": "Read the XML", "position": { "x": 260, "y": 120 },
+      "config": { "source": "content", "format": "xml", "encoding": "utf-8", "recordPath": "AccountHolders", "numbers": true } },
+    { "id": "loop", "type": "for-each", "title": "For each account holder", "position": { "x": 520, "y": 120 },
+      "config": { "field": "AccountHolder", "mode": "split", "item": "item", "eachLabel": "Each account holder", "emptyLabel": "No account holders" } },
+    { "id": "corporate", "type": "if-else", "title": "AccountID starts with C?", "position": { "x": 780, "y": 120 },
+      "config": { "conditions": [ { "join": "and", "field": "AccountID", "op": "starts-with", "compare": "value", "value": "C" } ],
+                  "yesLabel": "Starts with C", "noLabel": "Other" } },
+    { "id": "pdf", "type": "generate-pdf", "title": "Account PDF", "position": { "x": 1040, "y": 40 },
+      "config": { "templateId": "__TEMPLATE_ID__", "templateVersion": "latest-published", "fileName": "{{AccountID}}.pdf" } },
+    { "id": "archive", "type": "archive", "title": "Archive", "position": { "x": 1300, "y": 40 },
+      "config": { "folderPattern": "accounts/{{AccountType}}", "retention": "7y",
+                  "metadata": [ { "key": "AccountID", "value": "{{AccountID}}" }, { "key": "Holder", "value": "{{Name}}" }, { "key": "Country", "value": "{{Country}}" } ] } }
+  ],
+  "edges": [
+    { "id": "e1", "source": "trigger",   "sourcePort": "out",     "target": "parse",     "targetPort": "in" },
+    { "id": "e2", "source": "parse",     "sourcePort": "success", "target": "loop",      "targetPort": "in" },
+    { "id": "e3", "source": "loop",      "sourcePort": "each",    "target": "corporate", "targetPort": "in" },
+    { "id": "e4", "source": "corporate", "sourcePort": "yes",     "target": "pdf",       "targetPort": "in" },
+    { "id": "e5", "source": "pdf",       "sourcePort": "success", "target": "archive",   "targetPort": "in" }
+  ]
+}

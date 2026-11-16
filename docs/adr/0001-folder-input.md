@@ -54,5 +54,23 @@ Banks commonly hand documents to output systems through watched folders on a fil
 - The plan's "External integrations stay simulated until explicitly approved" now has one approved exception: folder input on approved locations. SFTP, ERP, scheduled triggers and file upload remain simulated.
 - Operations gain a configuration area and file permissions to manage (runbook B7). All Workers must share the same `FolderInput:Locations`, because a location is resolved on the Worker that handles the file.
 - A Failed run's file goes to the failed location. If an operator later retries the run successfully, the file stays there. The ingestion record and the run link them.
-- Files stay in the source's `.verso-inflight` folder while their run is in progress. Operators shouldn't touch that folder.
+- Files stay in the processed folder's `.verso-inflight` folder while their run is in progress. Operators shouldn't touch that folder.
 - Open: XML/CSV mapping; per-location size limits; alerting on repeated scan failures; whether one location key may be used by several workflows' sources at once (allowed now: the claim index makes each file go to exactly one workflow).
+
+## Addendum 3 (2026-11-16): XML and CSV files
+
+Decision 11 ("JSON only") is relaxed. A file whose name ends in `.xml` or `.csv` (any case) is no longer refused: the Worker reads it as UTF-8 text (byte-order mark removed, leading and trailing blank space trimmed, because an XML declaration must come first) and submits `{ "content": "<the text>" }` as the run's data. That is the field the **Parse** step reads by default, so the workflow is `Folder input (*.xml) → Parse → …`. No conversion happens in the folder step, no mapping is built, and no package is added.
+
+- The file pattern still decides which files are picked up (`*.xml`, `*.csv`, `*.json`, or `*` for all). Other extensions go to the failed location as `file.invalid_json`.
+- The 1 MB limit, claiming, duplicate detection (same text → same run), processed/failed moves and error files are unchanged.
+- Limits: only UTF-8 text (Parse's `windows-1253` / `iso-8859-1` modes need base64 and are not offered here); a CSV must have one data row, because Parse accepts a single record per run (many-row CSV files need a Parse change, a separate decision).
+
+## Addendum 4 (2026-11-16): the working folder moves into the processed folder
+
+Decision 6 put a hidden `.verso-inflight` folder inside every **source** folder, so a folder that other systems write to gained a folder they hadn't made. It is now created inside the **processed** folder instead (`<processed>/.verso-inflight/<id>`), and the source folder gets nothing extra. Everything else in decision 6 is unchanged (claim row first, the move frees the name and takes the file out of the scanned set, leases, recovery).
+
+- The Worker now needs **Modify on the processed folder** to claim files, which it needs anyway to deliver to it; the source folder needs Modify only to move files out of it.
+- The move can cross volumes (the processed folder may be on another disk): the file is moved under a hidden `.<id>.verso-partial` name and renamed, so a crash never leaves a half file under the real name; the source is only deleted once the copy is complete. Same-volume moves stay atomic.
+- Files already claimed under the old layout are found in the old place and delivered normally (no migration needed).
+- The access test for a source folder now creates, moves and deletes a probe inside that folder; the output test covers the processed folder.
+- The processed folder's hidden `.verso-inflight` folder is never scanned, because processed and failed folders may not lie inside a scanned folder.
