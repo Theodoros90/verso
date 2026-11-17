@@ -364,6 +364,27 @@ SQL Server connections managed in Configuration, Connections (ADR [0016](adr/001
 - Errors: 400 `validation` (`key`, `provider`, `name`, `server`, `port`, `database`, `userName`, `trustServerCertificate`, `timeoutSeconds`, `password`; a password is refused with a message naming `Secrets:MasterKey` when no master key is set), 403 for any other role, 404 `database_connection.not_found` / `database_connection_test.not_found`, 409 `database_connection.key_taken` / `database_connection.inactive`.
 - Audited (`entityType=DatabaseConnection`): `DatabaseConnectionCreated`, `DatabaseConnectionUpdated` (changed field names only), `DatabaseConnectionPasswordChanged` (`set` or `cleared`), `DatabaseConnectionDeactivated`, `DatabaseConnectionActivated`; and `DatabaseConnectionTestRequested` (`entityType=DatabaseConnectionTest`). Repeating the same change writes nothing.
 
+## API connections
+
+HTTP API connections managed in Configuration, Connections (ADR [0017](adr/0017-api-connections.md)). **Administrators only** (the Admin role) for every endpoint, including reading. Test only: nothing calls the API except "Test connection", and no step uses a connection yet.
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/api-connections` | 200 `ApiConnection[]` | Active connections ordered by key. `?includeInactive=true` adds the deactivated ones |
+| POST | `/api/v1/api-connections` | 201 `ApiConnection`, `Location` | Create |
+| PUT | `/api/v1/api-connections/{id}` | 200 `ApiConnection` | Update (the key never changes) |
+| POST | `/api/v1/api-connections/{id}/deactivate` | 200 `ApiConnection` | Switch off (tests are refused while off) |
+| POST | `/api/v1/api-connections/{id}/activate` | 200 `ApiConnection` | Switch on |
+| POST | `/api/v1/api-connections/{id}/tests` | 202 `ApiConnectionTest`, `Location` | "Test connection": the Worker sends one GET to `baseUrl` + `testPath` (for OAuth, a token request first) |
+| GET | `/api/v1/api-connections/tests/{testId}` | 200 `ApiConnectionTest` | Poll the result. Tests are kept for 24 hours (404 afterwards) |
+
+- Request (create and update): `{ key, name, baseUrl, testPath, authType, authName, tokenUrl, scope, timeoutSeconds, secret, clearSecret }`. `key` on create only: lower-case letters, digits and hyphens, 2 to 64 characters, unique case-insensitively. `baseUrl`: an **https** address with no login, query or fragment (for example `https://api.frankfurter.dev/v1`). `testPath`: starts with a single `/`, no spaces or backslashes, may carry the query (for example `/latest?base=EUR&symbols=USD,GBP`). `authType`: `None` (the default), `ApiKeyHeader`, `ApiKeyQuery`, `Bearer`, `Basic` or `OAuthClientCredentials`. `authName`: the header name (`ApiKeyHeader`), the query parameter name (`ApiKeyQuery`), the user name without a colon (`Basic`) or the client id (`OAuthClientCredentials`); ignored otherwise. `tokenUrl` (https) and `scope`: OAuth only. Timeout 15 s by default (1 to 120).
+- **The secret is write-only.** `secret` (the API key, token, password or client secret) omitted or null keeps the stored one, a value replaces it, `clearSecret: true` removes it; `authType: None` drops it. No response, audit entry, log or history ever contains it; `ApiConnection` has only `hasSecret`. Stored AES-256-GCM encrypted with the master key `Secrets:MasterKey` (never in the database).
+- `ApiConnection`: `{ id, key, name, baseUrl, testPath, authType, authName, tokenUrl, scope, timeoutSeconds, isActive, hasSecret, updatedAt, updatedBy }`.
+- `ApiConnectionTest`: `{ id, connectionKey, status, code, message, httpStatus, elapsedMs, contentType, responseBytes, requestedAt, completedAt }`; `status` is `Queued`, `Running`, `Succeeded` (any 2xx) or `Failed`. It never carries the response body, headers, the address or the secret. `code` and `message` are Verso's own: `api.unauthorized`, `api.not_found`, `api.rate_limited`, `api.redirect_not_followed` (redirects are not followed), `api.client_error`, `api.server_error`, `api.timeout`, `api.unreachable`, `api.certificate_untrusted`, `api.blocked_address` (loopback, link-local, unspecified or multicast addresses are never called), `api.host_not_allowed` (`ApiConnections:AllowedHosts`), `api.token_failed`, `api.secret_unreadable`, `api.connection_unavailable`, `api.test_failed`.
+- Errors: 400 `validation` (`key`, `name`, `baseUrl`, `testPath`, `authType`, `authName`, `tokenUrl`, `scope`, `timeoutSeconds`, `secret`; a secret is refused with a message naming `Secrets:MasterKey` when no master key is set), 403 for any other role, 404 `api_connection.not_found` / `api_connection_test.not_found`, 409 `api_connection.key_taken` / `api_connection.inactive`.
+- Audited (`entityType=ApiConnection`): `ApiConnectionCreated`, `ApiConnectionUpdated` (changed field names only), `ApiConnectionSecretChanged` (`set` or `cleared`), `ApiConnectionDeactivated`, `ApiConnectionActivated`; and `ApiConnectionTestRequested` (`entityType=ApiConnectionTest`). Repeating the same change writes nothing.
+
 ## Workflows
 
 A workflow is a graph of steps: a trigger, then steps connected output → input. Its lifecycle is the same as a template's: **create** (a draft containing only an API / webhook trigger with default settings) → **save draft** (`If-Match`) → **publish** (version N, frozen) → **start draft** (copy of the latest published version). Every change is audited (`entityType=Workflow`).

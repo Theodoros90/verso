@@ -133,6 +133,7 @@ app.MapTemplateEndpoints();
 app.MapDocumentCategoryEndpoints();
 app.MapEmailRelayEndpoints();
 app.MapDatabaseConnectionEndpoints();
+app.MapApiConnectionEndpoints();
 app.MapPdfPreviewEndpoints();
 app.MapWorkflowEndpoints();
 app.MapConfigurationEndpoints();

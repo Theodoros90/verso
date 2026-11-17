@@ -88,6 +88,17 @@ public static class DependencyInjection
         return services;
     }
 
+    /// <summary>Worker only: calls the HTTP APIs an administrator creates in Configuration, for "Test connection" only (ADR 0017). Optional <c>ApiConnections:AllowedHosts</c> limits the hosts.</summary>
+    public static IServiceCollection AddVersoApiConnections(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddSingleton(new Application.Connections.ApiConnectionOptions
+        {
+            AllowedHosts = [.. configuration.GetSection(Application.Connections.ApiConnectionOptions.Section).GetSection(nameof(Application.Connections.ApiConnectionOptions.AllowedHosts)).GetChildren().Select(c => c.Value ?? "").Where(v => v.Length > 0)],
+        });
+        services.AddSingleton<Application.Connections.IApiProbe>(new Connections.HttpApiProbe());
+        return services;
+    }
+
     private static Email.EmailOptions ReadEmailRelay(IConfiguration section)
     {
         var defaults = new Email.EmailOptions();

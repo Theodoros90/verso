@@ -20,6 +20,8 @@ public static class DependencyInjection
         services.AddScoped<Mail.EmailRelayTests>();
         services.AddScoped<Connections.DatabaseConnectionService>();
         services.AddScoped<Connections.DatabaseConnectionTests>();
+        services.AddScoped<Connections.ApiConnectionService>();
+        services.AddScoped<Connections.ApiConnectionTests>();
         services.AddScoped<TemplatePreview>();
         services.AddScoped<PdfPreviews>();
         services.AddScoped<WorkflowService>();
@@ -50,6 +52,7 @@ public static class DependencyInjection
         services.AddScoped<FolderAccessTestRunner>();
         services.AddScoped<Mail.EmailRelayTestRunner>();
         services.AddScoped<Connections.DatabaseConnectionTestRunner>();
+        services.AddScoped<Connections.ApiConnectionTestRunner>();
         return services;
     }
 }

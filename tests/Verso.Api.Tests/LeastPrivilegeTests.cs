@@ -149,6 +149,36 @@ public sealed class LeastPrivilegeTests(LeastPrivilegeFixture grants) : IClassFi
 
 
     [Fact]
+    public async Task ApiConnectionTest_RunsUnderTheApiAndWorkerRoles()
+    {
+        using var client = grants.Api.CreateClient();
+        var key = $"lpapi-{Guid.NewGuid():N}"[..20];
+        using var created = await client.PostAsJsonAsync(new Uri("/api/v1/api-connections", UriKind.Relative),                        // API: create, encrypted secret
+            new { key, name = "LP api", baseUrl = "https://api.example.test/v1", testPath = "/status", authType = "Bearer", secret = "lp-api-secret" });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var id = (await ExecutionTestKit.ReadAsync(created)).GetProperty("id").GetGuid();
+
+        using var test = await client.PostAsync(new Uri($"/api/v1/api-connections/{id}/tests", UriKind.Relative), null);                // API: request a test
+        Assert.Equal(HttpStatusCode.Accepted, test.StatusCode);
+        var testId = (await ExecutionTestKit.ReadAsync(test)).GetProperty("id").GetGuid();
+
+        var probe = new RecordingApiProbe();
+        var protector = grants.BaseFactory.Services.GetRequiredService<ISecretProtector>();
+        await using (var db = grants.WorkerDb())
+        {
+            await new ApiConnectionTestRunner(db, protector, probe, new ApiConnectionOptions(), TimeProvider.System).RunAsync(testId, CancellationToken.None); // Worker: call, record
+        }
+
+        Assert.Equal("lp-api-secret", Assert.Single(probe.Seen).Secret); // decrypted in the Worker only
+        using var done = await client.GetAsync(new Uri($"/api/v1/api-connections/tests/{testId}", UriKind.Relative));                  // API: read the result
+        Assert.Equal("Succeeded", (await ExecutionTestKit.ReadAsync(done)).GetProperty("status").GetString());
+        await using (var db = grants.WorkerDb())
+        {
+            Assert.Equal(1, await new ApiConnectionTestRunner(db, protector, probe, new ApiConnectionOptions(), new ShiftedClock(TimeSpan.FromDays(2))).CleanupAsync(CancellationToken.None)); // Worker: cleanup
+        }
+    }
+
+    [Fact]
     public async Task DatabaseConnectionTest_RunsUnderTheApiAndWorkerRoles()
     {
         using var client = grants.Api.CreateClient();
@@ -297,6 +327,11 @@ public sealed class LeastPrivilegeTests(LeastPrivilegeFixture grants) : IClassFi
     [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [executions].[ExecutionEvents]")]
     [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [mail].[EmailRelays]")]
     [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [mail].[EmailRelays]")]
+    [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [connections].[ApiConnections]")]
+    [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [connections].[ApiConnections]")]
+    [InlineData(LeastPrivilegeFixture.WorkerUser, "UPDATE [connections].[ApiConnections] SET [BaseUrl] = N'x'")]
+    [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [connections].[ApiConnectionTests]")]
+    [InlineData(LeastPrivilegeFixture.WorkerUser, "INSERT INTO [connections].[ApiConnectionTests] ([Id], [ConnectionId], [ConnectionKey], [Status], [RequestedBy], [RequestedAt]) VALUES (NEWID(), NEWID(), N'x', N'Queued', N'x', SYSDATETIMEOFFSET())")]
     [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [connections].[DatabaseConnections]")]
     [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [connections].[DatabaseConnections]")]
     [InlineData(LeastPrivilegeFixture.WorkerUser, "UPDATE [connections].[DatabaseConnections] SET [Server] = N'x'")]

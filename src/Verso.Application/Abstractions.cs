@@ -18,6 +18,8 @@ public interface IVersoDbContext
     DbSet<Verso.Domain.Mail.EmailRelayTest> EmailRelayTests { get; }
     DbSet<Verso.Domain.Connections.DatabaseConnection> DatabaseConnections { get; }
     DbSet<Verso.Domain.Connections.DatabaseConnectionTest> DatabaseConnectionTests { get; }
+    DbSet<Verso.Domain.Connections.ApiConnection> ApiConnections { get; }
+    DbSet<Verso.Domain.Connections.ApiConnectionTest> ApiConnectionTests { get; }
     DbSet<AuditEntry> AuditEntries { get; }
     DbSet<PdfPreview> PdfPreviews { get; }
     DbSet<Workflow> Workflows { get; }

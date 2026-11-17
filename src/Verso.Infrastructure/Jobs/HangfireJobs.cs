@@ -38,6 +38,7 @@ public static class HangfireJobs
         services.AddScoped<IFolderAccessJobs, HangfireFolderAccessJobs>();
         services.AddScoped<Verso.Application.Mail.IEmailRelayTestJobs, HangfireEmailRelayTestJobs>();
         services.AddScoped<Verso.Application.Connections.IDatabaseConnectionTestJobs, HangfireDatabaseConnectionTestJobs>();
+        services.AddScoped<Verso.Application.Connections.IApiConnectionTestJobs, HangfireApiConnectionTestJobs>();
         return services;
     }
 
@@ -59,6 +60,8 @@ public static class HangfireJobs
         services.AddScoped<EmailRelayTestCleanupJob>();
         services.AddScoped<DatabaseConnectionTestJob>();
         services.AddScoped<DatabaseConnectionTestCleanupJob>();
+        services.AddScoped<ApiConnectionTestJob>();
+        services.AddScoped<ApiConnectionTestCleanupJob>();
         return services;
     }
 
@@ -69,12 +72,14 @@ public static class HangfireJobs
         recurring.AddOrUpdate<PdfPreviewCleanupJob>(PreviewCleanupJobId, j => j.RunAsync(CancellationToken.None), Cron.Hourly());
         recurring.AddOrUpdate<EmailRelayTestCleanupJob>(EmailRelayTestCleanupJobId, j => j.RunAsync(CancellationToken.None), Cron.Hourly());
         recurring.AddOrUpdate<DatabaseConnectionTestCleanupJob>(DatabaseConnectionTestCleanupJobId, j => j.RunAsync(CancellationToken.None), Cron.Hourly());
+        recurring.AddOrUpdate<ApiConnectionTestCleanupJob>(ApiConnectionTestCleanupJobId, j => j.RunAsync(CancellationToken.None), Cron.Hourly());
         recurring.AddOrUpdate<ExecutionDispatchJob>(ExecutionDispatchJobId, j => j.RunAsync(CancellationToken.None), Cron.Minutely());
     }
 
     public const string ExecutionDispatchJobId = "execution-dispatch";
     public const string EmailRelayTestCleanupJobId = "email-relay-test-cleanup";
     public const string DatabaseConnectionTestCleanupJobId = "database-connection-test-cleanup";
+    public const string ApiConnectionTestCleanupJobId = "api-connection-test-cleanup";
 
     /// <summary>The SQL that creates the Hangfire schema; used by the migration so the schema is versioned with ours.</summary>
     internal static string InstallScript() => SqlServerObjectsInstaller.GetInstallScript(Schemas.Jobs, enableHeavyMigrations: false);
@@ -161,6 +166,25 @@ public sealed class DatabaseConnectionTestJob(Verso.Application.Connections.Data
 
 /// <summary>Hourly: deletes database connection tests older than 24 hours.</summary>
 public sealed class DatabaseConnectionTestCleanupJob(Verso.Application.Connections.DatabaseConnectionTestRunner runner)
+{
+    [AutomaticRetry(Attempts = 0)]
+    public Task RunAsync(CancellationToken cancellationToken) => runner.CleanupAsync(cancellationToken);
+}
+
+internal sealed class HangfireApiConnectionTestJobs(IBackgroundJobClient client) : Verso.Application.Connections.IApiConnectionTestJobs
+{
+    public void Enqueue(Guid testId) => client.Enqueue<ApiConnectionTestJob>(j => j.RunAsync(testId, CancellationToken.None));
+}
+
+/// <summary>Hangfire entry point for "Test connection" of an API connection: sends the one GET as the Worker. Not retried (the user can test again).</summary>
+public sealed class ApiConnectionTestJob(Verso.Application.Connections.ApiConnectionTestRunner runner)
+{
+    [AutomaticRetry(Attempts = 0)]
+    public Task RunAsync(Guid testId, CancellationToken cancellationToken) => runner.RunAsync(testId, cancellationToken);
+}
+
+/// <summary>Hourly: deletes API connection tests older than 24 hours.</summary>
+public sealed class ApiConnectionTestCleanupJob(Verso.Application.Connections.ApiConnectionTestRunner runner)
 {
     [AutomaticRetry(Attempts = 0)]
     public Task RunAsync(CancellationToken cancellationToken) => runner.CleanupAsync(cancellationToken);

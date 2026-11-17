@@ -4,12 +4,14 @@ import { useState } from 'react'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/form'
+import { apiConnectionsApi } from '@/lib/api/apiConnections'
 import { databaseConnectionsApi } from '@/lib/api/databaseConnections'
 import { emailRelaysApi } from '@/lib/api/emailRelays'
-import type { DatabaseConnectionDto, EmailRelayDto } from '@/lib/api/generated'
+import type { ApiConnectionDto, DatabaseConnectionDto, EmailRelayDto } from '@/lib/api/generated'
 
 import { newLocalId, useConnections } from '../configuration/stores'
 import { ConnectionDialog, type ConnectionDraft } from './ConnectionDialog'
+import { ApiCard, ApiEditDialog, useApiConnections } from './ApiConnectionCards'
 import { DatabaseCard, DatabaseEditDialog, useDatabaseConnections } from './DatabaseConnectionCards'
 import { RelayCard, RelayEditDialog, useEmailRelays } from './EmailRelayCards'
 import {
@@ -30,6 +32,8 @@ export function ConnectionsPanel() {
   const [editingRelay, setEditingRelay] = useState<EmailRelayDto | null>(null)
   const dbs = useDatabaseConnections()
   const [editingDb, setEditingDb] = useState<DatabaseConnectionDto | null>(null)
+  const apis = useApiConnections()
+  const [editingApi, setEditingApi] = useState<ApiConnectionDto | null>(null)
 
   const toggle = (id: string, enabled: boolean) => {
     setConnections((list) => list.map((c) => (c.id === id ? { ...c, enabled } : c)))
@@ -72,7 +76,17 @@ export function ConnectionsPanel() {
     }
   }
 
-  const relayNames = [...relays.map((r) => r.name), ...dbs.connections.map((c) => c.name)]
+  const toggleApi = async (c: ApiConnectionDto, active: boolean) => {
+    try {
+      await (active ? apiConnectionsApi.activate(c.id) : apiConnectionsApi.deactivate(c.id))
+      setNotice({ tone: 'ok', text: `${c.name} turned ${active ? 'on' : 'off'}.` })
+      await apis.reload()
+    } catch {
+      setNotice({ tone: 'err', text: `Could not change ${c.name}.` })
+    }
+  }
+
+  const relayNames = [...relays.map((r) => r.name), ...dbs.connections.map((c) => c.name), ...apis.connections.map((c) => c.name)]
 
   return (
     <div className="px-5 py-4">
@@ -96,7 +110,8 @@ export function ConnectionsPanel() {
         const items = connections.filter((c) => c.group === group.name)
         const groupRelays = group.name === 'Delivery channels' ? relays : []
         const groupDbs = group.name === 'Data sources' ? dbs.connections : []
-        if (items.length === 0 && groupRelays.length === 0 && groupDbs.length === 0) return null
+        const groupApis = group.name === 'Data sources' ? apis.connections : []
+        if (items.length === 0 && groupRelays.length === 0 && groupDbs.length === 0 && groupApis.length === 0) return null
         return (
           <section key={group.name} aria-labelledby={groupId(group.name)} className="mt-5 first-of-type:mt-0">
             <div className="mb-3 flex items-baseline gap-2.5">
@@ -104,6 +119,9 @@ export function ConnectionsPanel() {
               <p className="m-0 text-[13px] text-ink-3">{group.description}</p>
             </div>
             <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(270px,1fr))] gap-3.5 p-0">
+              {groupApis.map((c) => (
+                <ApiCard key={c.id} connection={c} onToggle={(active) => void toggleApi(c, active)} onConfigure={() => setEditingApi(c)} />
+              ))}
               {groupDbs.map((c) => (
                 <DatabaseCard key={c.id} connection={c} onToggle={(active) => void toggleDb(c, active)} onConfigure={() => setEditingDb(c)} />
               ))}
@@ -151,9 +169,9 @@ export function ConnectionsPanel() {
         )
       })}
 
-      {(loadError || dbs.loadError) && <p role="alert" className="mt-4 text-[13px] text-err">Could not load the email or database connections.</p>}
+      {(loadError || dbs.loadError || apis.loadError) && <p role="alert" className="mt-4 text-[13px] text-err">Could not load the email, database or API connections.</p>}
 
-      <p className="mt-6 text-xs text-ink-3">Prototype: these connections are synthetic, kept in this browser only, and the test is simulated. No external service is contacted and no secret is stored. The exceptions are an email connection (authentication SMTP credentials) and a database connection (authentication SQL Server login): they are real, stored on the server, and their passwords are encrypted and never shown again.</p>
+      <p className="mt-6 text-xs text-ink-3">Prototype: these connections are synthetic, kept in this browser only, and the test is simulated. No external service is contacted and no secret is stored. The exceptions are an email connection (authentication SMTP credentials), a database connection (authentication Database login) and an API connection (authentication HTTP API): they are real, stored on the server, and their passwords are encrypted and never shown again.</p>
 
       {editing && (
         <ConnectionDialog
@@ -161,6 +179,11 @@ export function ConnectionsPanel() {
           connection={editing === 'new' ? null : editing}
           existingNames={[...connections.filter((c) => editing === 'new' || c.id !== editing.id).map((c) => c.name), ...relayNames]}
           onSave={save}
+          onApiCreated={(name) => {
+            setEditing(null)
+            setNotice({ tone: 'ok', text: `API connection “${name}” created.` })
+            void apis.reload()
+          }}
           onDatabaseCreated={(name) => {
             setEditing(null)
             setNotice({ tone: 'ok', text: `Database connection “${name}” created.` })
@@ -172,6 +195,19 @@ export function ConnectionsPanel() {
             void reload()
           }}
           onClose={() => setEditing(null)}
+        />
+      )}
+
+      {editingApi && (
+        <ApiEditDialog
+          key={editingApi.id}
+          connection={editingApi}
+          onClose={() => setEditingApi(null)}
+          onSaved={async (name) => {
+            setEditingApi(null)
+            setNotice({ tone: 'ok', text: `Settings saved for ${name}.` })
+            await apis.reload()
+          }}
         />
       )}
 

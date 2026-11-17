@@ -5,11 +5,13 @@ import { usePermissions } from '@/app/AuthGate'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/form'
+import { apiConnectionsApi } from '@/lib/api/apiConnections'
 import { databaseConnectionsApi } from '@/lib/api/databaseConnections'
 import { emailRelaysApi } from '@/lib/api/emailRelays'
 import { cn } from '@/lib/utils'
 
 import { AUTH_METHODS, CONNECTION_GROUPS, simulateTest, type Connection, type ConnectionGroup, type SimulatedTest } from './connections'
+import { API_AUTH, apiBody, apiErrorsOf, ApiFields, blankApi, validateApi, type ApiErrors } from './ApiFields'
 import { blankDb, dbBody, dbErrorsOf, DbFields, SQL_AUTH, validateDb, type DbErrors } from './DbFields'
 import { blankRelay, relayBody, relayErrorsOf, RelayFields, SMTP_AUTH, validateRelay, type RelayErrors } from './RelayFields'
 
@@ -37,6 +39,7 @@ export function ConnectionDialog({
   onSave,
   onRelayCreated,
   onDatabaseCreated,
+  onApiCreated,
   onClose,
 }: {
   /** The connection to configure, or null to create a new one. */
@@ -47,6 +50,8 @@ export function ConnectionDialog({
   onRelayCreated: (name: string) => void
   /** A real database connection was created from this dialog. */
   onDatabaseCreated: (name: string) => void
+  /** A real API connection was created from this dialog. */
+  onApiCreated: (name: string) => void
   onClose: () => void
 }) {
   const isNew = connection === null
@@ -56,6 +61,8 @@ export function ConnectionDialog({
   const [relayErrors, setRelayErrors] = useState<RelayErrors>({})
   const [db, setDb] = useState(blankDb)
   const [dbErrors, setDbErrors] = useState<DbErrors>({})
+  const [api, setApi] = useState(blankApi)
+  const [apiErrors, setApiErrors] = useState<ApiErrors>({})
   const [saving, setSaving] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -65,6 +72,7 @@ export function ConnectionDialog({
 
   const isRelay = isNew && draft.auth === SMTP_AUTH
   const isDb = isNew && draft.auth === SQL_AUTH
+  const isApi = isNew && draft.auth === API_AUTH
 
   const set = (patch: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...patch }))
@@ -119,7 +127,28 @@ export function ConnectionDialog({
     }
   }
 
+  const saveApi = async () => {
+    const local = validateApi(api, draft.name, false)
+    if (errors.name && draft.name.trim()) local.name = errors.name
+    setApiErrors(local)
+    if (Object.keys(local).length > 0) return
+    setSaving(true)
+    try {
+      await apiConnectionsApi.create(apiBody(api, draft.name))
+      setApi((a) => ({ ...a, secret: '' })) // the typed secret does not stay in memory longer than needed
+      onApiCreated(draft.name.trim())
+    } catch (e) {
+      setApiErrors(apiErrorsOf(e, 'Could not create the API connection.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const save = () => {
+    if (isApi) {
+      void saveApi()
+      return
+    }
     if (isRelay) {
       void saveRelay()
       return
@@ -141,24 +170,24 @@ export function ConnectionDialog({
       description={isNew ? 'Shared across every workflow.' : connection.category || connection.group}
       footer={
         <>
-          {!isRelay && !isDb && (
+          {!isRelay && !isDb && !isApi && (
             <Button type="button" onClick={test} disabled={testing} className="mr-auto">
               <PlugZap />
               {testing ? 'Testing…' : 'Test connection'}
             </Button>
           )}
-          <Button type="button" onClick={onClose} className={isRelay || isDb ? 'ml-auto' : undefined}>
+          <Button type="button" onClick={onClose} className={isRelay || isDb || isApi ? 'ml-auto' : undefined}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" onClick={save} disabled={saving || ((isRelay || isDb) && !administer)}>
+          <Button type="button" variant="primary" onClick={save} disabled={saving || ((isRelay || isDb || isApi) && !administer)}>
             {isNew ? 'Create connection' : 'Save settings'}
           </Button>
         </>
       }
     >
       <form className="flex flex-col gap-3.5" onSubmit={(e) => { e.preventDefault(); save() }} noValidate>
-        <Field label="Name" htmlFor="cn-name" error={isRelay ? relayErrors.name : isDb ? dbErrors.name : submitted ? errors.name : undefined}>
-          <Input id="cn-name" value={draft.name} onChange={(e) => set({ name: e.target.value })} aria-invalid={isRelay ? !!relayErrors.name : isDb ? !!dbErrors.name : submitted && !!errors.name} placeholder="e.g. Finance API" autoFocus />
+        <Field label="Name" htmlFor="cn-name" error={isRelay ? relayErrors.name : isDb ? dbErrors.name : isApi ? apiErrors.name : submitted ? errors.name : undefined}>
+          <Input id="cn-name" value={draft.name} onChange={(e) => set({ name: e.target.value })} aria-invalid={isRelay ? !!relayErrors.name : isDb ? !!dbErrors.name : isApi ? !!apiErrors.name : submitted && !!errors.name} placeholder="e.g. Finance API" autoFocus />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Group" htmlFor="cn-group">
@@ -168,15 +197,21 @@ export function ConnectionDialog({
               ))}
             </Select>
           </Field>
-          <Field label="Authentication" htmlFor="cn-auth" hint={isNew && !isRelay && !isDb ? 'Choose SMTP credentials for a real email connection, or Database login for a real database connection (SQL Server, PostgreSQL, MySQL / MariaDB, Oracle).' : undefined}>
-            <Select id="cn-auth" value={draft.auth} onChange={(e) => set({ auth: e.target.value, ...(e.target.value === SMTP_AUTH ? { group: 'Delivery channels' as const } : {}), ...(e.target.value === SQL_AUTH ? { group: 'Data sources' as const } : {}) })}>
+          <Field label="Authentication" htmlFor="cn-auth" hint={isNew && !isRelay && !isDb && !isApi ? 'Choose SMTP credentials for a real email connection, Database login for a real database (SQL Server, PostgreSQL, MySQL / MariaDB, Oracle), or HTTP API for a real web API.' : undefined}>
+            <Select id="cn-auth" value={draft.auth} onChange={(e) => set({ auth: e.target.value, ...(e.target.value === SMTP_AUTH ? { group: 'Delivery channels' as const } : {}), ...(e.target.value === SQL_AUTH || e.target.value === API_AUTH ? { group: 'Data sources' as const } : {}) })}>
               {[...new Set([...AUTH_METHODS, draft.auth])].map((a) => (
                 <option key={a}>{a}</option>
               ))}
             </Select>
           </Field>
         </div>
-        {isDb ? (
+        {isApi ? (
+          <>
+            {!administer && <p role="alert" className="text-[13px] text-err">Only administrators can create API connections.</p>}
+            <ApiFields form={api} errors={apiErrors} existing={null} onChange={(patch) => { setApi((a) => ({ ...a, ...patch })); setApiErrors({}) }} />
+            <p className="text-xs text-ink-3">After you create it, open Configure and use Test connection. It sends one GET to the test path; the response body is never kept.</p>
+          </>
+        ) : isDb ? (
           <>
             {!administer && <p role="alert" className="text-[13px] text-err">Only administrators can create database connections.</p>}
             <DbFields form={db} errors={dbErrors} existing={null} onChange={(patch) => { setDb((d) => ({ ...d, ...patch })); setDbErrors({}) }} />

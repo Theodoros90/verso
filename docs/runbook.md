@@ -252,6 +252,17 @@ An administrator can add a database connection in **Configuration, Connections, 
 8. **Ports and defaults:** leave Port empty for the default (SQL Server 1433, PostgreSQL 5432, MySQL / MariaDB 3306, Oracle 1521). Only SQL Server accepts `\INSTANCE` or `,port` in the server name. **Oracle** needs the **service name** (for example `ORCLPDB1`) and checks the server certificate against the Worker's certificate store or wallet when "Encrypt" is on (TCPS); it has no trust-anything switch.
 9. **Try each type** with Test connection against a non-production server before relying on it: these probes are tested without a live server.
 
+### B8c. API connections (HTTP, test only)
+
+An administrator can add a web API in **Configuration, Connections, New connection, authentication HTTP API** ([ADR 0017](adr/0017-api-connections.md)): base address, a test request path, and how the API is secured (none, API key in a header or in the address, bearer token, basic login, or OAuth client credentials). It is stored in `connections.ApiConnections` with the secret encrypted, under the **same master key** as email relays and database connections (`Secrets__MasterKey` on the API and every Worker, see B8 item 8). No step uses it yet: **Test connection** only sends **one GET**.
+
+1. **Egress.** The Worker server must be able to reach the host over **https** (firewall, proxy; the system proxy is used when configured). Only https addresses are accepted, redirects are not followed, and the Worker never connects to loopback, link-local (including `169.254.169.254`), unspecified or multicast addresses.
+2. **Apply the migration** (`dotnet tool run dotnet-ef database update --project src/Verso.Infrastructure --startup-project src/Verso.Api`, adds the API tables to the `connections` schema) and, on a locked-down database, run `tools/db/least-privilege.sql` again.
+3. **Recommended in production:** set `ApiConnections:AllowedHosts` in the Worker's configuration, for example `"ApiConnections": { "AllowedHosts": [ "api.frankfurter.dev", "api.bank.example" ] }`. The Worker then calls only those hosts (for OAuth, both the API host and the token host); anything else fails with `api.host_not_allowed` before any request.
+4. **Certificates:** if the test fails with `api.certificate_untrusted`, install the API's certificate authority on the Worker server. There is no "trust anything" switch for API connections.
+5. **Check:** Configure, Test connection. The dialog shows the HTTP status, the time, the content type and the size, or one of Verso's error codes (`api.unauthorized`, `api.not_found`, `api.unreachable`, `api.timeout`, `api.token_failed`, ...). The response body is never kept or shown. The Worker must be running.
+6. **Keys in the address** ("API key in the address") travel in the URL, which the remote server and proxies may log: use a header where the API allows it. A connection can be switched off but not deleted; rotate a secret by typing a new one in Configure.
+
 ### B9. Print queue
 
 The `print-queue` step ([ADR 0007](adr/0007-print-queue.md)) makes the **Worker** write a PDF and a small job file into a spool folder that the print system (or the print house's import job) picks up. Workflow authors type only a queue **key**; the folder behind it is yours to set. Without a matching queue, a run reaching the step fails with `print.queue_unknown`.

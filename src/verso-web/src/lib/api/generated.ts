@@ -1,6 +1,37 @@
 // GENERATED from docs/openapi/v1.json by scripts/generate-api-types.mjs. Do not edit; run `npm run gen:api`.
 /* eslint-disable */
 
+export interface ApiConnectionDto {
+  id: string
+  key: string
+  name: string
+  baseUrl: string
+  testPath: string
+  authType: string
+  authName: string
+  tokenUrl: string
+  scope: string
+  timeoutSeconds: number
+  isActive: boolean
+  hasSecret: boolean
+  updatedAt: string
+  updatedBy: string
+}
+
+export interface ApiConnectionTestDto {
+  id: string
+  connectionKey: string
+  status: string
+  code: string | null
+  message: string | null
+  httpStatus: number | null
+  elapsedMs: number | null
+  contentType: string | null
+  responseBytes: number | null
+  requestedAt: string
+  completedAt: string | null
+}
+
 export interface ArchiveDto {
   archivedAt: string
   folderPath: string
@@ -530,6 +561,20 @@ export interface RenderIssueDto {
   message: string
   elementId: string
   path: string | null
+}
+
+export interface SaveApiConnectionRequest {
+  key: string | null
+  name: string | null
+  baseUrl: string | null
+  testPath: string | null
+  authType: string | null
+  authName: string | null
+  tokenUrl: string | null
+  scope: string | null
+  timeoutSeconds: number | null
+  secret: string | null
+  clearSecret: boolean | null
 }
 
 export interface SaveDatabaseConnectionRequest {
