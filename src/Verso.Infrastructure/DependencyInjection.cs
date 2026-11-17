@@ -75,6 +75,19 @@ public static class DependencyInjection
     }
 
     /// <summary>One relay's settings: the top-level <c>Email</c> section is the relay <c>default</c>, each <c>Email:Relays:{key}</c> another (ADR 0006 addendum 1).</summary>
+    /// <summary>Worker only: connects to administrator-created SQL Server connections for "Test connection" (ADR 0016). Optional <c>DatabaseConnections:AllowedServers</c> limits the hosts.</summary>
+    public static IServiceCollection AddVersoDatabaseConnections(this IServiceCollection services, IConfiguration configuration)
+    {
+        var options = new Application.Connections.DatabaseConnectionOptions
+        {
+            AllowedServers = [.. configuration.GetSection(Application.Connections.DatabaseConnectionOptions.Section).GetSection(nameof(Application.Connections.DatabaseConnectionOptions.AllowedServers)).GetChildren().Select(c => c.Value ?? "").Where(v => v.Length > 0)],
+        };
+        services.AddSingleton(options);
+        services.AddSingleton<Application.Connections.IProviderProbe, Connections.SqlServerProbe>(); // SQL Server; the other providers come from Verso.Databases
+        services.AddSingleton<Application.Connections.IDatabaseProbe, Connections.DatabaseProbeRouter>();
+        return services;
+    }
+
     private static Email.EmailOptions ReadEmailRelay(IConfiguration section)
     {
         var defaults = new Email.EmailOptions();

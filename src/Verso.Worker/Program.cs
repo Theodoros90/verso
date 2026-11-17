@@ -7,6 +7,7 @@ using Verso.Rendering;
 using Verso.Rendering.Docx;
 using Verso.Rendering.PdfCombine;
 using Verso.Rendering.Pdf;
+using Verso.Databases;
 using Verso.Worker;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -33,6 +34,8 @@ builder.Services.AddSingleton<IPdfCombiner, PdfSharpCombiner>();
 
 // Send email: the bank's SMTP relay from the Email section (ADR 0006); credentials only from the environment or a secret store.
 builder.Services.AddVersoEmail(builder.Configuration);
+builder.Services.AddVersoDatabaseConnections(builder.Configuration);
+builder.Services.AddVersoDatabaseDrivers(); // PostgreSQL, MySQL / MariaDB, Oracle probes (Verso.Databases)
 
 // Print queue: PDFs and job files go to the spool folders in Print:Queues (ADR 0007); authors only name a queue key.
 builder.Services.AddVersoPrintSpooler(builder.Configuration);

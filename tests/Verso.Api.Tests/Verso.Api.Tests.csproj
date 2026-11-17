@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Verso.Api\Verso.Api.csproj" />
     <ProjectReference Include="..\..\src\Verso.Infrastructure\Verso.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Verso.Databases\Verso.Databases.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Shared synthetic fixtures, copied next to the test assembly. -->

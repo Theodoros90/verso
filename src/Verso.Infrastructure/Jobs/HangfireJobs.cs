@@ -37,6 +37,7 @@ public static class HangfireJobs
         services.AddScoped<IExecutionJobs, HangfireExecutionJobs>();
         services.AddScoped<IFolderAccessJobs, HangfireFolderAccessJobs>();
         services.AddScoped<Verso.Application.Mail.IEmailRelayTestJobs, HangfireEmailRelayTestJobs>();
+        services.AddScoped<Verso.Application.Connections.IDatabaseConnectionTestJobs, HangfireDatabaseConnectionTestJobs>();
         return services;
     }
 
@@ -56,6 +57,8 @@ public static class HangfireJobs
         services.AddScoped<FolderAccessTestJob>();
         services.AddScoped<EmailRelayTestJob>();
         services.AddScoped<EmailRelayTestCleanupJob>();
+        services.AddScoped<DatabaseConnectionTestJob>();
+        services.AddScoped<DatabaseConnectionTestCleanupJob>();
         return services;
     }
 
@@ -65,11 +68,13 @@ public static class HangfireJobs
         ArgumentNullException.ThrowIfNull(recurring);
         recurring.AddOrUpdate<PdfPreviewCleanupJob>(PreviewCleanupJobId, j => j.RunAsync(CancellationToken.None), Cron.Hourly());
         recurring.AddOrUpdate<EmailRelayTestCleanupJob>(EmailRelayTestCleanupJobId, j => j.RunAsync(CancellationToken.None), Cron.Hourly());
+        recurring.AddOrUpdate<DatabaseConnectionTestCleanupJob>(DatabaseConnectionTestCleanupJobId, j => j.RunAsync(CancellationToken.None), Cron.Hourly());
         recurring.AddOrUpdate<ExecutionDispatchJob>(ExecutionDispatchJobId, j => j.RunAsync(CancellationToken.None), Cron.Minutely());
     }
 
     public const string ExecutionDispatchJobId = "execution-dispatch";
     public const string EmailRelayTestCleanupJobId = "email-relay-test-cleanup";
+    public const string DatabaseConnectionTestCleanupJobId = "database-connection-test-cleanup";
 
     /// <summary>The SQL that creates the Hangfire schema; used by the migration so the schema is versioned with ours.</summary>
     internal static string InstallScript() => SqlServerObjectsInstaller.GetInstallScript(Schemas.Jobs, enableHeavyMigrations: false);
@@ -137,6 +142,25 @@ public sealed class EmailRelayTestJob(Verso.Application.Mail.EmailRelayTestRunne
 
 /// <summary>Hourly: deletes email relay tests older than 24 hours.</summary>
 public sealed class EmailRelayTestCleanupJob(Verso.Application.Mail.EmailRelayTestRunner runner)
+{
+    [AutomaticRetry(Attempts = 0)]
+    public Task RunAsync(CancellationToken cancellationToken) => runner.CleanupAsync(cancellationToken);
+}
+
+internal sealed class HangfireDatabaseConnectionTestJobs(IBackgroundJobClient client) : Verso.Application.Connections.IDatabaseConnectionTestJobs
+{
+    public void Enqueue(Guid testId) => client.Enqueue<DatabaseConnectionTestJob>(j => j.RunAsync(testId, CancellationToken.None));
+}
+
+/// <summary>Hangfire entry point for "Test connection" of a database connection: connects as the Worker and runs SELECT 1. Not retried (the user can test again).</summary>
+public sealed class DatabaseConnectionTestJob(Verso.Application.Connections.DatabaseConnectionTestRunner runner)
+{
+    [AutomaticRetry(Attempts = 0)]
+    public Task RunAsync(Guid testId, CancellationToken cancellationToken) => runner.RunAsync(testId, cancellationToken);
+}
+
+/// <summary>Hourly: deletes database connection tests older than 24 hours.</summary>
+public sealed class DatabaseConnectionTestCleanupJob(Verso.Application.Connections.DatabaseConnectionTestRunner runner)
 {
     [AutomaticRetry(Attempts = 0)]
     public Task RunAsync(CancellationToken cancellationToken) => runner.CleanupAsync(cancellationToken);

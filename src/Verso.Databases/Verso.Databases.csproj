@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Database drivers for "Test connection" (ADR 0016 addendum 1): PostgreSQL (Npgsql), MySQL / MariaDB (MySqlConnector) and Oracle
+    (Oracle.ManagedDataAccess.Core), approved 2026-11-16. Referenced only by Verso.Worker, like Verso.Rendering.Pdf: the API never loads a driver.
+    SQL Server stays in Verso.Infrastructure (its driver comes with EF Core). Each probe only opens a connection and runs a fixed SELECT 1.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Verso.Application\Verso.Application.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="MySqlConnector" />
+    <PackageReference Include="Oracle.ManagedDataAccess.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Verso.UnitTests" />
+    <InternalsVisibleTo Include="Verso.Api.Tests" />
+  </ItemGroup>
+</Project>

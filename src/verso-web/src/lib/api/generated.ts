@@ -94,6 +94,35 @@ export interface CreateWorkflowRequest {
   description: string | null
 }
 
+export interface DatabaseConnectionDto {
+  id: string
+  key: string
+  provider: string
+  name: string
+  server: string
+  port: number
+  database: string
+  userName: string
+  encrypt: boolean
+  trustServerCertificate: boolean
+  timeoutSeconds: number
+  isActive: boolean
+  hasPassword: boolean
+  updatedAt: string
+  updatedBy: string
+}
+
+export interface DatabaseConnectionTestDto {
+  id: string
+  connectionKey: string
+  status: string
+  code: string | null
+  message: string | null
+  serverVersion: string | null
+  requestedAt: string
+  completedAt: string | null
+}
+
 export interface DecideApprovalRequest {
   decision: string | null
   comment: string | null
@@ -501,6 +530,21 @@ export interface RenderIssueDto {
   message: string
   elementId: string
   path: string | null
+}
+
+export interface SaveDatabaseConnectionRequest {
+  key: string | null
+  provider: string | null
+  name: string | null
+  server: string | null
+  port: number | null
+  database: string | null
+  userName: string | null
+  encrypt: boolean | null
+  trustServerCertificate: boolean | null
+  timeoutSeconds: number | null
+  password: string | null
+  clearPassword: boolean | null
 }
 
 export interface SaveDraftRequest {

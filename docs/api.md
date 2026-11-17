@@ -343,6 +343,27 @@ SMTP relays the Send email step can use by key, managed in Configuration, Connec
 - `EmailRelayTest`: `{ id, relayKey, status, code, message, requestedAt, completedAt }`; `status` is `Queued`, `Running`, `Succeeded` or `Failed`. It never carries the recipient (held only until the test ends). Errors: 400 `validation` (`toAddress`), 404 `email_relay.not_found` / `email_relay_test.not_found`, 409 `email_relay.inactive`. Audited: `EmailRelayTestRequested` (`entityType=EmailRelayTest`, no address).
 - Worker side: a relay in the database wins over one with the same key under `Email:Relays` in configuration; a deactivated one is treated as unknown (no fall-back). A stored password the Worker can't open (missing or different master key) fails the step with `email.password_unreadable`, not retried.
 
+## Database connections
+
+SQL Server connections managed in Configuration, Connections (ADR [0016](adr/0016-database-connections.md)). **Administrators only** (the Admin role) for every endpoint, including reading. Test only: nothing runs a query yet.
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/database-connections` | 200 `DatabaseConnection[]` | Active connections ordered by key. `?includeInactive=true` adds the deactivated ones |
+| POST | `/api/v1/database-connections` | 201 `DatabaseConnection`, `Location` | Create |
+| PUT | `/api/v1/database-connections/{id}` | 200 `DatabaseConnection` | Update (the key never changes) |
+| POST | `/api/v1/database-connections/{id}/deactivate` | 200 `DatabaseConnection` | Switch off (tests are refused while off) |
+| POST | `/api/v1/database-connections/{id}/activate` | 200 `DatabaseConnection` | Switch on |
+| POST | `/api/v1/database-connections/{id}/tests` | 202 `DatabaseConnectionTest`, `Location` | "Test connection": the Worker connects with the saved settings and runs `SELECT 1` |
+| GET | `/api/v1/database-connections/tests/{testId}` | 200 `DatabaseConnectionTest` | Poll the result. Tests are kept for 24 hours (404 afterwards) |
+
+- Request (create and update): `{ key, provider, name, server, port, database, userName, encrypt, trustServerCertificate, timeoutSeconds, password, clearPassword }`. `key` and `provider` on create only (they never change): `key` is lower-case letters, digits and hyphens, 2 to 64 characters, unique case-insensitively; `provider` is `SqlServer` (the default when omitted), `PostgreSql`, `MySql` (MySQL and MariaDB) or `Oracle`. `server`: a host name or address (no spaces, `;`, `=` or quotes); **SqlServer only** may add `\INSTANCE` or `,port`. `port`: 1 to 65535, or 0 / omitted for the type's default (1433, 5432, 3306, 1521). `database`: optional (empty = the login's default); for **Oracle it is the service name and is required**. `trustServerCertificate` is refused for Oracle. Defaults: `encrypt` true, `trustServerCertificate` false, timeout 15 s (1 to 120).
+- **The password is write-only.** `password` omitted or null keeps the stored one, a value replaces it, `clearPassword: true` removes it. No response, audit entry, log or history ever contains it; `DatabaseConnection` has only `hasPassword`. Stored AES-256-GCM encrypted with the master key `Secrets:MasterKey` (never in the database).
+- `DatabaseConnection`: `{ id, key, provider, name, server, port, database, userName, encrypt, trustServerCertificate, timeoutSeconds, isActive, hasPassword, updatedAt, updatedBy }`.
+- `DatabaseConnectionTest`: `{ id, connectionKey, status, code, message, serverVersion, requestedAt, completedAt }`; `status` is `Queued`, `Running`, `Succeeded` or `Failed`. `code` and `message` are Verso's own (`db.login_failed`, `db.unreachable`, `db.timeout`, `db.cannot_open_database`, `db.password_expired`, `db.certificate_untrusted`, `db.password_unreadable`, `db.server_not_allowed`, `db.provider_unavailable`, `db.test_failed`) and never contain the server, the login or the password.
+- Errors: 400 `validation` (`key`, `provider`, `name`, `server`, `port`, `database`, `userName`, `trustServerCertificate`, `timeoutSeconds`, `password`; a password is refused with a message naming `Secrets:MasterKey` when no master key is set), 403 for any other role, 404 `database_connection.not_found` / `database_connection_test.not_found`, 409 `database_connection.key_taken` / `database_connection.inactive`.
+- Audited (`entityType=DatabaseConnection`): `DatabaseConnectionCreated`, `DatabaseConnectionUpdated` (changed field names only), `DatabaseConnectionPasswordChanged` (`set` or `cleared`), `DatabaseConnectionDeactivated`, `DatabaseConnectionActivated`; and `DatabaseConnectionTestRequested` (`entityType=DatabaseConnectionTest`). Repeating the same change writes nothing.
+
 ## Workflows
 
 A workflow is a graph of steps: a trigger, then steps connected output → input. Its lifecycle is the same as a template's: **create** (a draft containing only an API / webhook trigger with default settings) → **save draft** (`If-Match`) → **publish** (version N, frozen) → **start draft** (copy of the latest published version). Every change is audited (`entityType=Workflow`).

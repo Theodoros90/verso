@@ -15,6 +15,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Verso.Application.Executions;
+using Verso.Application.Connections;
 using Verso.Application.Mail;
 using Verso.Infrastructure.Persistence;
 
@@ -148,6 +149,37 @@ public sealed class LeastPrivilegeTests(LeastPrivilegeFixture grants) : IClassFi
 
 
     [Fact]
+    public async Task DatabaseConnectionTest_RunsUnderTheApiAndWorkerRoles()
+    {
+        using var client = grants.Api.CreateClient();
+        var key = $"lpdb-{Guid.NewGuid():N}"[..20];
+        using var created = await client.PostAsJsonAsync(new Uri("/api/v1/database-connections", UriKind.Relative),                      // API: create, encrypted password
+            new { key, name = "LP database", server = "sql.example.test", userName = "reader", password = "lp-db-secret" });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var id = (await ExecutionTestKit.ReadAsync(created)).GetProperty("id").GetGuid();
+
+        using var test = await client.PostAsync(new Uri($"/api/v1/database-connections/{id}/tests", UriKind.Relative), null);           // API: request a test
+        Assert.Equal(HttpStatusCode.Accepted, test.StatusCode);
+        var testId = (await ExecutionTestKit.ReadAsync(test)).GetProperty("id").GetGuid();
+
+        var probe = new RecordingDatabaseProbe();
+        await using (var db = grants.WorkerDb())
+        {
+            var protector = grants.BaseFactory.Services.GetRequiredService<ISecretProtector>();
+            await new DatabaseConnectionTestRunner(db, protector, probe, new DatabaseConnectionOptions(), TimeProvider.System).RunAsync(testId, CancellationToken.None); // Worker: connect, record
+        }
+
+        Assert.Equal("lp-db-secret", Assert.Single(probe.Seen).Password); // decrypted in the Worker only
+        using var done = await client.GetAsync(new Uri($"/api/v1/database-connections/tests/{testId}", UriKind.Relative));               // API: read the result
+        Assert.Equal("Succeeded", (await ExecutionTestKit.ReadAsync(done)).GetProperty("status").GetString());
+        await using (var db = grants.WorkerDb())
+        {
+            var protector = grants.BaseFactory.Services.GetRequiredService<ISecretProtector>();
+            Assert.Equal(1, await new DatabaseConnectionTestRunner(db, protector, probe, new DatabaseConnectionOptions(), new ShiftedClock(TimeSpan.FromDays(2))).CleanupAsync(CancellationToken.None)); // Worker: cleanup
+        }
+    }
+
+    [Fact]
     public async Task EmailRelayTest_RunsUnderTheApiAndWorkerRoles()
     {
         using var client = grants.Api.CreateClient();
@@ -265,6 +297,11 @@ public sealed class LeastPrivilegeTests(LeastPrivilegeFixture grants) : IClassFi
     [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [executions].[ExecutionEvents]")]
     [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [mail].[EmailRelays]")]
     [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [mail].[EmailRelays]")]
+    [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [connections].[DatabaseConnections]")]
+    [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [connections].[DatabaseConnections]")]
+    [InlineData(LeastPrivilegeFixture.WorkerUser, "UPDATE [connections].[DatabaseConnections] SET [Server] = N'x'")]
+    [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [connections].[DatabaseConnectionTests]")]
+    [InlineData(LeastPrivilegeFixture.WorkerUser, "INSERT INTO [connections].[DatabaseConnectionTests] ([Id], [ConnectionId], [ConnectionKey], [Status], [RequestedBy], [RequestedAt]) VALUES (NEWID(), NEWID(), N'x', N'Queued', N'x', SYSDATETIMEOFFSET())")]
     [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [mail].[EmailRelayTests]")]
     [InlineData(LeastPrivilegeFixture.WorkerUser, "INSERT INTO [mail].[EmailRelayTests] ([Id], [RelayId], [RelayKey], [Status], [RequestedBy], [RequestedAt]) VALUES (NEWID(), NEWID(), N'x', N'Queued', N'x', SYSDATETIMEOFFSET())")]
     [InlineData(LeastPrivilegeFixture.WorkerUser, "UPDATE [mail].[EmailRelays] SET [Host] = N'x'")]

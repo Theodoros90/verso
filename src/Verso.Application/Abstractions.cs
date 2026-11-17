@@ -16,6 +16,8 @@ public interface IVersoDbContext
     DbSet<DocumentCategory> DocumentCategories { get; }
     DbSet<Verso.Domain.Mail.EmailRelay> EmailRelays { get; }
     DbSet<Verso.Domain.Mail.EmailRelayTest> EmailRelayTests { get; }
+    DbSet<Verso.Domain.Connections.DatabaseConnection> DatabaseConnections { get; }
+    DbSet<Verso.Domain.Connections.DatabaseConnectionTest> DatabaseConnectionTests { get; }
     DbSet<AuditEntry> AuditEntries { get; }
     DbSet<PdfPreview> PdfPreviews { get; }
     DbSet<Workflow> Workflows { get; }

@@ -5,10 +5,12 @@ import { usePermissions } from '@/app/AuthGate'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Input, Select, Textarea } from '@/components/ui/form'
+import { databaseConnectionsApi } from '@/lib/api/databaseConnections'
 import { emailRelaysApi } from '@/lib/api/emailRelays'
 import { cn } from '@/lib/utils'
 
 import { AUTH_METHODS, CONNECTION_GROUPS, simulateTest, type Connection, type ConnectionGroup, type SimulatedTest } from './connections'
+import { blankDb, dbBody, dbErrorsOf, DbFields, SQL_AUTH, validateDb, type DbErrors } from './DbFields'
 import { blankRelay, relayBody, relayErrorsOf, RelayFields, SMTP_AUTH, validateRelay, type RelayErrors } from './RelayFields'
 
 interface Draft {
@@ -34,6 +36,7 @@ export function ConnectionDialog({
   existingNames,
   onSave,
   onRelayCreated,
+  onDatabaseCreated,
   onClose,
 }: {
   /** The connection to configure, or null to create a new one. */
@@ -42,6 +45,8 @@ export function ConnectionDialog({
   onSave: (draft: Draft) => void
   /** A real email relay was created from this dialog. */
   onRelayCreated: (name: string) => void
+  /** A real database connection was created from this dialog. */
+  onDatabaseCreated: (name: string) => void
   onClose: () => void
 }) {
   const isNew = connection === null
@@ -49,6 +54,8 @@ export function ConnectionDialog({
   const [draft, setDraft] = useState<Draft>(connection ? toDraft(connection) : blank)
   const [relay, setRelay] = useState(blankRelay)
   const [relayErrors, setRelayErrors] = useState<RelayErrors>({})
+  const [db, setDb] = useState(blankDb)
+  const [dbErrors, setDbErrors] = useState<DbErrors>({})
   const [saving, setSaving] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -57,6 +64,7 @@ export function ConnectionDialog({
   useEffect(() => () => clearTimeout(timer.current), [])
 
   const isRelay = isNew && draft.auth === SMTP_AUTH
+  const isDb = isNew && draft.auth === SQL_AUTH
 
   const set = (patch: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...patch }))
@@ -94,9 +102,30 @@ export function ConnectionDialog({
     }
   }
 
+  const saveDb = async () => {
+    const local = validateDb(db, draft.name, false)
+    if (errors.name && draft.name.trim()) local.name = errors.name
+    setDbErrors(local)
+    if (Object.keys(local).length > 0) return
+    setSaving(true)
+    try {
+      await databaseConnectionsApi.create(dbBody(db, draft.name))
+      setDb((d) => ({ ...d, password: '' })) // the typed password does not stay in memory longer than needed
+      onDatabaseCreated(draft.name.trim())
+    } catch (e) {
+      setDbErrors(dbErrorsOf(e, 'Could not create the database connection.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const save = () => {
     if (isRelay) {
       void saveRelay()
+      return
+    }
+    if (isDb) {
+      void saveDb()
       return
     }
     setSubmitted(true)
@@ -112,24 +141,24 @@ export function ConnectionDialog({
       description={isNew ? 'Shared across every workflow.' : connection.category || connection.group}
       footer={
         <>
-          {!isRelay && (
+          {!isRelay && !isDb && (
             <Button type="button" onClick={test} disabled={testing} className="mr-auto">
               <PlugZap />
               {testing ? 'Testing…' : 'Test connection'}
             </Button>
           )}
-          <Button type="button" onClick={onClose} className={isRelay ? 'ml-auto' : undefined}>
+          <Button type="button" onClick={onClose} className={isRelay || isDb ? 'ml-auto' : undefined}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" onClick={save} disabled={saving || (isRelay && !administer)}>
+          <Button type="button" variant="primary" onClick={save} disabled={saving || ((isRelay || isDb) && !administer)}>
             {isNew ? 'Create connection' : 'Save settings'}
           </Button>
         </>
       }
     >
       <form className="flex flex-col gap-3.5" onSubmit={(e) => { e.preventDefault(); save() }} noValidate>
-        <Field label="Name" htmlFor="cn-name" error={isRelay ? relayErrors.name : submitted ? errors.name : undefined}>
-          <Input id="cn-name" value={draft.name} onChange={(e) => set({ name: e.target.value })} aria-invalid={isRelay ? !!relayErrors.name : submitted && !!errors.name} placeholder="e.g. Finance API" autoFocus />
+        <Field label="Name" htmlFor="cn-name" error={isRelay ? relayErrors.name : isDb ? dbErrors.name : submitted ? errors.name : undefined}>
+          <Input id="cn-name" value={draft.name} onChange={(e) => set({ name: e.target.value })} aria-invalid={isRelay ? !!relayErrors.name : isDb ? !!dbErrors.name : submitted && !!errors.name} placeholder="e.g. Finance API" autoFocus />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Group" htmlFor="cn-group">
@@ -139,15 +168,21 @@ export function ConnectionDialog({
               ))}
             </Select>
           </Field>
-          <Field label="Authentication" htmlFor="cn-auth" hint={isNew && !isRelay ? 'Choose SMTP credentials to create a real email connection.' : undefined}>
-            <Select id="cn-auth" value={draft.auth} onChange={(e) => set({ auth: e.target.value, ...(e.target.value === SMTP_AUTH ? { group: 'Delivery channels' as const } : {}) })}>
+          <Field label="Authentication" htmlFor="cn-auth" hint={isNew && !isRelay && !isDb ? 'Choose SMTP credentials for a real email connection, or Database login for a real database connection (SQL Server, PostgreSQL, MySQL / MariaDB, Oracle).' : undefined}>
+            <Select id="cn-auth" value={draft.auth} onChange={(e) => set({ auth: e.target.value, ...(e.target.value === SMTP_AUTH ? { group: 'Delivery channels' as const } : {}), ...(e.target.value === SQL_AUTH ? { group: 'Data sources' as const } : {}) })}>
               {[...new Set([...AUTH_METHODS, draft.auth])].map((a) => (
                 <option key={a}>{a}</option>
               ))}
             </Select>
           </Field>
         </div>
-        {isRelay ? (
+        {isDb ? (
+          <>
+            {!administer && <p role="alert" className="text-[13px] text-err">Only administrators can create database connections.</p>}
+            <DbFields form={db} errors={dbErrors} existing={null} onChange={(patch) => { setDb((d) => ({ ...d, ...patch })); setDbErrors({}) }} />
+            <p className="text-xs text-ink-3">After you create it, open Configure and use Test connection. It connects and runs SELECT 1 only; no query is run.</p>
+          </>
+        ) : isRelay ? (
           <>
             {!administer && <p role="alert" className="text-[13px] text-err">Only administrators can create email connections.</p>}
             <RelayFields form={relay} errors={relayErrors} existing={null} onChange={(patch) => { setRelay((r) => ({ ...r, ...patch })); setRelayErrors({}) }} />

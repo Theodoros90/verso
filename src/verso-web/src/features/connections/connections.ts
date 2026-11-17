@@ -10,7 +10,7 @@ export const CONNECTION_GROUPS = [
 export type ConnectionGroup = (typeof CONNECTION_GROUPS)[number]['name']
 export type ConnectionHealth = 'ok' | 'warn' | 'err'
 
-export const AUTH_METHODS = ['OAuth 2.0 client credentials', 'API key', 'Bearer token', 'Mutual TLS', 'Managed identity', 'SSH key', 'SMTP credentials', 'Certificate'] as const
+export const AUTH_METHODS = ['OAuth 2.0 client credentials', 'API key', 'Bearer token', 'Mutual TLS', 'Managed identity', 'SSH key', 'SMTP credentials', 'Database login', 'Certificate'] as const
 
 
 export interface Connection {

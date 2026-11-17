@@ -15,6 +15,9 @@ public static class Schemas
     /// <summary>Email relays managed in the app (ADR 0015). Created by the EmailRelays migration.</summary>
     public const string Mail = "mail";
 
+    /// <summary>Database connections created in Configuration (ADR 0016). Created by the DatabaseConnections migration.</summary>
+    public const string Connections = "connections";
+
     /// <summary>Hangfire job storage (created by our migrations, not by Hangfire at startup).</summary>
     public const string Jobs = "hangfire";
 

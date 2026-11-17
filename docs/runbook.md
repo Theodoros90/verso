@@ -238,6 +238,20 @@ The `send-email` step ([ADR 0006](adr/0006-send-email.md)) makes the **Worker** 
    - A relay in the app wins over one with the same key under `Email:Relays`; configuration-only setups keep working unchanged. Deactivating a relay in the app makes steps that name it fail with `email.relay_unknown`.
    - Gmail needs an *app password* (2-step verification on); Microsoft 365 often requires OAuth, which Verso does not support. Use synthetic recipients while testing.
 
+### B8b. Database connections (SQL Server, PostgreSQL, MySQL / MariaDB, Oracle; test only)
+
+An administrator can add a database connection in **Configuration, Connections, New connection, authentication Database login** (choose the **Database type**: SQL Server, PostgreSQL, MySQL / MariaDB or Oracle; see [ADR 0016 addendum 1](adr/0016-database-connections.md)) ([ADR 0016](adr/0016-database-connections.md)). It is stored in `connections.DatabaseConnections` with the password encrypted. It needs the **same master key as email relays** (`Secrets__MasterKey` on the API and every Worker, see B8 item 8). No step uses it yet: **Test connection** only connects and runs `SELECT 1`.
+
+1. **Use a read-only login on a non-production server.** The connection is real: the Worker server must be able to reach the host and port (firewall).
+2. **Apply the migration** (`dotnet tool run dotnet-ef database update --project src/Verso.Infrastructure --startup-project src/Verso.Api`, creates the `connections` schema) and, on a locked-down database, run `tools/db/least-privilege.sql` again.
+3. **Recommended in production:** set `DatabaseConnections:AllowedServers` in the Worker's configuration, for example `"DatabaseConnections": { "AllowedServers": [ "sql.bank.example" ] }`. The Worker then connects only to those hosts (the name before an instance or port); anything else fails with `db.server_not_allowed`.
+4. **Encryption:** leave "Encrypt the connection" on. If the test fails with `db.certificate_untrusted`, install the server's certificate authority on the Worker server; "Trust the server certificate" is for non-production servers only.
+5. **Check:** Configure, Test connection. The dialog shows the server version, or one of Verso's error codes (`db.login_failed`, `db.unreachable`, `db.timeout`, `db.cannot_open_database`, `db.password_expired`, `db.password_unreadable`). The Worker must be running.
+6. A connection can be switched off but not deleted. Rotate the password by typing a new one in Configure.
+7. **Drivers.** PostgreSQL (Npgsql), MySQL / MariaDB (MySqlConnector) and Oracle (Oracle.ManagedDataAccess.Core) ship in the **Worker** only (project `Verso.Databases`); the API loads none. The Oracle driver is under the Oracle Free Use Terms (not open source): get the bank's licence review before deploying it.
+8. **Ports and defaults:** leave Port empty for the default (SQL Server 1433, PostgreSQL 5432, MySQL / MariaDB 3306, Oracle 1521). Only SQL Server accepts `\INSTANCE` or `,port` in the server name. **Oracle** needs the **service name** (for example `ORCLPDB1`) and checks the server certificate against the Worker's certificate store or wallet when "Encrypt" is on (TCPS); it has no trust-anything switch.
+9. **Try each type** with Test connection against a non-production server before relying on it: these probes are tested without a live server.
+
 ### B9. Print queue
 
 The `print-queue` step ([ADR 0007](adr/0007-print-queue.md)) makes the **Worker** write a PDF and a small job file into a spool folder that the print system (or the print house's import job) picks up. Workflow authors type only a queue **key**; the folder behind it is yours to set. Without a matching queue, a run reaching the step fails with `print.queue_unknown`.

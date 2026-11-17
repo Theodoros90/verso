@@ -4,11 +4,13 @@ import { useState } from 'react'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/form'
+import { databaseConnectionsApi } from '@/lib/api/databaseConnections'
 import { emailRelaysApi } from '@/lib/api/emailRelays'
-import type { EmailRelayDto } from '@/lib/api/generated'
+import type { DatabaseConnectionDto, EmailRelayDto } from '@/lib/api/generated'
 
 import { newLocalId, useConnections } from '../configuration/stores'
 import { ConnectionDialog, type ConnectionDraft } from './ConnectionDialog'
+import { DatabaseCard, DatabaseEditDialog, useDatabaseConnections } from './DatabaseConnectionCards'
 import { RelayCard, RelayEditDialog, useEmailRelays } from './EmailRelayCards'
 import {
   abbreviate,
@@ -26,6 +28,8 @@ export function ConnectionsPanel() {
   const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null)
   const { relays, loadError, reload } = useEmailRelays()
   const [editingRelay, setEditingRelay] = useState<EmailRelayDto | null>(null)
+  const dbs = useDatabaseConnections()
+  const [editingDb, setEditingDb] = useState<DatabaseConnectionDto | null>(null)
 
   const toggle = (id: string, enabled: boolean) => {
     setConnections((list) => list.map((c) => (c.id === id ? { ...c, enabled } : c)))
@@ -58,7 +62,17 @@ export function ConnectionsPanel() {
     }
   }
 
-  const relayNames = relays.map((r) => r.name)
+  const toggleDb = async (c: DatabaseConnectionDto, active: boolean) => {
+    try {
+      await (active ? databaseConnectionsApi.activate(c.id) : databaseConnectionsApi.deactivate(c.id))
+      setNotice({ tone: 'ok', text: `${c.name} turned ${active ? 'on' : 'off'}.` })
+      await dbs.reload()
+    } catch {
+      setNotice({ tone: 'err', text: `Could not change ${c.name}.` })
+    }
+  }
+
+  const relayNames = [...relays.map((r) => r.name), ...dbs.connections.map((c) => c.name)]
 
   return (
     <div className="px-5 py-4">
@@ -81,7 +95,8 @@ export function ConnectionsPanel() {
       {CONNECTION_GROUPS.map((group) => {
         const items = connections.filter((c) => c.group === group.name)
         const groupRelays = group.name === 'Delivery channels' ? relays : []
-        if (items.length === 0 && groupRelays.length === 0) return null
+        const groupDbs = group.name === 'Data sources' ? dbs.connections : []
+        if (items.length === 0 && groupRelays.length === 0 && groupDbs.length === 0) return null
         return (
           <section key={group.name} aria-labelledby={groupId(group.name)} className="mt-5 first-of-type:mt-0">
             <div className="mb-3 flex items-baseline gap-2.5">
@@ -89,6 +104,9 @@ export function ConnectionsPanel() {
               <p className="m-0 text-[13px] text-ink-3">{group.description}</p>
             </div>
             <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(270px,1fr))] gap-3.5 p-0">
+              {groupDbs.map((c) => (
+                <DatabaseCard key={c.id} connection={c} onToggle={(active) => void toggleDb(c, active)} onConfigure={() => setEditingDb(c)} />
+              ))}
               {groupRelays.map((r) => (
                 <RelayCard key={r.id} relay={r} onToggle={(active) => void toggleRelay(r, active)} onConfigure={() => setEditingRelay(r)} />
               ))}
@@ -133,9 +151,9 @@ export function ConnectionsPanel() {
         )
       })}
 
-      {loadError && <p role="alert" className="mt-4 text-[13px] text-err">Could not load the email connections.</p>}
+      {(loadError || dbs.loadError) && <p role="alert" className="mt-4 text-[13px] text-err">Could not load the email or database connections.</p>}
 
-      <p className="mt-6 text-xs text-ink-3">Prototype: these connections are synthetic, kept in this browser only, and the test is simulated. No external service is contacted and no secret is stored. The exception is an email connection (authentication SMTP credentials): it is real, stored on the server, and its password is encrypted and never shown again.</p>
+      <p className="mt-6 text-xs text-ink-3">Prototype: these connections are synthetic, kept in this browser only, and the test is simulated. No external service is contacted and no secret is stored. The exceptions are an email connection (authentication SMTP credentials) and a database connection (authentication SQL Server login): they are real, stored on the server, and their passwords are encrypted and never shown again.</p>
 
       {editing && (
         <ConnectionDialog
@@ -143,12 +161,30 @@ export function ConnectionsPanel() {
           connection={editing === 'new' ? null : editing}
           existingNames={[...connections.filter((c) => editing === 'new' || c.id !== editing.id).map((c) => c.name), ...relayNames]}
           onSave={save}
+          onDatabaseCreated={(name) => {
+            setEditing(null)
+            setNotice({ tone: 'ok', text: `Database connection “${name}” created.` })
+            void dbs.reload()
+          }}
           onRelayCreated={(name) => {
             setEditing(null)
             setNotice({ tone: 'ok', text: `Email connection “${name}” created.` })
             void reload()
           }}
           onClose={() => setEditing(null)}
+        />
+      )}
+
+      {editingDb && (
+        <DatabaseEditDialog
+          key={editingDb.id}
+          connection={editingDb}
+          onClose={() => setEditingDb(null)}
+          onSaved={async (name) => {
+            setEditingDb(null)
+            setNotice({ tone: 'ok', text: `Settings saved for ${name}.` })
+            await dbs.reload()
+          }}
         />
       )}
 

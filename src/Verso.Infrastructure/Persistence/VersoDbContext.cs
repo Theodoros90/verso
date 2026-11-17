@@ -20,6 +20,8 @@ public sealed class VersoDbContext(DbContextOptions<VersoDbContext> options) : D
     public DbSet<DocumentCategory> DocumentCategories => Set<DocumentCategory>();
     public DbSet<Verso.Domain.Mail.EmailRelay> EmailRelays => Set<Verso.Domain.Mail.EmailRelay>();
     public DbSet<Verso.Domain.Mail.EmailRelayTest> EmailRelayTests => Set<Verso.Domain.Mail.EmailRelayTest>();
+    public DbSet<Verso.Domain.Connections.DatabaseConnection> DatabaseConnections => Set<Verso.Domain.Connections.DatabaseConnection>();
+    public DbSet<Verso.Domain.Connections.DatabaseConnectionTest> DatabaseConnectionTests => Set<Verso.Domain.Connections.DatabaseConnectionTest>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<PdfPreview> PdfPreviews => Set<PdfPreview>();
     public DbSet<Workflow> Workflows => Set<Workflow>();

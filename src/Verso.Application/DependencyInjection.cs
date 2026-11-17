@@ -18,6 +18,8 @@ public static class DependencyInjection
         services.AddScoped<DocumentCategoryService>();
         services.AddScoped<Mail.EmailRelayService>();
         services.AddScoped<Mail.EmailRelayTests>();
+        services.AddScoped<Connections.DatabaseConnectionService>();
+        services.AddScoped<Connections.DatabaseConnectionTests>();
         services.AddScoped<TemplatePreview>();
         services.AddScoped<PdfPreviews>();
         services.AddScoped<WorkflowService>();
@@ -47,6 +49,7 @@ public static class DependencyInjection
         services.AddScoped<FolderIngestion>();
         services.AddScoped<FolderAccessTestRunner>();
         services.AddScoped<Mail.EmailRelayTestRunner>();
+        services.AddScoped<Connections.DatabaseConnectionTestRunner>();
         return services;
     }
 }
