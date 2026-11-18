@@ -174,6 +174,17 @@ The Folder input step reads files from folders **you type in the step**, so ther
 
 For quicker tests, lower the settle time in the Worker's user secrets: `dotnet user-secrets set "FolderInput:SettleTime" "00:00:02" --project src/Verso.Worker`, then restart the Worker. Server setup, including `AllowedRoots` to limit where typed paths may point: [runbook B7](runbook.md#b7-folder-input).
 
+## 7. Read-only database login for Query database steps
+
+The Query database step ([ADR 0019](adr/0019-query-database-step.md)) runs a `SELECT` that a workflow author typed, as the login stored in the Database connection. Verso checks the text and rolls the transaction back, but **the connection's login is the real protection**: give it SELECT only, on only what the workflows read, and use that login in Configuration, Connections. Examples with synthetic names (replace the password with your own; never commit it):
+
+- **SQL Server:** `CREATE LOGIN verso_ro WITH PASSWORD = '<strong password>'; USE bankdb; CREATE USER verso_ro FOR LOGIN verso_ro; GRANT SELECT ON dbo.customers TO verso_ro;` (grant per table or schema, not `db_datareader` unless everything is meant to be readable).
+- **PostgreSQL:** `CREATE ROLE verso_ro LOGIN PASSWORD '<strong password>'; GRANT CONNECT ON DATABASE bankdb TO verso_ro; GRANT USAGE ON SCHEMA public TO verso_ro; GRANT SELECT ON public.customers TO verso_ro;`
+- **MySQL / MariaDB:** `CREATE USER 'verso_ro'@'%' IDENTIFIED BY '<strong password>'; GRANT SELECT ON bankdb.customers TO 'verso_ro'@'%';`
+- **Oracle:** `CREATE USER verso_ro IDENTIFIED BY "<strong password>"; GRANT CREATE SESSION TO verso_ro; GRANT SELECT ON app.customers TO verso_ro;` (grant SELECT on the specific tables; do not grant `SELECT ANY TABLE`).
+
+In the Worker's configuration, set `DatabaseConnections:AllowedServers` (for example `"DatabaseConnections": { "AllowedServers": [ "sql.bank.example" ] }`) so the Worker connects only to listed hosts; this limit also applies to Query database steps (`db.server_not_allowed`). Only SQL Server has been verified against a live server; try the other types against a non-production server first. If a query is rejected as unsafe, the message names an `sql.*` code; see the ADR for what the guard refuses.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
