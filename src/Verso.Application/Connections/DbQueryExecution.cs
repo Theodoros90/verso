@@ -62,8 +62,17 @@ public static class DbQueryExecution
                     configureCommand?.Invoke(command);
                     AddParameters(command, request.Parameters, parameterPrefix);
 
-                    await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct);
-                    return await ReadAsync(reader, request.MaxRows, clock, ct);
+                    var reader = await command.ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct);
+                    var complete = false;
+                    try
+                    {
+                        (var result, complete) = await ReadCoreAsync(reader, request.MaxRows, clock, ct);
+                        return result;
+                    }
+                    finally
+                    {
+                        await CloseReaderAsync(command, reader, complete);
+                    }
                 }
                 finally
                 {
@@ -83,11 +92,44 @@ public static class DbQueryExecution
         {
             return map(ex);
         }
+        catch (Exception ex) when (ex is not OperationCanceledException && ct.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(ct); // an InvalidOperationException or ObjectDisposedException caused by the cancel is a cancel too
+        }
         // Anything else (an InvalidCastException or OverflowException from a value the driver cannot convert, NotSupportedException from a column type, ...) is a final failure
         // with Verso's own wording: never ex.Message, which can carry a value or a server detail. A cancel keeps propagating.
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return DatabaseQueryResult.Failure("db.query_failed", false);
+        }
+    }
+
+    /// <summary>
+    /// Closes the reader. When the result was not read to its end (row cap, size cap, a refused column list, or a failure), the command is cancelled first:
+    /// SqlClient, Npgsql and MySqlConnector otherwise read and discard every remaining row while closing, so <c>SELECT * FROM big_table</c> with one row wanted
+    /// would still stream the whole table. A failure of the cancel or of the close after a cancel is ignored (the result is already known; the rollback follows).
+    /// </summary>
+    private static async Task CloseReaderAsync(DbCommand command, DbDataReader reader, bool complete)
+    {
+        if (!complete)
+        {
+            try
+            {
+                command.Cancel();
+            }
+            catch (Exception ex) when (ex is DbException or InvalidOperationException or NotSupportedException or TimeoutException or IOException)
+            {
+                // the cancel is best effort; the close below still ends the read
+            }
+        }
+
+        try
+        {
+            await reader.DisposeAsync();
+        }
+        catch (Exception ex) when (!complete && ex is DbException or InvalidOperationException or TimeoutException or IOException or OperationCanceledException)
+        {
+            // "operation cancelled" from the cancel above
         }
     }
 
@@ -129,17 +171,21 @@ public static class DbQueryExecution
     /// Reads the result set: a statement without one is a failure, column names must be present and unique, at most <paramref name="maxRows"/> rows are kept
     /// (a further row marks the result truncated) and the serialised size is capped at <see cref="MaxResultChars"/>.
     /// </summary>
-    public static async Task<DatabaseQueryResult> ReadAsync(DbDataReader reader, int maxRows, Stopwatch clock, CancellationToken ct)
+    public static async Task<DatabaseQueryResult> ReadAsync(DbDataReader reader, int maxRows, Stopwatch clock, CancellationToken ct) =>
+        (await ReadCoreAsync(reader, maxRows, clock, ct)).Result;
+
+    /// <summary><see cref="ReadAsync"/>, plus whether the result set was read to its end (false: rows remain, so the command must be cancelled before the reader is closed).</summary>
+    private static async Task<(DatabaseQueryResult Result, bool Complete)> ReadCoreAsync(DbDataReader reader, int maxRows, Stopwatch clock, CancellationToken ct)
     {
         if (reader.FieldCount == 0)
         {
-            return DatabaseQueryResult.Failure("db.query_failed", false); // not a query (the rollback undoes anything it did)
+            return (DatabaseQueryResult.Failure("db.query_failed", false), false); // not a query (the rollback undoes anything it did)
         }
 
         var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
         if (columns.Any(string.IsNullOrWhiteSpace) || columns.Distinct(StringComparer.Ordinal).Count() != columns.Count)
         {
-            return DatabaseQueryResult.Failure("db.bad_column", false); // a nameless or repeated column would silently lose data
+            return (DatabaseQueryResult.Failure("db.bad_column", false), false); // a nameless or repeated column would silently lose data
         }
 
         var rows = new List<IReadOnlyDictionary<string, object?>>();
@@ -171,13 +217,13 @@ public static class DbQueryExecution
             if (tooLarge)
             {
                 // Not even one row fits: say so, an empty "truncated" result would read as "no record".
-                return rows.Count == 0 ? DatabaseQueryResult.Failure("db.result_too_large", false) : DatabaseQueryResult.Success(columns, rows, true, clock.ElapsedMilliseconds);
+                return (rows.Count == 0 ? DatabaseQueryResult.Failure("db.result_too_large", false) : DatabaseQueryResult.Success(columns, rows, true, clock.ElapsedMilliseconds), false);
             }
 
             rows.Add(row);
         }
 
-        return DatabaseQueryResult.Success(columns, rows, truncated, clock.ElapsedMilliseconds);
+        return (DatabaseQueryResult.Success(columns, rows, truncated, clock.ElapsedMilliseconds), !truncated);
     }
 
     /// <summary>

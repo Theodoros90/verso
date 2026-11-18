@@ -356,10 +356,62 @@ public sealed class DatabaseQueryRunnerTests
         return t;
     }
 
-    private static Task<DatabaseQueryResult> RunFake(DbDataReader reader, Exception? rollbackFailure = null) =>
+    private static Task<DatabaseQueryResult> RunFake(DbDataReader reader, Exception? rollbackFailure = null, int maxRows = 10, CancellationToken ct = default) =>
+        RunFake(new FakeConnection(reader, rollbackFailure), maxRows, ct);
+
+    private static Task<DatabaseQueryResult> RunFake(FakeConnection connection, int maxRows = 10, CancellationToken ct = default) =>
         DbQueryExecution.RunAsync(
-            new FakeConnection(reader, rollbackFailure), "BEGIN", true, "SELECT 1", new DatabaseQueryRequest("k", "SELECT 1", new Dictionary<string, object?>(), 10, TimeSpan.FromSeconds(5)),
-            "@", ex => DatabaseQueryResult.Failure("db.query_failed", true), CancellationToken.None);
+            connection, "BEGIN", true, "SELECT 1", new DatabaseQueryRequest("k", "SELECT 1", new Dictionary<string, object?>(), maxRows, TimeSpan.FromSeconds(5)),
+            "@", ex => DatabaseQueryResult.Failure("db.query_failed", true), ct);
+
+    [Fact]
+    public async Task Executor_CancelsTheCommand_BeforeClosing_WhenRowsAreLeft()
+    {
+        // Final review I2: a reader closed with rows left would read them all; the command is cancelled first. A result read to its end is not cancelled.
+        var t = Table("a");
+        for (var i = 0; i < 3; i++) t.Rows.Add("r" + i);
+
+        var cut = new FakeConnection(new ChunkingReader(t.CreateDataReader()), null);
+        var truncated = await RunFake(cut, maxRows: 1);
+        Assert.True(truncated.Truncated);
+        Assert.Equal(1, cut.Cancels);
+
+        var whole = new FakeConnection(new ChunkingReader(t.CreateDataReader()), null);
+        Assert.False((await RunFake(whole, maxRows: 3)).Truncated);
+        Assert.Equal(0, whole.Cancels);
+
+        var tooLarge = Table("a");
+        tooLarge.Rows.Add(new string('x', DbQueryExecution.MaxResultChars + 1));
+        tooLarge.Rows.Add("y");
+        var big = new FakeConnection(new ChunkingReader(tooLarge.CreateDataReader()), null);
+        Assert.Equal("db.result_too_large", (await RunFake(big)).Code);
+        Assert.Equal(1, big.Cancels);
+
+        var failing = new FakeConnection(new ThrowingReader(OneRow("number"), new InvalidCastException("x"), "number"), null);
+        Assert.Equal("db.query_failed", (await RunFake(failing)).Code);
+        Assert.Equal(1, failing.Cancels);
+    }
+
+    [Fact]
+    public async Task Executor_ANonDriverFailureCausedByACancel_IsACancel_NotAFailureResult()
+    {
+        // Final review minor: after a cancel a driver may throw InvalidOperationException or ObjectDisposedException; that is a cancel, not db.query_failed.
+        foreach (Exception thrown in new Exception[] { new InvalidOperationException("closed"), new ObjectDisposedException("reader") })
+        {
+            using var cts = new CancellationTokenSource();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => RunFake(new CancellingReader(OneRow("number"), cts, thrown), ct: cts.Token));
+        }
+    }
+
+    /// <summary>Cancels the run's token while a value is read, then throws as a driver might after a cancel.</summary>
+    private sealed class CancellingReader(DataTable table, CancellationTokenSource cts, Exception thrown) : ChunkingReader(table.CreateDataReader())
+    {
+        public override object GetValue(int ordinal)
+        {
+            cts.Cancel();
+            throw thrown;
+        }
+    }
 
     /// <summary>Throws the given exception from whichever read call the column's kind uses (GetValue for numbers, GetChars for text, GetBytes for binary).</summary>
     private sealed class ThrowingReader(DataTable table, Exception thrown, string kind) : ChunkingReader(table.CreateDataReader())
@@ -374,6 +426,7 @@ public sealed class DatabaseQueryRunnerTests
     private sealed class FakeConnection(DbDataReader reader, Exception? rollbackFailure) : DbConnection
     {
         private ConnectionState _state = ConnectionState.Closed;
+        public int Cancels { get; set; }
         [System.Diagnostics.CodeAnalysis.AllowNull]
         public override string ConnectionString { get => ""; set { } }
         public override string Database => "";
@@ -399,7 +452,7 @@ public sealed class DatabaseQueryRunnerTests
         protected override DbConnection? DbConnection { get => connection; set { } }
         protected override DbParameterCollection DbParameterCollection => throw new NotSupportedException();
         protected override DbTransaction? DbTransaction { get; set; }
-        public override void Cancel() { }
+        public override void Cancel() => connection.Cancels++;
         public override int ExecuteNonQuery() => CommandText == "ROLLBACK" && rollbackFailure is not null ? throw rollbackFailure : 0;
         public override object? ExecuteScalar() => null;
         public override void Prepare() { }

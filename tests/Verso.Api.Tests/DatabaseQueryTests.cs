@@ -397,6 +397,105 @@ public sealed class DatabaseQueryTests : IAsyncLifetime
         }
     }
 
+    /// <summary>Wraps a real runner and counts how often the service handed it a query (each call opens a connection).</summary>
+    private sealed class CountingRunner(IProviderQueryRunner inner) : IProviderQueryRunner
+    {
+        private int _calls;
+        public int Calls => _calls;
+        public string Provider => inner.Provider;
+
+        public Task<DatabaseQueryResult> RunAsync(DatabaseConnectionSettings settings, DatabaseQueryRequest request, CancellationToken ct)
+        {
+            Interlocked.Increment(ref _calls);
+            return inner.RunAsync(settings, request, ct);
+        }
+    }
+
+    // Final review C1 / I1: texts that SQL Server reads as more than one statement although a naive tokenizer sees one SELECT.
+    public static TheoryData<string> SqlServerAttacks => new()
+    {
+        "SELECT 1 AS one --'\nCOMMIT DELETE FROM dbo.Accounts --'",
+        "SELECT 1 AS one COMMIT DELETE FROM dbo.Accounts",
+        "SELECT 1 AS one /* /* */ '*/ COMMIT DELETE FROM dbo.Accounts --'",
+        "SELECT 1DELETE FROM dbo.Accounts",
+        "SELECT [a]] COMMIT DELETE FROM dbo.Accounts --] AS one",
+        "SELECT 1 AS one -- x\r'\nCOMMIT DELETE FROM dbo.Accounts --'",
+        "SELECT 1 AS one WAITFOR DELAY '00:00:05'",
+        "SELECT 1 AS one KILL 1",
+        "SELECT 1 AS one\u00A0COMMIT",
+        "SELECT a@DELETE FROM dbo.Accounts",
+    };
+
+    [Theory]
+    [MemberData(nameof(SqlServerAttacks))]
+    public async Task The_service_refuses_an_attack_with_a_write_capable_login_and_never_connects(string sql)
+    {
+        var key = await AddConnectionAsync(WriterLogin); // this login CAN delete (db_datawriter)
+        var runner = new CountingRunner(new SqlServerQueryRunner());
+        await using var db = NewContext();
+        var service = new DatabaseQueryService(db, _secrets, [runner], new DatabaseConnectionOptions());
+
+        var result = await service.RunAsync(new DatabaseQueryRequest(key, sql, new Dictionary<string, object?>(), 10, TimeSpan.FromSeconds(10)), CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.StartsWith("sql.", result.Code, StringComparison.Ordinal);
+        Assert.False(result.Retryable);
+        Assert.Equal(0, runner.Calls); // refused before any connection was opened
+        Assert.Equal(3, await CountAsync());
+    }
+
+    [Fact]
+    public async Task Without_the_guard_the_comment_attack_really_deletes_which_is_why_the_login_must_be_read_only()
+    {
+        // The runner alone (guard bypassed on purpose) with a login that may write: SQL Server reads "--'" as a comment, so the batch is
+        // SELECT; COMMIT (ends the runner's transaction); DELETE (autocommitted). The rollback cannot undo it. This is the hole SqlGuard now closes,
+        // and the reason ADR 0019 requires a read-only login: the guard and the rollback are defence in depth, the login is the protection.
+        var key = await AddConnectionAsync(WriterLogin);
+
+        await CallRunnerDirectlyAsync(key, "SELECT 1 AS one --'\nCOMMIT DELETE FROM dbo.Accounts --'");
+
+        Assert.Equal(0, await CountAsync());
+    }
+
+    [Fact]
+    public async Task The_same_attack_through_the_runner_with_a_read_only_login_changes_nothing()
+    {
+        var key = await AddConnectionAsync(ReaderLogin);
+
+        await CallRunnerDirectlyAsync(key, "SELECT 1 AS one --'\nCOMMIT DELETE FROM dbo.Accounts --'");
+
+        Assert.Equal(3, await CountAsync());
+    }
+
+    [Fact]
+    public async Task Stops_reading_at_the_row_cap_instead_of_streaming_the_rest_of_a_large_result()
+    {
+        // Final review I2: closing a reader drains every remaining row unless the command is cancelled first. 60 million rows take far longer (about 20 s on LocalDB without the cancel)
+        // than the bound below to stream; with the cancel the run returns as soon as the second row shows the result is truncated.
+        var key = await AddConnectionAsync();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = await RunAsync(key,
+            "SELECT TOP (60000000) a.object_id AS a, b.object_id AS b, c.object_id AS c FROM sys.all_objects a CROSS JOIN sys.all_objects b CROSS JOIN sys.all_objects c",
+            maxRows: 1, timeoutSeconds: 60);
+
+        Assert.True(result.Ok);
+        Assert.Single(result.Rows);
+        Assert.True(result.Truncated);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5), $"took {clock.Elapsed}");
+    }
+
+    [Fact]
+    public void A_timeout_without_a_SqlException_is_a_retryable_db_timeout()
+    {
+        // Final review minor: it used to be a final db.query_failed on SQL Server only; the other runners already said db.timeout.
+        var mapped = SqlServerQueryRunner.MapAny(new TimeoutException("socket"));
+        Assert.Equal("db.timeout", mapped.Code);
+        Assert.True(mapped.Retryable);
+        Assert.Equal("db.query_failed", SqlServerQueryRunner.MapAny(new InvalidOperationException("x")).Code);
+        Assert.False(SqlServerQueryRunner.MapAny(new InvalidOperationException("x")).Retryable);
+    }
+
     [Fact]
     public async Task Cancelling_during_a_long_query_cancels_the_run_and_is_not_a_failure_result()
     {

@@ -36,8 +36,16 @@ public sealed class SqlServerQueryRunner : IProviderQueryRunner
 
         return DbQueryExecution.RunAsync(
             new SqlConnection(builder.ConnectionString), null, false, request.Sql, request, "@",
-            ex => ex is SqlException sql ? Map(sql) : DatabaseQueryResult.Failure("db.query_failed", false), ct);
+            MapAny, ct);
     }
+
+    /// <summary>A <see cref="SqlException"/> by its number; a driver <see cref="TimeoutException"/> is a retryable db.timeout, as with the other providers; anything else a final db.query_failed.</summary>
+    internal static DatabaseQueryResult MapAny(Exception ex) => ex switch
+    {
+        SqlException sql => Map(sql),
+        TimeoutException => DatabaseQueryResult.Failure("db.timeout", true),
+        _ => DatabaseQueryResult.Failure("db.query_failed", false),
+    };
 
     internal static DatabaseQueryResult Map(SqlException ex)
     {
