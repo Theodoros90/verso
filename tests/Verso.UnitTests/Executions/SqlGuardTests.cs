@@ -173,4 +173,22 @@ public sealed class SqlGuardTests
         Assert.True(SqlGuard.Check("SELECT 'a''b' FROM t WHERE p = 'x/y'").Ok);
         Assert.True(SqlGuard.Check("SELECT [a\\b] FROM t").Ok);
     }
+
+    [Theory]
+    [InlineData("SELECT a FROM t WHERE id = @id", "SELECT a FROM t WHERE id = :id")]
+    [InlineData("SELECT '@id', \"@id\", [@id], `@id` FROM t WHERE x = @x AND y = @x", "SELECT '@id', \"@id\", [@id], `@id` FROM t WHERE x = :x AND y = :x")]
+    [InlineData("SELECT 1 -- @id\nFROM t WHERE a = @a /* @b */", "SELECT 1 -- @id\nFROM t WHERE a = :a /* @b */")]
+    [InlineData("SELECT @@ROWCOUNT, 'it''s @x', @y", "SELECT @@ROWCOUNT, 'it''s @x', :y")]
+    [InlineData("SELECT a FROM t", "SELECT a FROM t")]
+    public void RewriteParameters_changes_only_placeholders_outside_text_and_comments(string sql, string expected)
+    {
+        Assert.Equal(expected, SqlGuard.RewriteParameters(sql, ":"));
+    }
+
+    [Fact]
+    public void RewriteParameters_with_at_prefix_is_identity()
+    {
+        const string sql = "SELECT a FROM t WHERE id = @id AND '@x' = b";
+        Assert.Equal(sql, SqlGuard.RewriteParameters(sql, "@"));
+    }
 }

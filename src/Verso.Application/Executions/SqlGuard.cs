@@ -124,6 +124,66 @@ public static class SqlGuard
         return new SqlCheck(true, null, null, parameters);
     }
 
+    /// <summary>
+    /// Rewrites the <c>@name</c> placeholders to <paramref name="prefix"/> + name (Oracle wants <c>:name</c>), skipping comments, string literals and quoted names
+    /// with the same rules as <see cref="Check"/>; <c>@@system</c> variables are left alone. Meant for text that <see cref="Check"/> accepted: from the first unclosed quote or comment on, the text is copied unchanged.
+    /// </summary>
+    public static string RewriteParameters(string sql, string prefix)
+    {
+        if (prefix == "@") return sql;
+        var result = new System.Text.StringBuilder(sql.Length + 16);
+        var i = 0;
+        while (i < sql.Length)
+        {
+            var c = sql[i];
+            int end;
+            if (c == '-' && Peek(sql, i + 1) == '-' && IsCommentEnd(Peek(sql, i + 2)))
+            {
+                end = i;
+                while (end < sql.Length && sql[end] != '\n' && sql[end] != '\r') end++;
+            }
+            else if (c == '/' && Peek(sql, i + 1) == '*')
+            {
+                var close = sql.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                end = close < 0 ? sql.Length : close + 2;
+            }
+            else if (c is '\'' or '"' or '`' or '[')
+            {
+                var closer = c == '[' ? ']' : c;
+                var j = i + 1;
+                while (j < sql.Length)
+                {
+                    if (sql[j] == closer)
+                    {
+                        if (Peek(sql, j + 1) == closer) { j += 2; continue; }
+                        break;
+                    }
+                    j++;
+                }
+                end = Math.Min(j + 1, sql.Length);
+            }
+            else if (c == '@' && Peek(sql, i + 1) == '@')
+            {
+                end = i + 2;
+                while (end < sql.Length && IsWordChar(sql[end])) end++;
+            }
+            else if (c == '@' && IsAsciiWordChar(Peek(sql, i + 1)))
+            {
+                result.Append(prefix);
+                i++;
+                continue;
+            }
+            else
+            {
+                end = i + 1;
+            }
+
+            result.Append(sql, i, end - i);
+            i = end;
+        }
+        return result.ToString();
+    }
+
     // MySQL only starts a "--" comment when it is followed by whitespace or a control character.
     private static bool IsCommentEnd(char c) => char.IsWhiteSpace(c) || char.IsControl(c);
 
