@@ -21,7 +21,7 @@ public sealed record NodeTypeDto(
 
 /// <summary>
 /// The node catalog is code, not data (plan §4). Types: api-trigger, erp-connector, file-upload, sftp-folder, email-inbox, database-query, form-submission, scheduled-trigger and manual-trigger (simulated),
-/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), lookup-enrich (simulated: configures a keyed lookup, nothing is looked up), deduplicate (simulated: the outcome is the one chosen in the step, nothing is stored), merge-data (real: joins the data with a lookup table typed into the step), if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), parallel-branches (real: runs two paths one after the other, ADR 0009), wait-branches (real: the join of the two paths, ADR 0009), wait-event (simulated: nothing is awaited), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), request-signature (simulated: nothing is sent to a signing provider), assemble-pack (simulated: nothing is assembled), archive.
+/// folder-input (real: the Worker reads approved folders, see Ingestion), parse (real: JSON/XML/CSV text in a field of the data), map-fields (real: copies and transforms fields), transform (real: calculates and reshapes values with fixed rules), lookup-enrich (simulated: configures a keyed lookup, nothing is looked up), deduplicate (simulated: the outcome is the one chosen in the step, nothing is stored), merge-data (real: joins the data with a lookup table typed into the step), query-database (real: one SELECT typed into the step, run by the Worker on a Database connection; design-time part),if-else (real: sends the run down a yes or no path by comparing one field), switch (real: routes the run by a field's value into one of several branches), for-each (real: repeats the steps after it once per item of a list), parallel-branches (real: runs two paths one after the other, ADR 0009), wait-branches (real: the join of the two paths, ADR 0009), wait-event (simulated: nothing is awaited), approval (real: pauses the run until a person approves or declines, ADR 0002), validate, generate-pdf, generate-docx (real, ADR 0003), generate-email (real: an HTML email body built from the step's own text, ADR 0004; never sent), combine-pdfs (real: joins the PDFs the run generated into one, ADR 0005), send-email (real: SMTP through the relay in the Worker's configuration, ADR 0006), print-queue (real: PDF and job file into a configured spool folder, ADR 0007), request-signature (simulated: nothing is sent to a signing provider), assemble-pack (simulated: nothing is assembled), archive.
 /// Adding a type here (with a handler in M7) needs no schema change.
 /// </summary>
 public static class NodeCatalog
@@ -40,6 +40,7 @@ public static class NodeCatalog
     public const string MapFields = "map-fields";
     public const string TransformData = "transform";
     public const string MergeData = "merge-data";
+    public const string QueryDatabase = "query-database";
     public const string LookupEnrich = "lookup-enrich";
     public const string Deduplicate = "deduplicate";
     public const string IfElse = "if-else";
@@ -604,6 +605,27 @@ public static class NodeCatalog
               "required": ["key", "lookupKey", "lookup", "strategy"] }
             """,
             """{ "key": "", "lookupKey": "", "lookup": "[]", "source": "", "into": "", "overwrite": false, "strategy": "keep" }"""),
+
+        Node(QueryDatabase, "Query database", "process",
+            "Reads data from a database connection during the run: one SELECT you type, with values passed as @parameters taken from the run's data, and the row(s) found added to the data under the result name. Reads only; the connection's login should itself be read-only.",
+            [In], [new PortDto("found", "Found", true), new PortDto("not-found", "Not found", false), new PortDto("failed", "Failed", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "connection": { "type": "string", "title": "Database connection", "minLength": 2, "maxLength": 64, "pattern": "{{Escape(Connections.DatabaseServers.KeyPattern)}}", "x-widget": "database-connection",
+                  "description": "Which database connection to read from. Connections are created once in Configuration, Connections (authentication Database login)." },
+                "sql": { "type": "string", "title": "SQL (one SELECT)", "minLength": 1, "maxLength": {{Executions.SqlGuard.MaxLength}}, "x-widget": "sql",
+                  "description": "One SELECT (or WITH ... SELECT). Write values as @name placeholders and list them below; never paste values into the text." },
+                "parameters": { "type": "string", "title": "Parameters (one per line)", "maxLength": 2000, "x-widget": "multiline",
+                  "description": "One line per @placeholder, as name = data.path, such as id = customer.id (without the @). Up to {{Executions.DatabaseQueryStep.MaxParameters}}." },
+                "resultName": { "type": "string", "title": "Result name", "minLength": 1, "maxLength": 30, "pattern": "{{Escape(Executions.DatabaseQueryStep.ResultNamePattern)}}", "x-widget": "mono",
+                  "description": "The field of the data the result is stored in, such as db. One row becomes an object, several rows a list." },
+                "maxRows": { "type": "integer", "title": "Most rows to read", "minimum": 1, "maximum": 100,
+                  "description": "Rows beyond this are not read." },
+                "timeoutSeconds": { "type": "integer", "title": "Time limit (seconds)", "minimum": 1, "maximum": 60 } },
+              "required": ["connection", "sql", "resultName"] }
+            """,
+            """{ "connection": "", "sql": "SELECT name, status FROM customers WHERE id = @id", "parameters": "id = customer.id", "resultName": "db", "maxRows": 1, "timeoutSeconds": 15 }"""),
 
         Node(IfElse, "If / else", "logic",
             "Sends the run down the Yes path when its conditions are met, otherwise the No path. The data is not changed.",

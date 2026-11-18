@@ -103,6 +103,29 @@
         }
       }
     },
+    "/api/v1/database-connection-options": {
+      "get": {
+        "tags": [
+          "Database connections"
+        ],
+        "operationId": "ListDatabaseConnectionOptions",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DatabaseConnectionOptionDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/templates/{id}/draft/preview/pdf": {
       "post": {
         "tags": [
@@ -5005,6 +5028,25 @@
           }
         }
       },
+      "DatabaseConnectionOptionDto": {
+        "required": [
+          "key",
+          "name",
+          "provider"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        }
+      },
       "DatabaseConnectionTestDto": {
         "required": [
           "id",
@@ -8303,6 +8345,9 @@
       "name": "Email relays"
     },
     {
+      "name": "Database connections"
+    },
+    {
       "name": "Templates"
     },
     {
@@ -8316,9 +8361,6 @@
     },
     {
       "name": "Document categories"
-    },
-    {
-      "name": "Database connections"
     },
     {
       "name": "API connections"

@@ -65,6 +65,13 @@ public static class DatabaseConnectionEndpoints
             .Produces<DatabaseConnectionTestDto>()
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        // Workflow authors pick a connection by name in the Query database step: key, name and database type only, for people who may edit workflows.
+        app.MapGet("/api/v1/database-connection-options", async (DatabaseConnectionService service, CancellationToken ct) => Results.Ok(await service.ListOptionsAsync(ct)))
+            .WithTags("Database connections")
+            .RequireAuthorization(Policies.WorkflowAuthoring)
+            .WithName("ListDatabaseConnectionOptions")
+            .Produces<IReadOnlyList<DatabaseConnectionOptionDto>>();
+
         return app;
     }
 }

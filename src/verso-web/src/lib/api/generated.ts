@@ -143,6 +143,12 @@ export interface DatabaseConnectionDto {
   updatedBy: string
 }
 
+export interface DatabaseConnectionOptionDto {
+  key: string
+  name: string
+  provider: string
+}
+
 export interface DatabaseConnectionTestDto {
   id: string
   connectionKey: string

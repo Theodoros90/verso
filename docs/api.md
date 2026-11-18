@@ -354,6 +354,7 @@ SQL Server connections managed in Configuration, Connections (ADR [0016](adr/001
 | PUT | `/api/v1/database-connections/{id}` | 200 `DatabaseConnection` | Update (the key never changes) |
 | POST | `/api/v1/database-connections/{id}/deactivate` | 200 `DatabaseConnection` | Switch off (tests are refused while off) |
 | POST | `/api/v1/database-connections/{id}/activate` | 200 `DatabaseConnection` | Switch on |
+| GET | `/api/v1/database-connection-options` | 200 `DatabaseConnectionOption[]` | `{ key, name, provider }` of every **active** connection, ordered by name, for the Query database step's dropdown. **Workflow authors and administrators** (not administrators only, unlike the rest of this section); no server, login, database or port |
 | POST | `/api/v1/database-connections/{id}/tests` | 202 `DatabaseConnectionTest`, `Location` | "Test connection": the Worker connects with the saved settings and runs `SELECT 1` |
 | GET | `/api/v1/database-connections/tests/{testId}` | 200 `DatabaseConnectionTest` | Poll the result. Tests are kept for 24 hours (404 afterwards) |
 

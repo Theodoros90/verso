@@ -180,6 +180,53 @@ public sealed class DatabaseConnectionApiTests(MigratedDatabaseFixture fixture) 
     }
 
     [Fact]
+    public async Task Options_ListActiveConnectionsOnly_ByName_WithNothingButKeyNameAndProvider()
+    {
+        var active = UniqueKey();
+        var inactive = UniqueKey();
+        await CreateAsync(active);
+        var inactiveId = (await CreateAsync(inactive)).GetProperty("id").GetGuid();
+        Assert.Equal(HttpStatusCode.OK, (await _client.PostAsync($"/api/v1/database-connections/{inactiveId}/deactivate", null)).StatusCode);
+
+        using var author = fixture.Factory.CreateClientAs("dev.workflow-author");
+        var response = await author.GetAsync("/api/v1/database-connection-options");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var text = await response.Content.ReadAsStringAsync();
+        var options = JsonSerializer.Deserialize<JsonElement>(text).EnumerateArray().ToList();
+        Assert.Contains(options, o => o.GetProperty("key").GetString() == active);
+        Assert.DoesNotContain(options, o => o.GetProperty("key").GetString() == inactive);
+        var option = options.Single(o => o.GetProperty("key").GetString() == active);
+        Assert.Equal(["key", "name", "provider"], option.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
+        Assert.Equal("SqlServer", option.GetProperty("provider").GetString());
+        Assert.Equal("DB " + active, option.GetProperty("name").GetString());
+        Assert.DoesNotContain(ServerName, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(Login, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(Secret, text, StringComparison.Ordinal);
+        var names = options.Select(o => o.GetProperty("name").GetString()!).ToList();
+        Assert.Equal(names.Order(StringComparer.OrdinalIgnoreCase).ToList(), names);
+    }
+
+    [Fact]
+    public async Task Options_NeedSignIn_AndAWorkflowEditorRole()
+    {
+        using var anonymous = fixture.Factory.CreateClientAs(null);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/v1/database-connection-options")).StatusCode);
+
+        foreach (var user in new[] { "dev.viewer", "dev.template-author", "dev.auditor", "dev.operator" })
+        {
+            using var other = fixture.Factory.CreateClientAs(user);
+            Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync("/api/v1/database-connection-options")).StatusCode);
+        }
+
+        foreach (var user in new[] { "dev.workflow-author", "dev.admin" })
+        {
+            using var editor = fixture.Factory.CreateClientAs(user);
+            Assert.Equal(HttpStatusCode.OK, (await editor.GetAsync("/api/v1/database-connection-options")).StatusCode);
+        }
+    }
+
+    [Fact]
     public async Task WithoutAMasterKey_APasswordIsRefused_ButAConnectionWithoutOneIsFine()
     {
         using var noKey = fixture.Factory.WithWebHostBuilder(b => b.UseSetting("Secrets:MasterKey", ""));

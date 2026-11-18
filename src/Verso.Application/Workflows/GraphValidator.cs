@@ -320,6 +320,8 @@ public static class GraphValidator
         (NodeCatalog.IfElse, "no") => "Records that don't meet the condition end the run here.",
         (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail, "failed") => "Data that can't make a complete document will end the run as Rejected.",
         (NodeCatalog.SendEmail, "failed") => "Data that can't make a complete email will end the run as Rejected.",
+        (NodeCatalog.QueryDatabase, "failed") => "Data that can't make a valid query (for example a missing value for a parameter) will end the run as Rejected.",
+        (NodeCatalog.QueryDatabase, "not-found") => "A query that finds no row ends the run here.",
         (NodeCatalog.CombinePdfs, "failed") => "A run with fewer than two PDFs to combine ends here as Rejected.",
         _ => $"'{port.Label}' isn't connected; the run ends there.",
     };
@@ -454,6 +456,41 @@ public static class GraphValidator
                 if (recipients.Length > 0 && !recipients.Contains("{{", StringComparison.Ordinal) && Executions.EmailAddresses.Parse(recipients).Problem is { } toProblem)
                 {
                     yield return new(Error, "config.invalid", toProblem, NodeId: node.Id, Field: "to");
+                }
+
+                break;
+
+            case NodeCatalog.QueryDatabase:
+                // Shape of the connection key, the resultName and the ranges are checked by the schema; whether the connection exists is not checked here (like an email relay).
+                var sqlText = c.TryGetProperty("sql", out var sqlElement) && sqlElement.ValueKind == JsonValueKind.String ? sqlElement.GetString()! : "";
+                if (sqlText.Trim().Length == 0)
+                {
+                    break; // reported by the schema check
+                }
+
+                var sqlCheck = Executions.SqlGuard.Check(sqlText);
+                if (!sqlCheck.Ok)
+                {
+                    yield return new(Error, "config.invalid", sqlCheck.Message ?? "The query isn't allowed.", NodeId: node.Id, Field: "sql");
+                    break;
+                }
+
+                var (mappings, mappingProblem) = Executions.DatabaseQueryStep.ParseParameters(
+                    c.TryGetProperty("parameters", out var parametersElement) && parametersElement.ValueKind == JsonValueKind.String ? parametersElement.GetString() : "");
+                if (mappingProblem is not null)
+                {
+                    yield return new(Error, "config.invalid", mappingProblem, NodeId: node.Id, Field: "parameters");
+                    break;
+                }
+
+                foreach (var placeholder in sqlCheck.Parameters.Where(p => !mappings.Any(m => m.Name == p)))
+                {
+                    yield return new(Error, "config.invalid", $"The query uses @{placeholder} but no parameter line maps it. Add '{placeholder} = data.path'.", NodeId: node.Id, Field: "parameters");
+                }
+
+                foreach (var (mappedName, _) in mappings.Where(m => !sqlCheck.Parameters.Contains(m.Name)))
+                {
+                    yield return new(Error, "config.invalid", $"Parameter '{mappedName}' isn't used: the query has no @{mappedName}.", NodeId: node.Id, Field: "parameters");
                 }
 
                 break;

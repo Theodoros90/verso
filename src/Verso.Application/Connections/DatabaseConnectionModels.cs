@@ -16,6 +16,9 @@ public sealed record DatabaseConnectionDto(
     Guid Id, string Key, string Provider, string Name, string Server, int Port, string Database, string UserName, bool Encrypt,
     bool TrustServerCertificate, int TimeoutSeconds, bool IsActive, bool HasPassword, DateTimeOffset UpdatedAt, string UpdatedBy);
 
+/// <summary>One choice in the Query database step's connection dropdown: key, name and database type only.</summary>
+public sealed record DatabaseConnectionOptionDto(string Key, string Name, string Provider);
+
 /// <summary>The state of a connection test. Never carries the server, the login or a password.</summary>
 public sealed record DatabaseConnectionTestDto(
     Guid Id, string ConnectionKey, string Status, string? Code, string? Message, string? ServerVersion, DateTimeOffset RequestedAt, DateTimeOffset? CompletedAt);

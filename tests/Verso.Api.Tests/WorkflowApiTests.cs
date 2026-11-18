@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Verso.Api.Tests;
 
@@ -18,7 +20,7 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
         using var response = await _client.GetAsync(new Uri("/api/v1/node-types", UriKind.Relative));
         var types = (await ReadAsync(response)).EnumerateArray().ToList();
 
-        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "email-inbox", "database-query", "form-submission", "scheduled-trigger", "manual-trigger", "folder-input", "parse", "map-fields", "transform", "lookup-enrich", "deduplicate", "merge-data", "if-else", "switch", "parallel-branches", "wait-branches", "wait-event", "for-each", "approval", "validate", "generate-pdf", "generate-docx", "generate-email", "combine-pdfs", "assemble-pack", "send-email", "print-queue", "upload-sftp", "deliver-api", "request-signature", "archive"], types.Select(t => t.GetProperty("type").GetString()));
+        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "email-inbox", "database-query", "form-submission", "scheduled-trigger", "manual-trigger", "folder-input", "parse", "map-fields", "transform", "lookup-enrich", "deduplicate", "merge-data", "query-database", "if-else", "switch", "parallel-branches", "wait-branches", "wait-event", "for-each", "approval", "validate", "generate-pdf", "generate-docx", "generate-email", "combine-pdfs", "assemble-pack", "send-email", "print-queue", "upload-sftp", "deliver-api", "request-signature", "archive"], types.Select(t => t.GetProperty("type").GetString()));
         var validate = types.Single(t => t.GetProperty("type").GetString() == "validate");
         Assert.Equal("process", validate.GetProperty("category").GetString());
         Assert.Equal(["valid", "invalid"], validate.GetProperty("outputs").EnumerateArray().Select(p => p.GetProperty("id").GetString()));
@@ -101,6 +103,41 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
         using var audit = await _client.GetAsync(new Uri($"/api/v1/audit?entityType=Workflow&entityId={id}", UriKind.Relative));
         Assert.Equal(["WorkflowCreated", "WorkflowDraftSaved", "WorkflowPublished", "WorkflowDraftCreated"],
             (await ReadAsync(audit)).GetProperty("items").EnumerateArray().Select(a => a.GetProperty("action").GetString()));
+    }
+
+    [Fact]
+    public async Task Publish_AuditsTheSqlAndConnectionOfAQueryDatabaseStep_NeverAParameterValue()
+    {
+        const string Sql = "SELECT name FROM customers WHERE id = @id";
+        var id = await CreateWorkflowAsync();
+        var definition = JsonNode.Parse($$"""
+            { "nodes": [
+                { "id": "trigger", "type": "api-trigger", "title": "API trigger", "position": { "x": 0, "y": 80 }, "config": { "path": "/hooks/x", "auth": "none" } },
+                { "id": "q", "type": "query-database", "title": "Look up customer", "position": { "x": 260, "y": 80 },
+                  "config": { "connection": "core-banking", "sql": "{{Sql}}", "parameters": "id = customer.id", "resultName": "db", "maxRows": 1, "timeoutSeconds": 15 } },
+                { "id": "archive", "type": "archive", "title": "Archive", "position": { "x": 520, "y": 80 }, "config": { "folderPattern": "x", "retention": "7y", "metadata": [] } } ],
+              "edges": [
+                { "id": "e1", "source": "trigger", "sourcePort": "out", "target": "q", "targetPort": "in" },
+                { "id": "e2", "source": "q", "sourcePort": "found", "target": "archive", "targetPort": "in" } ] }
+            """)!;
+        var draft = await GetDraftAsync(id);
+        using (var save = await PutDraftAsync(id, draft.ETag, definition))
+        {
+            Assert.Equal(HttpStatusCode.OK, save.StatusCode);
+        }
+
+        using var published = await PublishAsync(id, (await GetDraftAsync(id)).ETag);
+        Assert.Equal(HttpStatusCode.OK, published.StatusCode);
+
+        using var scope = fixture.Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<Verso.Application.IVersoDbContext>();
+        var entry = Assert.Single(await db.AuditEntries.AsNoTracking().Where(a => a.EntityId == id.ToString() && a.Action == "WorkflowPublished").ToListAsync());
+        using var details = JsonDocument.Parse(entry.Details!);
+        var query = Assert.Single(details.RootElement.GetProperty("databaseQueries").EnumerateArray());
+        Assert.Equal("q", query.GetProperty("nodeId").GetString());
+        Assert.Equal("core-banking", query.GetProperty("connection").GetString());
+        Assert.Equal(Sql, query.GetProperty("sql").GetString());
+        Assert.DoesNotContain("customer.id", entry.Details, StringComparison.Ordinal); // the data paths are not needed in the audit either
     }
 
     [Fact]

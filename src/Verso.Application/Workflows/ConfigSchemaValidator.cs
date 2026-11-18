@@ -143,6 +143,22 @@ public static class ConfigSchemaValidator
 
                 break;
 
+            case "integer":
+                if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt64(out var whole))
+                {
+                    errors.Add(new(path, "config.invalid", $"{Label(title)} must be a whole number."));
+                    return;
+                }
+
+                var low = schema.TryGetProperty("minimum", out var minimum) ? minimum.GetInt64() : long.MinValue;
+                var high = schema.TryGetProperty("maximum", out var maximum) ? maximum.GetInt64() : long.MaxValue;
+                if (whole < low || whole > high)
+                {
+                    errors.Add(new(path, "config.invalid", $"{Label(title)} must be between {low} and {high}."));
+                }
+
+                break;
+
             case "boolean":
                 if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
                 {

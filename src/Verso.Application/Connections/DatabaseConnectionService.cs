@@ -36,6 +36,11 @@ public sealed class DatabaseConnectionService(IVersoDbContext db, ICurrentUser u
         return (await query.OrderBy(c => c.Key).ToListAsync(ct)).Select(ToDto).ToList();
     }
 
+    /// <summary>What a workflow author needs to pick a connection in a Query database step: active connections, by name. Never the server, the login or the database.</summary>
+    public async Task<IReadOnlyList<DatabaseConnectionOptionDto>> ListOptionsAsync(CancellationToken ct) =>
+        await db.DatabaseConnections.AsNoTracking().Where(c => c.IsActive).OrderBy(c => c.Name)
+            .Select(c => new DatabaseConnectionOptionDto(c.Key, c.Name, c.Provider)).ToListAsync(ct);
+
     public async Task<Result<DatabaseConnectionDto>> CreateAsync(SaveDatabaseConnectionRequest request, CancellationToken ct)
     {
         var errors = Validate(request, null, out var f);

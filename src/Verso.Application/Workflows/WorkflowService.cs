@@ -349,7 +349,18 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
         var now = clock.GetUtcNow();
         var published = workflow.Publish(CanonicalJson.Sha256Hex(draft.Definition), user.Id, now);
         db.SetOriginalRowVersion(draft, expected);
-        Audit(Actions.Published, workflow.Id, now, new { versionId = published.Id, versionNumber = published.VersionNumber, contentHash = published.ContentHash });
+        // The SQL text and connection key of each Query database step are audited (ADR 0019); parameter values never exist at design time and data paths are left out.
+        var databaseQueries = parsed.Nodes.Where(n => n.Type == NodeCatalog.QueryDatabase)
+            .Select(n => new
+            {
+                nodeId = n.Id,
+                connection = n.Config.TryGetProperty("connection", out var connection) && connection.ValueKind == JsonValueKind.String ? connection.GetString() : null,
+                sql = n.Config.TryGetProperty("sql", out var sql) && sql.ValueKind == JsonValueKind.String ? sql.GetString() : null,
+            })
+            .ToList();
+        Audit(Actions.Published, workflow.Id, now, databaseQueries.Count == 0
+            ? new { versionId = published.Id, versionNumber = published.VersionNumber, contentHash = published.ContentHash }
+            : new { versionId = published.Id, versionNumber = published.VersionNumber, contentHash = published.ContentHash, databaseQueries });
         return await SaveWithConcurrencyAsync(published, ct);
     }
 
