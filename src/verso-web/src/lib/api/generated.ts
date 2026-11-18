@@ -563,6 +563,10 @@ export interface RenderIssueDto {
   path: string | null
 }
 
+export interface RequestSmsConnectionTest {
+  recipient: string | null
+}
+
 export interface SaveApiConnectionRequest {
   key: string | null
   name: string | null
@@ -614,12 +618,59 @@ export interface SaveEmailRelayRequest {
   clearPassword: boolean | null
 }
 
+export interface SaveSmsConnectionRequest {
+  key: string | null
+  name: string | null
+  provider: string | null
+  baseUrl: string | null
+  sender: string | null
+  messageType: string | null
+  unicodeEnabled: boolean | null
+  organisationPrefix: string | null
+  timeoutSeconds: number | null
+  description: string | null
+  secret: string | null
+}
+
 export interface SaveWorkflowDraftRequest {
   definition: null | JsonElement
 }
 
 export interface SetTemplateCategoryRequest {
   categoryId: string | null
+}
+
+export interface SmsConnectionDto {
+  id: string
+  key: string
+  name: string
+  provider: string
+  baseUrl: string
+  sender: string
+  messageType: string
+  unicodeEnabled: boolean
+  organisationPrefix: string
+  timeoutSeconds: number
+  description: string
+  isActive: boolean
+  hasSecret: boolean
+  updatedAt: string
+  updatedBy: string
+}
+
+export interface SmsConnectionTestDto {
+  id: string
+  connectionKey: string
+  status: string
+  code: string | null
+  message: string | null
+  httpStatus: number | null
+  elapsedMs: number | null
+  messageId: string | null
+  smsCount: number | null
+  remainingCredits: number | null
+  requestedAt: string
+  completedAt: string | null
 }
 
 export interface SubmissionDto {

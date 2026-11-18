@@ -22,6 +22,8 @@ public static class DependencyInjection
         services.AddScoped<Connections.DatabaseConnectionTests>();
         services.AddScoped<Connections.ApiConnectionService>();
         services.AddScoped<Connections.ApiConnectionTests>();
+        services.AddScoped<Connections.SmsConnectionService>();
+        services.AddScoped<Connections.SmsConnectionTests>();
         services.AddScoped<TemplatePreview>();
         services.AddScoped<PdfPreviews>();
         services.AddScoped<WorkflowService>();
@@ -53,6 +55,7 @@ public static class DependencyInjection
         services.AddScoped<Mail.EmailRelayTestRunner>();
         services.AddScoped<Connections.DatabaseConnectionTestRunner>();
         services.AddScoped<Connections.ApiConnectionTestRunner>();
+        services.AddScoped<Connections.SmsConnectionTestRunner>();
         return services;
     }
 }

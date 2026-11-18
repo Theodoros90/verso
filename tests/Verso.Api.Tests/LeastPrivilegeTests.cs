@@ -179,6 +179,36 @@ public sealed class LeastPrivilegeTests(LeastPrivilegeFixture grants) : IClassFi
     }
 
     [Fact]
+    public async Task SmsConnectionTest_RunsUnderTheApiAndWorkerRoles()
+    {
+        using var client = grants.Api.CreateClient();
+        var key = $"lpsms-{Guid.NewGuid():N}"[..20];
+        using var created = await client.PostAsJsonAsync(new Uri("/api/v1/sms-connections", UriKind.Relative),                        // API: create, encrypted API key
+            new { key, name = "LP sms", baseUrl = "https://sms.example.test/v3", sender = "LpSender", secret = "lp-sms-key-not-real" });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var id = (await ExecutionTestKit.ReadAsync(created)).GetProperty("id").GetGuid();
+
+        using var test = await client.PostAsJsonAsync(new Uri($"/api/v1/sms-connections/{id}/tests", UriKind.Relative), new { recipient = "+35799000000" }); // API: request a test
+        Assert.Equal(HttpStatusCode.Accepted, test.StatusCode);
+        var testId = (await ExecutionTestKit.ReadAsync(test)).GetProperty("id").GetGuid();
+
+        var probe = new RecordingSmsProbe();
+        var protector = grants.BaseFactory.Services.GetRequiredService<ISecretProtector>();
+        await using (var db = grants.WorkerDb())
+        {
+            await new SmsConnectionTestRunner(db, protector, probe, new SmsConnectionOptions(), TimeProvider.System).RunAsync(testId, CancellationToken.None); // Worker: send (fake), record
+        }
+
+        Assert.Equal("lp-sms-key-not-real", Assert.Single(probe.Seen).Settings.ApiKey); // decrypted in the Worker only
+        using var done = await client.GetAsync(new Uri($"/api/v1/sms-connections/tests/{testId}", UriKind.Relative));                  // API: read the result
+        Assert.Equal("Succeeded", (await ExecutionTestKit.ReadAsync(done)).GetProperty("status").GetString());
+        await using (var db = grants.WorkerDb())
+        {
+            Assert.Equal(1, await new SmsConnectionTestRunner(db, protector, probe, new SmsConnectionOptions(), new ShiftedClock(TimeSpan.FromDays(2))).CleanupAsync(CancellationToken.None)); // Worker: cleanup
+        }
+    }
+
+    [Fact]
     public async Task DatabaseConnectionTest_RunsUnderTheApiAndWorkerRoles()
     {
         using var client = grants.Api.CreateClient();
@@ -332,6 +362,11 @@ public sealed class LeastPrivilegeTests(LeastPrivilegeFixture grants) : IClassFi
     [InlineData(LeastPrivilegeFixture.WorkerUser, "UPDATE [connections].[ApiConnections] SET [BaseUrl] = N'x'")]
     [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [connections].[ApiConnectionTests]")]
     [InlineData(LeastPrivilegeFixture.WorkerUser, "INSERT INTO [connections].[ApiConnectionTests] ([Id], [ConnectionId], [ConnectionKey], [Status], [RequestedBy], [RequestedAt]) VALUES (NEWID(), NEWID(), N'x', N'Queued', N'x', SYSDATETIMEOFFSET())")]
+    [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [connections].[SmsConnections]")]
+    [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [connections].[SmsConnections]")]
+    [InlineData(LeastPrivilegeFixture.WorkerUser, "UPDATE [connections].[SmsConnections] SET [BaseUrl] = N'x'")]
+    [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [connections].[SmsConnectionTests]")]
+    [InlineData(LeastPrivilegeFixture.WorkerUser, "INSERT INTO [connections].[SmsConnectionTests] ([Id], [ConnectionId], [ConnectionKey], [Status], [RequestedBy], [RequestedAt]) VALUES (NEWID(), NEWID(), N'x', N'Queued', N'x', SYSDATETIMEOFFSET())")]
     [InlineData(LeastPrivilegeFixture.ApiUser, "DELETE FROM [connections].[DatabaseConnections]")]
     [InlineData(LeastPrivilegeFixture.WorkerUser, "DELETE FROM [connections].[DatabaseConnections]")]
     [InlineData(LeastPrivilegeFixture.WorkerUser, "UPDATE [connections].[DatabaseConnections] SET [Server] = N'x'")]

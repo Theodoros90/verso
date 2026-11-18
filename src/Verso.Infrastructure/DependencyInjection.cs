@@ -99,6 +99,17 @@ public static class DependencyInjection
         return services;
     }
 
+    /// <summary>Worker only: sends the one real SMS of "Test connection" through the SMS connections an administrator creates in Configuration (ADR 0018). Optional <c>SmsConnections:AllowedHosts</c> limits the hosts.</summary>
+    public static IServiceCollection AddVersoSmsConnections(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddSingleton(new Application.Connections.SmsConnectionOptions
+        {
+            AllowedHosts = [.. configuration.GetSection(Application.Connections.SmsConnectionOptions.Section).GetSection(nameof(Application.Connections.SmsConnectionOptions.AllowedHosts)).GetChildren().Select(c => c.Value ?? "").Where(v => v.Length > 0)],
+        });
+        services.AddSingleton<Application.Connections.ISmsProbe>(new Connections.BrevoSmsProbe());
+        return services;
+    }
+
     private static Email.EmailOptions ReadEmailRelay(IConfiguration section)
     {
         var defaults = new Email.EmailOptions();

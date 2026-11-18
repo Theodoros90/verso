@@ -134,6 +134,7 @@ app.MapDocumentCategoryEndpoints();
 app.MapEmailRelayEndpoints();
 app.MapDatabaseConnectionEndpoints();
 app.MapApiConnectionEndpoints();
+app.MapSmsConnectionEndpoints();
 app.MapPdfPreviewEndpoints();
 app.MapWorkflowEndpoints();
 app.MapConfigurationEndpoints();

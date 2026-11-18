@@ -8,12 +8,14 @@ import { Field, Input, Select, Textarea } from '@/components/ui/form'
 import { apiConnectionsApi } from '@/lib/api/apiConnections'
 import { databaseConnectionsApi } from '@/lib/api/databaseConnections'
 import { emailRelaysApi } from '@/lib/api/emailRelays'
+import { smsConnectionsApi } from '@/lib/api/smsConnections'
 import { cn } from '@/lib/utils'
 
 import { AUTH_METHODS, CONNECTION_GROUPS, simulateTest, type Connection, type ConnectionGroup, type SimulatedTest } from './connections'
 import { API_AUTH, apiBody, apiErrorsOf, ApiFields, blankApi, validateApi, type ApiErrors } from './ApiFields'
 import { blankDb, dbBody, dbErrorsOf, DbFields, SQL_AUTH, validateDb, type DbErrors } from './DbFields'
 import { blankRelay, relayBody, relayErrorsOf, RelayFields, SMTP_AUTH, validateRelay, type RelayErrors } from './RelayFields'
+import { blankSms, SMS_AUTH, SmsFields, smsBody, smsErrorsOf, validateSms, type SmsErrors } from './SmsFields'
 
 interface Draft {
   name: string
@@ -40,6 +42,7 @@ export function ConnectionDialog({
   onRelayCreated,
   onDatabaseCreated,
   onApiCreated,
+  onSmsCreated,
   onClose,
 }: {
   /** The connection to configure, or null to create a new one. */
@@ -52,6 +55,8 @@ export function ConnectionDialog({
   onDatabaseCreated: (name: string) => void
   /** A real API connection was created from this dialog. */
   onApiCreated: (name: string) => void
+  /** A real SMS connection was created from this dialog. */
+  onSmsCreated: (name: string) => void
   onClose: () => void
 }) {
   const isNew = connection === null
@@ -63,6 +68,8 @@ export function ConnectionDialog({
   const [dbErrors, setDbErrors] = useState<DbErrors>({})
   const [api, setApi] = useState(blankApi)
   const [apiErrors, setApiErrors] = useState<ApiErrors>({})
+  const [sms, setSms] = useState(blankSms)
+  const [smsErrors, setSmsErrors] = useState<SmsErrors>({})
   const [saving, setSaving] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -73,6 +80,8 @@ export function ConnectionDialog({
   const isRelay = isNew && draft.auth === SMTP_AUTH
   const isDb = isNew && draft.auth === SQL_AUTH
   const isApi = isNew && draft.auth === API_AUTH
+  const isSms = isNew && draft.auth === SMS_AUTH
+  const isReal = isRelay || isDb || isApi || isSms
 
   const set = (patch: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...patch }))
@@ -144,7 +153,28 @@ export function ConnectionDialog({
     }
   }
 
+  const saveSms = async () => {
+    const local = validateSms(sms, draft.name, false)
+    if (errors.name && draft.name.trim()) local.name = errors.name
+    setSmsErrors(local)
+    if (Object.keys(local).length > 0) return
+    setSaving(true)
+    try {
+      await smsConnectionsApi.create(smsBody(sms, draft.name))
+      setSms((s) => ({ ...s, secret: '' })) // the typed API key does not stay in memory longer than needed
+      onSmsCreated(draft.name.trim())
+    } catch (e) {
+      setSmsErrors(smsErrorsOf(e, 'Could not create the SMS connection.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const save = () => {
+    if (isSms) {
+      void saveSms()
+      return
+    }
     if (isApi) {
       void saveApi()
       return
@@ -170,24 +200,24 @@ export function ConnectionDialog({
       description={isNew ? 'Shared across every workflow.' : connection.category || connection.group}
       footer={
         <>
-          {!isRelay && !isDb && !isApi && (
+          {!isReal && (
             <Button type="button" onClick={test} disabled={testing} className="mr-auto">
               <PlugZap />
               {testing ? 'Testing…' : 'Test connection'}
             </Button>
           )}
-          <Button type="button" onClick={onClose} className={isRelay || isDb || isApi ? 'ml-auto' : undefined}>
+          <Button type="button" onClick={onClose} className={isReal ? 'ml-auto' : undefined}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" onClick={save} disabled={saving || ((isRelay || isDb || isApi) && !administer)}>
+          <Button type="button" variant="primary" onClick={save} disabled={saving || (isReal && !administer)}>
             {isNew ? 'Create connection' : 'Save settings'}
           </Button>
         </>
       }
     >
       <form className="flex flex-col gap-3.5" onSubmit={(e) => { e.preventDefault(); save() }} noValidate>
-        <Field label="Name" htmlFor="cn-name" error={isRelay ? relayErrors.name : isDb ? dbErrors.name : isApi ? apiErrors.name : submitted ? errors.name : undefined}>
-          <Input id="cn-name" value={draft.name} onChange={(e) => set({ name: e.target.value })} aria-invalid={isRelay ? !!relayErrors.name : isDb ? !!dbErrors.name : isApi ? !!apiErrors.name : submitted && !!errors.name} placeholder="e.g. Finance API" autoFocus />
+        <Field label="Name" htmlFor="cn-name" error={isRelay ? relayErrors.name : isDb ? dbErrors.name : isApi ? apiErrors.name : isSms ? smsErrors.name : submitted ? errors.name : undefined}>
+          <Input id="cn-name" value={draft.name} onChange={(e) => set({ name: e.target.value })} aria-invalid={isRelay ? !!relayErrors.name : isDb ? !!dbErrors.name : isApi ? !!apiErrors.name : isSms ? !!smsErrors.name : submitted && !!errors.name} placeholder="e.g. Finance API" autoFocus />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Group" htmlFor="cn-group">
@@ -197,15 +227,21 @@ export function ConnectionDialog({
               ))}
             </Select>
           </Field>
-          <Field label="Authentication" htmlFor="cn-auth" hint={isNew && !isRelay && !isDb && !isApi ? 'Choose SMTP credentials for a real email connection, Database login for a real database (SQL Server, PostgreSQL, MySQL / MariaDB, Oracle), or HTTP API for a real web API.' : undefined}>
-            <Select id="cn-auth" value={draft.auth} onChange={(e) => set({ auth: e.target.value, ...(e.target.value === SMTP_AUTH ? { group: 'Delivery channels' as const } : {}), ...(e.target.value === SQL_AUTH || e.target.value === API_AUTH ? { group: 'Data sources' as const } : {}) })}>
+          <Field label="Authentication" htmlFor="cn-auth" hint={isNew && !isReal ? 'Choose SMTP credentials for a real email connection, Database login for a real database (SQL Server, PostgreSQL, MySQL / MariaDB, Oracle), HTTP API for a real web API, or SMS (Brevo) for a real SMS connection.' : undefined}>
+            <Select id="cn-auth" value={draft.auth} onChange={(e) => set({ auth: e.target.value, ...(e.target.value === SMTP_AUTH || e.target.value === SMS_AUTH ? { group: 'Delivery channels' as const } : {}), ...(e.target.value === SQL_AUTH || e.target.value === API_AUTH ? { group: 'Data sources' as const } : {}) })}>
               {[...new Set([...AUTH_METHODS, draft.auth])].map((a) => (
                 <option key={a}>{a}</option>
               ))}
             </Select>
           </Field>
         </div>
-        {isApi ? (
+        {isSms ? (
+          <>
+            {!administer && <p role="alert" className="text-[13px] text-err">Only administrators can create SMS connections.</p>}
+            <SmsFields form={sms} errors={smsErrors} existing={null} onChange={(patch) => { setSms((s) => ({ ...s, ...patch })); setSmsErrors({}) }} />
+            <p className="text-xs text-ink-3">After you create it, open Configure and use Test connection. It sends one real SMS to the number you type.</p>
+          </>
+        ) : isApi ? (
           <>
             {!administer && <p role="alert" className="text-[13px] text-err">Only administrators can create API connections.</p>}
             <ApiFields form={api} errors={apiErrors} existing={null} onChange={(patch) => { setApi((a) => ({ ...a, ...patch })); setApiErrors({}) }} />

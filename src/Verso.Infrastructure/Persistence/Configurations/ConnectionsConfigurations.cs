@@ -80,3 +80,44 @@ internal sealed class ApiConnectionTestConfiguration : IEntityTypeConfiguration<
         builder.HasIndex(t => t.RequestedAt).HasDatabaseName("IX_ApiConnectionTests_RequestedAt"); // cleanup
     }
 }
+
+internal sealed class SmsConnectionConfiguration : IEntityTypeConfiguration<SmsConnection>
+{
+    public void Configure(EntityTypeBuilder<SmsConnection> builder)
+    {
+        builder.ToTable("SmsConnections", Schemas.Connections);
+        builder.HasKey(c => c.Id);
+        builder.Property(c => c.Id).ValueGeneratedNever();
+        builder.Property(c => c.Key).HasMaxLength(64).IsRequired().UseCollation("Latin1_General_100_CI_AS");
+        builder.HasIndex(c => c.Key).IsUnique().HasDatabaseName("UX_SmsConnections_Key");
+        builder.Property(c => c.Name).HasMaxLength(100).IsRequired();
+        builder.Property(c => c.Provider).HasMaxLength(32).IsRequired();
+        builder.Property(c => c.BaseUrl).HasMaxLength(500).IsRequired();
+        builder.Property(c => c.Sender).HasMaxLength(32).IsRequired();
+        builder.Property(c => c.MessageType).HasMaxLength(16).IsRequired();
+        builder.Property(c => c.OrganisationPrefix).HasMaxLength(100).IsRequired();
+        builder.Property(c => c.Description).HasMaxLength(500).IsRequired();
+        builder.Property(c => c.SecretProtected).HasMaxLength(4000); // AES-GCM text, never the API key
+        builder.Property(c => c.CreatedBy).HasMaxLength(200).IsRequired();
+        builder.Property(c => c.UpdatedBy).HasMaxLength(200).IsRequired();
+    }
+}
+
+internal sealed class SmsConnectionTestConfiguration : IEntityTypeConfiguration<SmsConnectionTest>
+{
+    public void Configure(EntityTypeBuilder<SmsConnectionTest> builder)
+    {
+        builder.ToTable("SmsConnectionTests", Schemas.Connections);
+        builder.HasKey(t => t.Id);
+        builder.Property(t => t.Id).ValueGeneratedNever();
+        builder.Property(t => t.ConnectionKey).HasMaxLength(64).IsRequired();
+        builder.Property(t => t.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
+        builder.Property(t => t.RecipientProtected).HasMaxLength(1000); // AES-GCM text of the test number, removed once the test has run
+        builder.Property(t => t.Code).HasMaxLength(64);
+        builder.Property(t => t.Message).HasMaxLength(SmsConnectionTest.MaxMessageLength);
+        builder.Property(t => t.MessageId).HasMaxLength(100);
+        builder.Property(t => t.RemainingCredits).HasPrecision(18, 4);
+        builder.Property(t => t.RequestedBy).HasMaxLength(200).IsRequired();
+        builder.HasIndex(t => t.RequestedAt).HasDatabaseName("IX_SmsConnectionTests_RequestedAt"); // cleanup and rate limit
+    }
+}

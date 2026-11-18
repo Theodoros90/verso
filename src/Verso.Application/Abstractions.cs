@@ -20,6 +20,8 @@ public interface IVersoDbContext
     DbSet<Verso.Domain.Connections.DatabaseConnectionTest> DatabaseConnectionTests { get; }
     DbSet<Verso.Domain.Connections.ApiConnection> ApiConnections { get; }
     DbSet<Verso.Domain.Connections.ApiConnectionTest> ApiConnectionTests { get; }
+    DbSet<Verso.Domain.Connections.SmsConnection> SmsConnections { get; }
+    DbSet<Verso.Domain.Connections.SmsConnectionTest> SmsConnectionTests { get; }
     DbSet<AuditEntry> AuditEntries { get; }
     DbSet<PdfPreview> PdfPreviews { get; }
     DbSet<Workflow> Workflows { get; }

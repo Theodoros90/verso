@@ -385,6 +385,28 @@ HTTP API connections managed in Configuration, Connections (ADR [0017](adr/0017-
 - Errors: 400 `validation` (`key`, `name`, `baseUrl`, `testPath`, `authType`, `authName`, `tokenUrl`, `scope`, `timeoutSeconds`, `secret`; a secret is refused with a message naming `Secrets:MasterKey` when no master key is set), 403 for any other role, 404 `api_connection.not_found` / `api_connection_test.not_found`, 409 `api_connection.key_taken` / `api_connection.inactive`.
 - Audited (`entityType=ApiConnection`): `ApiConnectionCreated`, `ApiConnectionUpdated` (changed field names only), `ApiConnectionSecretChanged` (`set` or `cleared`), `ApiConnectionDeactivated`, `ApiConnectionActivated`; and `ApiConnectionTestRequested` (`entityType=ApiConnectionTest`). Repeating the same change writes nothing.
 
+## SMS connections
+
+SMS connections managed in Configuration, Connections (ADR [0018](adr/0018-sms-connections.md)). The provider is Brevo. **Administrators only** (the Admin role) for every endpoint, including reading. Test only: **"Test connection" sends one real SMS** to a number typed in the test; no step uses a connection yet.
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/sms-connections` | 200 `SmsConnection[]` | Active connections ordered by key. `?includeInactive=true` adds the deactivated ones |
+| POST | `/api/v1/sms-connections` | 201 `SmsConnection`, `Location` | Create |
+| PUT | `/api/v1/sms-connections/{id}` | 200 `SmsConnection` | Update (the key never changes) |
+| POST | `/api/v1/sms-connections/{id}/deactivate` | 200 `SmsConnection` | Switch off (tests are refused while off) |
+| POST | `/api/v1/sms-connections/{id}/activate` | 200 `SmsConnection` | Switch on |
+| POST | `/api/v1/sms-connections/{id}/tests` | 202 `SmsConnectionTest`, `Location` | "Test connection": body `{ recipient }`; the Worker sends **one real SMS** (text `Verso test message`) to that number |
+| GET | `/api/v1/sms-connections/tests/{testId}` | 200 `SmsConnectionTest` | Poll the result. Tests are kept for 24 hours (404 afterwards) |
+
+- Request (create and update): `{ key, name, provider, baseUrl, sender, messageType, unicodeEnabled, organisationPrefix, timeoutSeconds, description, secret }`. `key` on create only: lower-case letters, digits and hyphens, 2 to 64 characters, unique case-insensitively. `provider`: `brevo` (the default and only value). `baseUrl`: an **https** address with no login, query or fragment; default `https://api.brevo.com/v3`. `sender`: up to 11 letters and digits, or up to 15 digits. `messageType`: `transactional` (default) or `marketing`. `unicodeEnabled`: default true. `organisationPrefix`: optional, up to 100 characters. Timeout 15 s by default (1 to 120). `description`: up to 500 characters.
+- **The API key is write-only.** `secret` is required on create; on update omitted or null keeps the stored one and a value replaces it. No response, audit entry, log or history ever contains it; `SmsConnection` has only `hasSecret`. Stored AES-256-GCM encrypted with the master key `Secrets:MasterKey` (never in the database).
+- Test request: `{ recipient }` in international format (optional `+` or `00`, then 8 to 15 digits, first 1 to 9; spaces, dots, dashes and brackets are ignored). The number is kept encrypted only until the Worker has used it, is never audited and never returned. A second test for the same connection within 30 seconds is refused.
+- `SmsConnection`: `{ id, key, name, provider, baseUrl, sender, messageType, unicodeEnabled, organisationPrefix, timeoutSeconds, description, isActive, hasSecret, updatedAt, updatedBy }`.
+- `SmsConnectionTest`: `{ id, connectionKey, status, code, message, httpStatus, elapsedMs, messageId, smsCount, remainingCredits, requestedAt, completedAt }`; `status` is `Queued`, `Running`, `Succeeded` (any 2xx) or `Failed`. It never carries the phone number, the text, the provider's answer or the key. `code` and `message` are Verso's own: `sms.unauthorized`, `sms.invalid_recipient`, `sms.insufficient_credits`, `sms.rate_limited`, `sms.redirect_not_followed`, `sms.client_error`, `sms.server_error`, `sms.timeout`, `sms.unreachable`, `sms.certificate_untrusted`, `sms.blocked_address`, `sms.host_not_allowed` (`SmsConnections:AllowedHosts`), `sms.secret_unreadable`, `sms.recipient_unreadable`, `sms.connection_unavailable`, `sms.test_failed`.
+- Errors: 400 `validation` (`key`, `name`, `provider`, `baseUrl`, `sender`, `messageType`, `organisationPrefix`, `description`, `timeoutSeconds`, `secret`, and `recipient` on a test; a key is refused with a message naming `Secrets:MasterKey` when no master key is set), 403 for any other role, 404 `sms_connection.not_found` / `sms_connection_test.not_found`, 409 `sms_connection.key_taken` / `sms_connection.inactive` / `sms_connection.test_too_soon` / `sms_connection.no_master_key`.
+- Audited (`entityType=SmsConnection`): `SmsConnectionCreated`, `SmsConnectionUpdated` (changed field names only), `SmsConnectionSecretChanged` (`set`), `SmsConnectionDeactivated`, `SmsConnectionActivated`; and `SmsConnectionTestRequested` (`entityType=SmsConnectionTest`, never the number). Repeating the same change writes nothing.
+
 ## Workflows
 
 A workflow is a graph of steps: a trigger, then steps connected output → input. Its lifecycle is the same as a template's: **create** (a draft containing only an API / webhook trigger with default settings) → **save draft** (`If-Match`) → **publish** (version N, frozen) → **start draft** (copy of the latest published version). Every change is audited (`entityType=Workflow`).

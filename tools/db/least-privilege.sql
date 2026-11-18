@@ -56,6 +56,7 @@ GRANT DELETE                 ON OBJECT::ingestion.FolderAccessTests TO verso_wor
 GRANT UPDATE, DELETE         ON OBJECT::mail.EmailRelayTests        TO verso_worker;  -- runs the test and records the result; 24 h cleanup
 GRANT UPDATE, DELETE         ON OBJECT::connections.DatabaseConnectionTests TO verso_worker;  -- runs the test and records the result; 24 h cleanup
 GRANT UPDATE, DELETE         ON OBJECT::connections.ApiConnectionTests      TO verso_worker;  -- runs the test and records the result; 24 h cleanup
+GRANT UPDATE, DELETE         ON OBJECT::connections.SmsConnectionTests      TO verso_worker;  -- runs the test and records the result; 24 h cleanup
 
 -- ----- Write-once and no-delete rules (DENY wins over any GRANT, including future ones) -----
 DENY UPDATE, DELETE ON OBJECT::audit.AuditEntries        TO verso_api, verso_worker;
@@ -77,6 +78,10 @@ DENY DELETE         ON OBJECT::connections.ApiConnections          TO verso_api,
 DENY UPDATE         ON OBJECT::connections.ApiConnections          TO verso_worker;               -- only the API changes a connection
 DENY DELETE         ON OBJECT::connections.ApiConnectionTests      TO verso_api;                  -- only the Worker cleans up tests
 DENY INSERT         ON OBJECT::connections.ApiConnectionTests      TO verso_worker;               -- only the API requests a test
+DENY DELETE         ON OBJECT::connections.SmsConnections          TO verso_api, verso_worker;  -- connections are deactivated, never deleted
+DENY UPDATE         ON OBJECT::connections.SmsConnections          TO verso_worker;               -- only the API changes a connection
+DENY DELETE         ON OBJECT::connections.SmsConnectionTests      TO verso_api;                  -- only the Worker cleans up tests
+DENY INSERT         ON OBJECT::connections.SmsConnectionTests      TO verso_worker;               -- only the API requests a test
 DENY DELETE         ON OBJECT::ingestion.FolderLocations  TO verso_api, verso_worker;  -- withdrawn locations are disabled, never deleted
 DENY UPDATE         ON OBJECT::ingestion.FolderFiles      TO verso_api;               -- only the Worker changes ingestion records
 

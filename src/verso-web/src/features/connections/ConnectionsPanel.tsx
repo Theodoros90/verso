@@ -7,13 +7,15 @@ import { Switch } from '@/components/ui/form'
 import { apiConnectionsApi } from '@/lib/api/apiConnections'
 import { databaseConnectionsApi } from '@/lib/api/databaseConnections'
 import { emailRelaysApi } from '@/lib/api/emailRelays'
-import type { ApiConnectionDto, DatabaseConnectionDto, EmailRelayDto } from '@/lib/api/generated'
+import { smsConnectionsApi } from '@/lib/api/smsConnections'
+import type { ApiConnectionDto, DatabaseConnectionDto, EmailRelayDto, SmsConnectionDto } from '@/lib/api/generated'
 
 import { newLocalId, useConnections } from '../configuration/stores'
 import { ConnectionDialog, type ConnectionDraft } from './ConnectionDialog'
 import { ApiCard, ApiEditDialog, useApiConnections } from './ApiConnectionCards'
 import { DatabaseCard, DatabaseEditDialog, useDatabaseConnections } from './DatabaseConnectionCards'
 import { RelayCard, RelayEditDialog, useEmailRelays } from './EmailRelayCards'
+import { SmsCard, SmsEditDialog, useSmsConnections } from './SmsConnectionCards'
 import {
   abbreviate,
   CONNECTION_GROUPS,
@@ -34,6 +36,8 @@ export function ConnectionsPanel() {
   const [editingDb, setEditingDb] = useState<DatabaseConnectionDto | null>(null)
   const apis = useApiConnections()
   const [editingApi, setEditingApi] = useState<ApiConnectionDto | null>(null)
+  const smss = useSmsConnections()
+  const [editingSms, setEditingSms] = useState<SmsConnectionDto | null>(null)
 
   const toggle = (id: string, enabled: boolean) => {
     setConnections((list) => list.map((c) => (c.id === id ? { ...c, enabled } : c)))
@@ -86,7 +90,17 @@ export function ConnectionsPanel() {
     }
   }
 
-  const relayNames = [...relays.map((r) => r.name), ...dbs.connections.map((c) => c.name), ...apis.connections.map((c) => c.name)]
+  const toggleSms = async (c: SmsConnectionDto, active: boolean) => {
+    try {
+      await (active ? smsConnectionsApi.activate(c.id) : smsConnectionsApi.deactivate(c.id))
+      setNotice({ tone: 'ok', text: `${c.name} turned ${active ? 'on' : 'off'}.` })
+      await smss.reload()
+    } catch {
+      setNotice({ tone: 'err', text: `Could not change ${c.name}.` })
+    }
+  }
+
+  const relayNames = [...relays.map((r) => r.name), ...dbs.connections.map((c) => c.name), ...apis.connections.map((c) => c.name), ...smss.connections.map((c) => c.name)]
 
   return (
     <div className="px-5 py-4">
@@ -111,7 +125,8 @@ export function ConnectionsPanel() {
         const groupRelays = group.name === 'Delivery channels' ? relays : []
         const groupDbs = group.name === 'Data sources' ? dbs.connections : []
         const groupApis = group.name === 'Data sources' ? apis.connections : []
-        if (items.length === 0 && groupRelays.length === 0 && groupDbs.length === 0 && groupApis.length === 0) return null
+        const groupSms = group.name === 'Delivery channels' ? smss.connections : []
+        if (items.length === 0 && groupRelays.length === 0 && groupDbs.length === 0 && groupApis.length === 0 && groupSms.length === 0) return null
         return (
           <section key={group.name} aria-labelledby={groupId(group.name)} className="mt-5 first-of-type:mt-0">
             <div className="mb-3 flex items-baseline gap-2.5">
@@ -119,6 +134,9 @@ export function ConnectionsPanel() {
               <p className="m-0 text-[13px] text-ink-3">{group.description}</p>
             </div>
             <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(270px,1fr))] gap-3.5 p-0">
+              {groupSms.map((c) => (
+                <SmsCard key={c.id} connection={c} onToggle={(active) => void toggleSms(c, active)} onConfigure={() => setEditingSms(c)} />
+              ))}
               {groupApis.map((c) => (
                 <ApiCard key={c.id} connection={c} onToggle={(active) => void toggleApi(c, active)} onConfigure={() => setEditingApi(c)} />
               ))}
@@ -169,9 +187,9 @@ export function ConnectionsPanel() {
         )
       })}
 
-      {(loadError || dbs.loadError || apis.loadError) && <p role="alert" className="mt-4 text-[13px] text-err">Could not load the email, database or API connections.</p>}
+      {(loadError || dbs.loadError || apis.loadError || smss.loadError) && <p role="alert" className="mt-4 text-[13px] text-err">Could not load the email, database, API or SMS connections.</p>}
 
-      <p className="mt-6 text-xs text-ink-3">Prototype: these connections are synthetic, kept in this browser only, and the test is simulated. No external service is contacted and no secret is stored. The exceptions are an email connection (authentication SMTP credentials), a database connection (authentication Database login) and an API connection (authentication HTTP API): they are real, stored on the server, and their passwords are encrypted and never shown again.</p>
+      <p className="mt-6 text-xs text-ink-3">Prototype: these connections are synthetic, kept in this browser only, and the test is simulated. No external service is contacted and no secret is stored. The exceptions are an email connection (authentication SMTP credentials), a database connection (authentication Database login) an API connection (authentication HTTP API) and an SMS connection (authentication SMS (Brevo)): they are real, stored on the server, and their passwords and keys are encrypted and never shown again.</p>
 
       {editing && (
         <ConnectionDialog
@@ -184,6 +202,11 @@ export function ConnectionsPanel() {
             setNotice({ tone: 'ok', text: `API connection “${name}” created.` })
             void apis.reload()
           }}
+          onSmsCreated={(name) => {
+            setEditing(null)
+            setNotice({ tone: 'ok', text: `SMS connection “${name}” created.` })
+            void smss.reload()
+          }}
           onDatabaseCreated={(name) => {
             setEditing(null)
             setNotice({ tone: 'ok', text: `Database connection “${name}” created.` })
@@ -195,6 +218,19 @@ export function ConnectionsPanel() {
             void reload()
           }}
           onClose={() => setEditing(null)}
+        />
+      )}
+
+      {editingSms && (
+        <SmsEditDialog
+          key={editingSms.id}
+          connection={editingSms}
+          onClose={() => setEditingSms(null)}
+          onSaved={async (name) => {
+            setEditingSms(null)
+            setNotice({ tone: 'ok', text: `Settings saved for ${name}.` })
+            await smss.reload()
+          }}
         />
       )}
 

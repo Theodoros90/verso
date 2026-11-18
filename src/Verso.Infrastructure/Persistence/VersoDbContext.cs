@@ -24,6 +24,8 @@ public sealed class VersoDbContext(DbContextOptions<VersoDbContext> options) : D
     public DbSet<Verso.Domain.Connections.DatabaseConnectionTest> DatabaseConnectionTests => Set<Verso.Domain.Connections.DatabaseConnectionTest>();
     public DbSet<Verso.Domain.Connections.ApiConnection> ApiConnections => Set<Verso.Domain.Connections.ApiConnection>();
     public DbSet<Verso.Domain.Connections.ApiConnectionTest> ApiConnectionTests => Set<Verso.Domain.Connections.ApiConnectionTest>();
+    public DbSet<Verso.Domain.Connections.SmsConnection> SmsConnections => Set<Verso.Domain.Connections.SmsConnection>();
+    public DbSet<Verso.Domain.Connections.SmsConnectionTest> SmsConnectionTests => Set<Verso.Domain.Connections.SmsConnectionTest>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<PdfPreview> PdfPreviews => Set<PdfPreview>();
     public DbSet<Workflow> Workflows => Set<Workflow>();

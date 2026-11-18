@@ -263,6 +263,17 @@ An administrator can add a web API in **Configuration, Connections, New connecti
 5. **Check:** Configure, Test connection. The dialog shows the HTTP status, the time, the content type and the size, or one of Verso's error codes (`api.unauthorized`, `api.not_found`, `api.unreachable`, `api.timeout`, `api.token_failed`, ...). The response body is never kept or shown. The Worker must be running.
 6. **Keys in the address** ("API key in the address") travel in the URL, which the remote server and proxies may log: use a header where the API allows it. A connection can be switched off but not deleted; rotate a secret by typing a new one in Configure.
 
+### B8d. SMS connections (Brevo, Test connection sends one real SMS)
+
+An administrator can add an SMS connection in **Configuration, Connections, New connection, authentication SMS (Brevo)** ([ADR 0018](adr/0018-sms-connections.md)): sender, type (transactional or marketing), Unicode, organisation prefix, base address and the Brevo API key. It is stored in `connections.SmsConnections` with the key encrypted, under the **same master key** as the other connections (`Secrets__MasterKey` on the API and every Worker, see B8 item 8). No step uses it yet: **Test connection** sends **one real SMS** to a number you type, which uses one credit.
+
+1. **Egress.** The Worker server must reach `api.brevo.com` over **https** (firewall, proxy). Only https addresses are accepted, redirects are not followed, and the Worker never connects to loopback, link-local, unspecified or multicast addresses.
+2. **Apply the migration** (`dotnet tool run dotnet-ef database update --project src/Verso.Infrastructure --startup-project src/Verso.Api`, adds the SMS tables to the `connections` schema) and, on a locked-down database, run `tools/db/least-privilege.sql` again.
+3. **Recommended in production:** set `SmsConnections:AllowedHosts` in the Worker's configuration, for example `"SmsConnections": { "AllowedHosts": [ "api.brevo.com" ] }`. Anything else fails with `sms.host_not_allowed` before any request.
+4. **Sender and country rules.** Some countries restrict or pre-register alphanumeric senders, and marketing SMS needs the recipient's consent and opt-out wording. Check Brevo's rules for the destination before relying on a sender.
+5. **Check:** Configure, Test connection, type your own number in international format (for example `+357 99 000000`). The dialog shows the HTTP status, the time, the SMS parts, the credits left and Brevo's message id, or one of Verso's error codes (`sms.unauthorized`, `sms.invalid_recipient`, `sms.insufficient_credits`, ...). The number and the text are never kept. The Worker must be running. A connection can be tested once every 30 seconds.
+6. **The API key.** Never put it in the repository, a ticket or a chat. If it was exposed, rotate it in Brevo and type the new one in Configure. A connection can be switched off but not deleted.
+
 ### B9. Print queue
 
 The `print-queue` step ([ADR 0007](adr/0007-print-queue.md)) makes the **Worker** write a PDF and a small job file into a spool folder that the print system (or the print house's import job) picks up. Workflow authors type only a queue **key**; the folder behind it is yours to set. Without a matching queue, a run reaching the step fails with `print.queue_unknown`.

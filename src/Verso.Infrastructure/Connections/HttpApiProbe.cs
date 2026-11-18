@@ -214,7 +214,7 @@ public sealed class HttpApiProbe(Func<HttpMessageHandler>? handlerFactory = null
         return total;
     }
 
-    private static SocketsHttpHandler CreateHandler(TimeSpan timeout) => new()
+    internal static SocketsHttpHandler CreateHandler(TimeSpan timeout) => new()
     {
         AllowAutoRedirect = false, // a redirect could lead somewhere the administrator never named
         UseCookies = false,
