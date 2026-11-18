@@ -57,7 +57,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Document preview',
         icon: FileText,
         milestone: 'M5',
-        summary: 'Render a template with sample data as PDF.',
+        summary: 'Render a template with sample or typed data as HTML or PDF.',
       },
     ],
   },

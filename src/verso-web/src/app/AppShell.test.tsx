@@ -38,13 +38,12 @@ describe('AppShell', () => {
   })
 
   it('marks the current page in the navigation and the heading', () => {
-    renderAt('/preview') // a screen the MVP doesn't build (placeholder)
+    renderAt('/preview')
     const nav = screen.getByRole('navigation', { name: 'Main' })
 
     expect(within(nav).getByRole('link', { name: 'Document preview' })).toHaveAttribute('aria-current', 'page')
     expect(within(nav).getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current')
     expect(screen.getByRole('heading', { level: 1, name: 'Document preview' })).toBeInTheDocument()
-    expect(screen.getByText('Not built yet.')).toBeInTheDocument()
   })
 
   it('navigates when a sidebar link is clicked', async () => {
