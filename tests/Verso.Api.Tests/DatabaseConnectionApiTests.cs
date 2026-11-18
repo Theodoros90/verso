@@ -182,8 +182,10 @@ public sealed class DatabaseConnectionApiTests(MigratedDatabaseFixture fixture) 
     [Fact]
     public async Task Options_ListActiveConnectionsOnly_ByName_WithNothingButKeyNameAndProvider()
     {
-        var active = UniqueKey();
+        var active = "aaa-" + UniqueKey();
         var inactive = UniqueKey();
+        var later = "zzz-" + UniqueKey();
+        await CreateAsync(later);
         await CreateAsync(active);
         var inactiveId = (await CreateAsync(inactive)).GetProperty("id").GetGuid();
         Assert.Equal(HttpStatusCode.OK, (await _client.PostAsync($"/api/v1/database-connections/{inactiveId}/deactivate", null)).StatusCode);
@@ -203,8 +205,9 @@ public sealed class DatabaseConnectionApiTests(MigratedDatabaseFixture fixture) 
         Assert.DoesNotContain(ServerName, text, StringComparison.Ordinal);
         Assert.DoesNotContain(Login, text, StringComparison.Ordinal);
         Assert.DoesNotContain(Secret, text, StringComparison.Ordinal);
-        var names = options.Select(o => o.GetProperty("name").GetString()!).ToList();
-        Assert.Equal(names.Order(StringComparer.OrdinalIgnoreCase).ToList(), names);
+        // Ordered by name: only the relative order of the two connections made here is asserted (other tests leave others behind, and the database collation decides the rest).
+        var keys = options.Select(o => o.GetProperty("key").GetString()).ToList();
+        Assert.True(keys.IndexOf(active) < keys.IndexOf(later));
     }
 
     [Fact]

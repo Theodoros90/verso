@@ -184,6 +184,54 @@ public sealed class QueryDatabaseNodeTests
         Assert.Equal(field, issue.Field);
     }
 
+    [Theory]
+    [InlineData("   ")]
+    [InlineData("\n\t ")]
+    public void WhitespaceOnlySql_IsAnError_OnTheSqlField(string sql)
+    {
+        // The schema check trims before testing "required", so whitespace-only text is reported exactly once, on the sql field.
+        var issue = Assert.Single(ErrorsOnQuery(Config(sql: sql, parameters: "")));
+
+        Assert.Equal("sql", issue.Field);
+        Assert.Equal("config.required", issue.Code);
+    }
+
+    [Fact]
+    public void TheResultName_Iteration_IsReserved_ForForEachLoops()
+    {
+        var issue = Assert.Single(ErrorsOnQuery(Config(resultName: "iteration")));
+
+        Assert.Equal("resultName", issue.Field);
+        Assert.Contains("iteration", issue.Message, StringComparison.Ordinal);
+        Assert.Contains("reserved", issue.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ASystemVariable_LikeAtAtVersion_IsNotAPlaceholder()
+    {
+        Assert.Empty(ErrorsOnQuery(Config(sql: "SELECT @@version AS v", parameters: "")));
+    }
+
+    [Fact]
+    public void PlaceholderNames_AreCaseSensitive_SoAtIdNeedsAMappingCalledId()
+    {
+        var issues = ErrorsOnQuery(Config(sql: "SELECT name FROM customers WHERE id = @Id", parameters: "id = customer.id"));
+
+        Assert.Equal(2, issues.Count);
+        Assert.Contains(issues, i => i.Message.Contains("@Id", StringComparison.Ordinal) && i.Message.Contains("no parameter line", StringComparison.Ordinal));
+        Assert.Contains(issues, i => i.Message.Contains("'id' isn't used", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AnOracleStyleColonName_IsPlainText_NotAPlaceholder()
+    {
+        // Authors always write @name (the Worker rewrites it for Oracle). A :name is not seen as a placeholder: it needs no mapping,
+        // and a mapping for it is reported as unused.
+        Assert.Empty(ErrorsOnQuery(Config(sql: "SELECT name FROM customers WHERE id = :id", parameters: "")));
+        var issue = Assert.Single(ErrorsOnQuery(Config(sql: "SELECT name FROM customers WHERE id = :id", parameters: "id = customer.id")));
+        Assert.Contains("isn't used", issue.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TheFailedPort_ExplainsThatBadDataEndsTheRunAsRejected()
     {

@@ -345,7 +345,7 @@ SMTP relays the Send email step can use by key, managed in Configuration, Connec
 
 ## Database connections
 
-SQL Server connections managed in Configuration, Connections (ADR [0016](adr/0016-database-connections.md)). **Administrators only** (the Admin role) for every endpoint, including reading. Test only: nothing runs a query yet.
+SQL Server connections managed in Configuration, Connections (ADR [0016](adr/0016-database-connections.md)). **Administrators only** (the Admin role) for every endpoint below, including reading; the one exception is `database-connection-options` (workflow authors and administrators). Test connection only runs `SELECT 1`. The Query database workflow step is defined (node, validation, options endpoint) but running it is added next; until then no run uses these connections.
 
 | Method | Path | Success | Purpose |
 |---|---|---|---|
@@ -712,7 +712,7 @@ Append-only log, oldest first unless `newestFirst=true` (`sequence` is the autho
 | `WorkflowCreated` | `{ key }` |
 | `WorkflowDraftSaved` | `{ versionId }` |
 | `WorkflowDraftCreated` | `{ versionId, fromVersion }` |
-| `WorkflowPublished` | `{ versionId, versionNumber, contentHash }` |
+| `WorkflowPublished` | `{ versionId, versionNumber, contentHash }`, plus `databaseQueries: [{ nodeId, connection, sql }]` when the workflow has Query database steps (the SQL text and connection key; never parameter values or data paths) |
 | `ConfigurationExported` | `{ environment, templates, workflows }` (counts; entity `Configuration`) |
 | `ConfigurationImported` | `{ environment, templates, workflows, skipped }` (counts of created or changed items) |
 | `ExecutionSubmitted` | `{ workflowKey, workflowVersion, inputHash, correlationId }` (never the payload) |

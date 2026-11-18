@@ -463,9 +463,14 @@ public static class GraphValidator
             case NodeCatalog.QueryDatabase:
                 // Shape of the connection key, the resultName and the ranges are checked by the schema; whether the connection exists is not checked here (like an email relay).
                 var sqlText = c.TryGetProperty("sql", out var sqlElement) && sqlElement.ValueKind == JsonValueKind.String ? sqlElement.GetString()! : "";
+                if (c.TryGetProperty("resultName", out var resultElement) && resultElement.ValueKind == JsonValueKind.String && resultElement.GetString() == "iteration")
+                {
+                    yield return new(Error, "config.invalid", "'iteration' is reserved for For each loops; choose another result name.", NodeId: node.Id, Field: "resultName");
+                }
+
                 if (sqlText.Trim().Length == 0)
                 {
-                    break; // reported by the schema check
+                    break; // blank or whitespace-only: the schema check reports "is required" (it trims), so don't report it twice
                 }
 
                 var sqlCheck = Executions.SqlGuard.Check(sqlText);
