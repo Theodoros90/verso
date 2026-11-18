@@ -85,6 +85,8 @@ public static class DependencyInjection
         services.AddSingleton(options);
         services.AddSingleton<Application.Connections.IProviderProbe, Connections.SqlServerProbe>(); // SQL Server; the other providers come from Verso.Databases
         services.AddSingleton<Application.Connections.IDatabaseProbe, Connections.DatabaseProbeRouter>();
+        services.AddSingleton<Application.Connections.IProviderQueryRunner, Connections.SqlServerQueryRunner>(); // Query database step; the other providers come from Verso.Databases
+        services.AddScoped<Application.Connections.IDatabaseQuery, Application.Connections.DatabaseQueryService>(); // scoped: it reads the database through the scoped context
         return services;
     }
 
