@@ -36,29 +36,36 @@ Create a Database connection in Configuration, Connections with a **read-only lo
 
 ```
 Folder input (*.xml) ─ Parse (XML → JSON) ─ For each customer ─ Query database ── found ─ Generate PDF ─ Archive
-                                                                                └─ not-found ─ (the run ends; no PDF for an unknown customer)
+                                                                                └─ not-found ─ (only this customer ends: no PDF for an unknown customer; the others carry on)
 ```
 
-Settings of the Query database step:
+The steps run one after the other: Parse, then the query, then the document. That is the form to use (see "Why not Parallel branches" below).
 
-| Setting | Value |
-|---|---|
-| Connection | the read-only connection |
-| SQL | `SELECT segment, preferred_name FROM customers WHERE customer_no = @no` |
-| Parameters | `no = customer.number` (inside For each; the data path of the current customer) |
-| Result name | `db` |
-| Max rows | 1 (default): one row becomes the object `db` |
+Settings of the steps:
 
-After the step the run data holds the XML fields and `db`, so the template can use `{{customer.name}}` and `{{db.segment}}` / `{{db.preferred_name}}`. Use [`Merge data`](../api.md) afterwards only when you want the database fields on the customer record itself.
+| Step | Setting | Value |
+|---|---|---|
+| Parse | Format | `xml` (no record path: the data becomes `{ "customers": { "customer": [ ... ] } }`) |
+| For each | List field | `customers.customer` |
+| For each | Item name | `customer` (so `customer.number` is the current customer's number) |
+| Query database | Connection | the read-only connection |
+| Query database | SQL | `SELECT segment, preferred_name FROM customers WHERE customer_no = @no` |
+| Query database | Parameters | `no = customer.number` |
+| Query database | Result name | `db` |
+| Query database | Max rows | 1 (default): one row becomes the object `db` |
 
-## The parallel variant
+After the step the data holds the customer and `db`, so the template can use `{{customer.name}}` and `{{db.segment}}` / `{{db.preferred_name}}`. A top-level field that is already called `db` would be replaced. If you want the database fields on the customer record itself, add a **Map fields** step after the query (rows such as `db.segment` → `customer.segment`). Merge data does not do this: it matches against a lookup table typed into that step, not against another step's result.
 
-To read the XML and the database at the same time, use Parallel branches: one path Parse (XML), the other Query database (its parameter from the submitted data), then Wait for branches, Merge data, Generate PDF. The two paths run one after the other (ADR 0009), and the step works the same inside a branch.
+The XML attribute `type` becomes the field `@type` (Parse turns attributes into `@name`), so a branch on it reads `customer.@type`.
+
+## Why not Parallel branches
+
+Parallel branches (ADR 0009) run their two paths one after the other, and after Wait for branches the run continues with the data **as the second path (Branch B) left it**: the two branches' data do not combine. A Parse on one path and a Query database on the other therefore cannot meet in one document, and Merge data cannot join them (it only uses the lookup table typed into it). Put the query after the Parse, as above.
 
 ## Things to know
 
-- **Values are always parameters** (`@no`). The SQL is checked when you save, when you publish (the SQL text and connection key are written to the audit trail) and again when the run executes. A query with a second statement, a write keyword, `SELECT ... INTO`, `FOR UPDATE` or a backslash in a string literal is refused.
-- **A missing `customer.number` rejects the run** (`data.query_invalid`). An unknown customer takes the `not-found` port; connect it, or the run stops there without a document.
-- The step keeps only the number of rows, the column names and the time in the run's history, never the values. After an approval wait or a restart the query runs again, so the values may differ.
-- **SMS to individuals and email to corporate customers:** Send email is a real step, so the corporate branch can email the PDF (If / else on `customer.type`). Texting individuals needs a **Send SMS step, which is not built yet** (the SMS connections of ADR 0018 only support Test connection); it needs its own ADR.
+- **Values are always parameters** (`@no`). The SQL is checked when you save, when you publish (the SQL text and connection key are written to the audit trail) and again when the run executes. Refused, among others: a second statement, a write, DDL, transaction or session keyword as a bare word (`COMMIT`, `SET`, `WAITFOR`, ... ; quote a column with such a name), `SELECT ... INTO`, `FOR UPDATE`, a backslash, `#`, a `--` comment without a space after it, and anything the four databases would read differently (ADR 0019, section 2).
+- **A missing `customer.number` rejects the run** (`data.query_invalid`): the one case that takes the step's `failed` port. Every database or SQL failure fails the run instead (retried first when it may pass). An unknown customer takes the `not-found` port; connect it, or that customer stops there without a document.
+- The step keeps only the number of rows, the column names, whether rows were cut, the time and the connection key in the run's history, never the values. Values can still reach the history if you put them there yourself, for example in an Archive metadata pattern such as `{{db.preferred_name}}`. After an approval wait or a restart the query runs again, so the values may differ.
+- **SMS to individuals and email to corporate customers:** Send email is a real step, so the corporate branch can email the PDF (If / else on `customer.@type` equal to `corporate`). Texting individuals needs a **Send SMS step, which is not built yet** (the SMS connections of ADR 0018 only support Test connection); it needs its own ADR.
 - Only SQL Server has been verified against a live server; try PostgreSQL, MySQL / MariaDB or Oracle on a non-production database first.
