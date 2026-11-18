@@ -74,6 +74,7 @@ public sealed class QueryDatabaseNodeTests
     [Theory]
     [InlineData("id customer.id", "id customer.id")]
     [InlineData("id = a\nid = b", "id")]
+    [InlineData("id = a\nId = b", "'Id' is listed more than once")] // SQL Server would declare @id twice
     [InlineData("1id = a", "1id")]
     [InlineData("@id = a", "@id")]
     [InlineData("id = ", "id")]
@@ -223,13 +224,14 @@ public sealed class QueryDatabaseNodeTests
     }
 
     [Fact]
-    public void AnOracleStyleColonName_IsPlainText_NotAPlaceholder()
+    public void AnOracleStyleColonName_IsRefused()
     {
-        // Authors always write @name (the Worker rewrites it for Oracle). A :name is not seen as a placeholder: it needs no mapping,
-        // and a mapping for it is reported as unused.
-        Assert.Empty(ErrorsOnQuery(Config(sql: "SELECT name FROM customers WHERE id = :id", parameters: "")));
-        var issue = Assert.Single(ErrorsOnQuery(Config(sql: "SELECT name FROM customers WHERE id = :id", parameters: "id = customer.id")));
-        Assert.Contains("isn't used", issue.Message, StringComparison.Ordinal);
+        // Changed deliberately in the final fix wave: a :name used to pass as plain text. Authors always write @name (the Worker rewrites it to :p1..:pN for Oracle),
+        // and a :name of their own could collide with those synthetic names (or be bound by Npgsql), so it is now refused; a PostgreSQL ::cast still passes.
+        var issue = Assert.Single(ErrorsOnQuery(Config(sql: "SELECT name FROM customers WHERE id = :id", parameters: "")));
+        Assert.Equal("sql", issue.Field);
+        Assert.Contains("@name", issue.Message, StringComparison.Ordinal);
+        Assert.Empty(ErrorsOnQuery(Config(sql: "SELECT name::text AS name FROM customers WHERE id = @id", parameters: "id = customer.id")));
     }
 
     [Fact]

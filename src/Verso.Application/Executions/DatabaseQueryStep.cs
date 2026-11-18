@@ -15,7 +15,9 @@ public static partial class DatabaseQueryStep
     public static (IReadOnlyList<(string Name, string Path)> Items, string? Problem) ParseParameters(string? text)
     {
         var items = new List<(string Name, string Path)>();
-        var seen = new HashSet<string>(StringComparer.Ordinal); // as SqlGuard: names that differ in case are different placeholders
+        // Names differing only in case are refused as duplicates: SQL Server (and Oracle) would see the same bind variable twice. Placeholder matching in
+        // SqlGuard stays case-sensitive, so @Id in the SQL still needs a line called Id.
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var raw in (text ?? "").Split('\n'))
         {
             var line = raw.Trim();
