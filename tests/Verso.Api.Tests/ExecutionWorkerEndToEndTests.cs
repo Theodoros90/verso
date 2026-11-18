@@ -49,6 +49,7 @@ public sealed class ExecutionWorkerFixture : IAsyncLifetime
         builder.Services.AddSingleton<IPdfCombiner, FakePdfCombiner>();
         builder.Services.AddSingleton<IEmailSender, FakeEmailSender>();
         builder.Services.AddSingleton<IPrintSpooler, FakePrintSpooler>();
+        builder.Services.AddSingleton<Verso.Application.Connections.IDatabaseQuery, FakeDatabaseQuery>();
         builder.Services.AddVersoDocumentStore(builder.Configuration);
         builder.Services.AddVersoJobServer(builder.Configuration);
         _worker = builder.Build();

@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Verso.Application.Connections;
 using Verso.Application.Documents;
 using Verso.Application.Executions;
 using Verso.Infrastructure.Documents;
@@ -41,7 +42,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null, JsonNode? combineConfig = null, JsonNode? sendConfig = null, JsonNode? printConfig = null, bool parallelBranches = false, bool joinBranches = false, Guid? templateCategoryId = null, bool archiveMatchInvoice = false)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null, JsonNode? combineConfig = null, JsonNode? sendConfig = null, JsonNode? printConfig = null, bool parallelBranches = false, bool joinBranches = false, Guid? templateCategoryId = null, bool archiveMatchInvoice = false, JsonNode? queryConfig = null, string queryAt = "after-validate", bool queryNotFoundToPdf = false)
     {
         var templateId = await PublishInvoiceTemplateAsync(templateCategoryId);
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -257,6 +258,26 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
             }
         }
 
+        if (queryConfig is not null)
+        {
+            // A Query database step: by default validate (valid) → query (found) → whatever validate led to; "branch-b": fork (Branch B) → query → pdf2;
+            // "in-loop": loop (each) → query → pdf. With queryNotFoundToPdf the 'not-found' output also goes to that next step.
+            var nodes = definition["nodes"]!.AsArray();
+            var edges = definition["edges"]!.AsArray();
+            var query = JsonNode.Parse("""{ "id": "query", "type": "query-database", "title": "Query database", "position": { "x": 400, "y": 440 }, "config": {} }""")!;
+            query["config"] = queryConfig.DeepClone();
+            nodes.Add(query);
+            var edgeId = queryAt switch { "branch-b" => "f2", "in-loop" => "e11", _ => "e2" };
+            var before = edges.First(e => (string?)e!["id"] == edgeId)!;
+            var target = (string)before["target"]!;
+            before["target"] = "query";
+            edges.Add(JsonNode.Parse($$"""{ "id": "q1", "source": "query", "sourcePort": "found", "target": "{{target}}", "targetPort": "in" }"""));
+            if (queryNotFoundToPdf)
+            {
+                edges.Add(JsonNode.Parse($$"""{ "id": "q2", "source": "query", "sourcePort": "not-found", "target": "{{target}}", "targetPort": "in" }"""));
+            }
+        }
+
         using var draft = await client.GetAsync(new Uri($"/api/v1/workflows/{workflowId}/draft", UriKind.Relative));
         using var save = await SendAsync(HttpMethod.Put, $"/api/v1/workflows/{workflowId}/draft", draft.Headers.ETag!.ToString(), new JsonObject { ["definition"] = definition });
         Assert.Equal(HttpStatusCode.OK, save.StatusCode);
@@ -316,11 +337,11 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     }
 
     /// <summary>One job run of the execution, as the Worker's Hangfire job would do it.</summary>
-    public async Task RunEngineAsync(Guid executionId, IPdfPrinter printer, IDocumentStore store, RecordingExecutionJobs jobs, IDocxWriter? docx = null, IPdfCombiner? combiner = null, IEmailSender? email = null, IPrintSpooler? spooler = null, CancellationToken ct = default)
+    public async Task RunEngineAsync(Guid executionId, IPdfPrinter printer, IDocumentStore store, RecordingExecutionJobs jobs, IDocxWriter? docx = null, IPdfCombiner? combiner = null, IEmailSender? email = null, IPrintSpooler? spooler = null, IDatabaseQuery? query = null, CancellationToken ct = default)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VersoDbContext>();
-        await new ExecutionEngine(db, printer, docx ?? new FakeDocxWriter(), combiner ?? new FakePdfCombiner(), email ?? new FakeEmailSender(), spooler ?? new FakePrintSpooler(), store, jobs, TimeProvider.System, NullLogger<ExecutionEngine>.Instance).RunAsync(executionId, ct);
+        await new ExecutionEngine(db, printer, docx ?? new FakeDocxWriter(), combiner ?? new FakePdfCombiner(), email ?? new FakeEmailSender(), spooler ?? new FakePrintSpooler(), query ?? new FakeDatabaseQuery(), store, jobs, TimeProvider.System, NullLogger<ExecutionEngine>.Instance).RunAsync(executionId, ct);
     }
 
     public async Task<T> WithDbAsync<T>(Func<VersoDbContext, Task<T>> action)

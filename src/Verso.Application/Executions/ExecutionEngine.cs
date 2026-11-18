@@ -1,6 +1,8 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Verso.Application.Connections;
 using Verso.Application.Documents;
 using Verso.Application.Templates;
 using Verso.Application.Workflows;
@@ -31,7 +33,7 @@ public sealed class StepException(string code, string message, bool retryable) :
 /// Hangfire's own retry is off for this job); data problems end the run as Rejected.
 /// </summary>
 public sealed partial class ExecutionEngine(
-    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IPdfCombiner combiner, IEmailSender email, IPrintSpooler spooler, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
+    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IPdfCombiner combiner, IEmailSender email, IPrintSpooler spooler, IDatabaseQuery query, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
 {
     /// <summary>Attempts per step (plan §6.3), within one execution attempt.</summary>
     public const int MaxStepAttempts = 3;
@@ -273,7 +275,18 @@ public sealed partial class ExecutionEngine(
 
         if (step.Status == StepStatus.Succeeded)
         {
-            await RestoreAsync(run, node, step, shutdown);
+            try
+            {
+                await RestoreAsync(run, node, step, shutdown);
+            }
+            catch (StepException ex) when (node.Type == NodeCatalog.QueryDatabase)
+            {
+                // A query read again on resume can fail for reasons outside the run (the database is down, the row is gone). The step stays Succeeded
+                // (it did succeed); the run fails technically, so an operator retry resumes here and reads again.
+                await FailRestoreAsync(run, node, step, ex);
+                return null;
+            }
+
             return new StepResult(step.OutputPort, step);
         }
 
@@ -336,6 +349,7 @@ public sealed partial class ExecutionEngine(
     private static bool Rejects(string nodeType, string? port) => (nodeType, port) is
         (NodeCatalog.Validate, "invalid") or (NodeCatalog.ParseContent, "failed") or (NodeCatalog.MapFields, "failed")
         or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail or NodeCatalog.CombinePdfs or NodeCatalog.SendEmail, "failed")
+        or (NodeCatalog.QueryDatabase, "failed")
         or (NodeCatalog.ApprovalStep, Approval.Rejected);
 
     private sealed record Outcome(string? Port, object? Result, Func<Task>? AfterSave = null);
@@ -459,6 +473,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.GenerateEmail => GenerateEmailAsync(run, node, ct),
         NodeCatalog.CombinePdfs => CombinePdfsAsync(run, node, ct),
         NodeCatalog.SendEmail => SendEmailAsync(run, node, ct),
+        NodeCatalog.QueryDatabase => QueryDatabaseAsync(run, node, ct),
         NodeCatalog.PrintQueue => PrintQueueAsync(run, node, ct),
         NodeCatalog.UploadSftp => Task.FromResult(UploadSftp(node)),
         NodeCatalog.DeliverApi => Task.FromResult(DeliverApi(node)),
@@ -835,6 +850,137 @@ public sealed partial class ExecutionEngine(
         return new Outcome("sent", new { relay, recipients = recipients.Count, attachment = attached, htmlBody = html is not null, messageId, warnings });
     }
 
+    /// <summary>
+    /// Query database (ADR 0019): runs the step's one SELECT on the named Database connection, its @parameters bound from the run data, and merges what it
+    /// read into the data under the result name (one row an object, several rows a list; an existing field of that name is replaced). A parameter whose path
+    /// has no value, or holds an object or a list, is the data's fault: port 'failed' (the run ends Rejected unless handled) and the database is not called.
+    /// A failure of the query itself is technical (the author's SQL, the connection or the database): retried when it may pass, otherwise the run fails.
+    /// Zero rows leave by 'not-found' with the data unchanged. The result holds counts, column names and the connection key; never a value, never the SQL.
+    /// </summary>
+    private async Task<Outcome> QueryDatabaseAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    {
+        var (bound, issues) = QueryParameters(node, run.Data);
+        if (issues.Count > 0)
+        {
+            return new Outcome("failed", new { issues });
+        }
+
+        var connection = QuerySetting(node, "connection");
+        var read = await RunQueryAsync(node, connection, bound, ct);
+        if (read.Rows.Count == 0)
+        {
+            return new Outcome("not-found", QueryResult(read, connection));
+        }
+
+        run.Data = WithQueryResult(node, run.Data, read);
+        return new Outcome("found", QueryResult(read, connection));
+    }
+
+    private static string QuerySetting(Workflows.WorkflowNode node, string name) =>
+        node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+
+    private static int QueryNumber(Workflows.WorkflowNode node, string name, int fallback) =>
+        node.Config.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) ? n : fallback;
+
+    /// <summary>The step result: counts and names only (the API returns step results to every reader of the execution).</summary>
+    private static object QueryResult(DatabaseQueryResult read, string connection) =>
+        new { rows = read.Rows.Count, columns = read.Columns, truncated = read.Truncated, durationMs = read.DurationMs, connection };
+
+    /// <summary>
+    /// The values for the step's parameters, read from <paramref name="data"/> with the same dotted paths as every other step. Only text, numbers and
+    /// true/false can be bound. Issues name the parameter and its path, never a value.
+    /// </summary>
+    private static (Dictionary<string, object?> Bound, List<object> Issues) QueryParameters(Workflows.WorkflowNode node, JsonElement data)
+    {
+        var bound = new Dictionary<string, object?>(StringComparer.Ordinal);
+        var issues = new List<object>();
+        var (mappings, problem) = DatabaseQueryStep.ParseParameters(QuerySetting(node, "parameters"));
+        if (problem is not null)
+        {
+            // Checked when the workflow was published, so only a definition changed outside Verso gets here: the author's mistake, not the data's.
+            throw new StepException("sql.bad_parameter", problem, retryable: false);
+        }
+
+        foreach (var (name, path) in mappings)
+        {
+            if (!DataPath.TryResolve(data, path, out var value))
+            {
+                issues.Add(new { code = "query.parameter_missing", message = $"Parameter '{name}' has no value: '{path}' is missing or empty in the data.", field = path });
+                continue;
+            }
+
+            object? scalar = value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Number when value.TryGetInt64(out var whole) => whole,
+                JsonValueKind.Number when value.TryGetDecimal(out var exact) => exact,
+                JsonValueKind.Number => value.GetDouble(),
+                _ => null,
+            };
+            if (scalar is null)
+            {
+                issues.Add(new { code = "query.parameter_invalid", message = $"Parameter '{name}': '{path}' holds {(value.ValueKind == JsonValueKind.Array ? "a list" : "a group of fields")}; only text, a number or true/false can be passed.", field = path });
+                continue;
+            }
+
+            bound[name] = scalar;
+        }
+
+        return (bound, issues);
+    }
+
+    /// <summary>Runs the query. A failure becomes a technical <see cref="StepException"/> with Verso's own message (never the driver's text or a value).</summary>
+    private async Task<DatabaseQueryResult> RunQueryAsync(Workflows.WorkflowNode node, string connection, IReadOnlyDictionary<string, object?> bound, CancellationToken ct)
+    {
+        var request = new DatabaseQueryRequest(connection, QuerySetting(node, "sql"), bound,
+            QueryNumber(node, "maxRows", 1), TimeSpan.FromSeconds(QueryNumber(node, "timeoutSeconds", 15)));
+        DatabaseQueryResult read;
+        try
+        {
+            read = await query.RunAsync(request, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The service reports failures as results; anything else is unexpected and its text could name the server or the login, so it is not kept.
+            throw new StepException("db.query_failed", DatabaseQueryMessages.For("db.query_failed"), retryable: true);
+        }
+
+        if (!read.Ok)
+        {
+            throw new StepException(read.Code!, read.Message ?? DatabaseQueryMessages.For(read.Code!), read.Retryable);
+        }
+
+        return read;
+    }
+
+    /// <summary>The data with the rows stored under the result name at the top level: one row an object, several a list. A field of that name is replaced.</summary>
+    private static JsonElement WithQueryResult(Workflows.WorkflowNode node, JsonElement data, DatabaseQueryResult read)
+    {
+        if (data.ValueKind != JsonValueKind.Object)
+        {
+            throw new StepException("query.data_not_object", "The run's data isn't a record (a JSON object), so the result can't be added to it.", retryable: false);
+        }
+
+        JsonNode? rows;
+        try
+        {
+            rows = read.Rows.Count == 1
+                ? JsonSerializer.SerializeToNode(read.Rows[0], Json)
+                : JsonSerializer.SerializeToNode(read.Rows, Json);
+        }
+        catch (Exception ex) when (ex is NotSupportedException or JsonException or InvalidOperationException or ArgumentException)
+        {
+            throw new StepException("query.value_unsupported", "A column has a type that can't be added to the data. Convert it in the query, for example with CAST(... AS varchar).", retryable: false);
+        }
+
+        // The same rebuild as the Map, Transform and Merge steps: parse to a mutable tree, change it, and read it back as an element that owns its memory.
+        var root = (JsonObject)JsonNode.Parse(data.GetRawText())!;
+        root[QuerySetting(node, "resultName")] = rows;
+        return JsonSerializer.Deserialize<JsonElement>(root.ToJsonString());
+    }
+
     /// <summary>Upload to SFTP is simulated: nothing connects to a server. The step succeeds and its result says that nothing was uploaded.</summary>
     private static Outcome UploadSftp(Workflows.WorkflowNode node)
     {
@@ -1053,6 +1199,47 @@ public sealed partial class ExecutionEngine(
             run.Data = RecordParser.Parse(node.Config, run.Data).Data
                 ?? throw new StepException("parse.restore", $"Step '{node.Title}' succeeded before but its content can't be parsed again.", retryable: false);
         }
+        else if (node.Type == NodeCatalog.QueryDatabase && step.OutputPort == "found")
+        {
+            // Rows are never stored (they may hold customer data, and step results are history every reader sees), so a resumed run (after an Approval,
+            // a retry or a Worker restart) reads them again. A query is NOT deterministic: the database may have changed meanwhile, so the data the later
+            // steps see can differ from what the first pass saw (ADR 0019). If the row is gone or the query fails now, the run can't continue as it was.
+            // 'not-found' and 'failed' left the data unchanged: nothing to rebuild.
+            var (bound, issues) = QueryParameters(node, run.Data);
+            if (issues.Count > 0)
+            {
+                throw new StepException("query.restore", $"Step '{node.Title}' found a row before, but its parameters can't be filled again.", retryable: false);
+            }
+
+            DatabaseQueryResult read;
+            try
+            {
+                read = await RunQueryAsync(node, QuerySetting(node, "connection"), bound, ct);
+            }
+            catch (StepException ex)
+            {
+                throw new StepException("query.restore", $"Step '{node.Title}' found a row before, but reading it again failed: {ex.Message}", ex.Retryable);
+            }
+
+            if (read.Rows.Count == 0)
+            {
+                throw new StepException("query.restore", $"Step '{node.Title}' found a row before, but reading it again found none: the database changed while the run waited.", retryable: false);
+            }
+
+            run.Data = WithQueryResult(node, run.Data, read);
+        }
+    }
+
+    /// <summary>A step that succeeded before can't be re-established on resume: the run fails (an operator retry resumes here). Only the code is logged.</summary>
+    private async Task FailRestoreAsync(Run run, Workflows.WorkflowNode node, ExecutionStep step, StepException ex)
+    {
+        var execution = run.Execution;
+        var now = clock.GetUtcNow();
+        LogStepFailed(logger, node.Id, execution.Id, step.Attempt, ex.Code);
+        execution.Fail(ex.Code, ex.Message, now);
+        Event(execution, ExecutionEventTypes.Failed, now, node.Id, Data(step, ("code", ex.Code), ("retryable", ex.Retryable)));
+        Completed(execution, now);
+        await SaveAsync(execution, CancellationToken.None);
     }
 
     private async Task FinishAsync(Run run, Workflows.WorkflowNode last, StepResult finished, CancellationToken ct)
@@ -1097,6 +1284,10 @@ public sealed partial class ExecutionEngine(
                 break;
             case (NodeCatalog.SendEmail, "failed"):
                 execution.Reject("email.data_incomplete", $"The data can't produce a complete email in step '{last.Title}' (see its issues).", now);
+                Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
+                break;
+            case (NodeCatalog.QueryDatabase, "failed"):
+                execution.Reject("data.query_invalid", $"The data can't make a valid query in step '{last.Title}' (see its issues).", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;
             case (NodeCatalog.CombinePdfs, "failed"):
