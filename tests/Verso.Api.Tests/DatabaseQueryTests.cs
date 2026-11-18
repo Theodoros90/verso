@@ -317,4 +317,98 @@ public sealed class DatabaseQueryTests : IAsyncLifetime
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             service.RunAsync(new DatabaseQueryRequest(key, "SELECT 1 AS one", new Dictionary<string, object?>(), 1, TimeSpan.FromSeconds(5)), cts.Token));
     }
+
+    [Fact]
+    public async Task One_value_over_the_cap_is_a_failure_not_an_empty_truncated_result()
+    {
+        var result = await RunAsync(await AddConnectionAsync(), "SELECT REPLICATE(CAST('a' AS varchar(max)), 2000000) AS big");
+
+        Assert.Equal("db.result_too_large", result.Code);
+        Assert.False(result.Retryable);
+        Assert.Empty(result.Rows);
+    }
+
+    [Fact]
+    public async Task A_huge_binary_or_xml_value_is_also_too_large()
+    {
+        var key = await AddConnectionAsync();
+
+        Assert.Equal("db.result_too_large", (await RunAsync(key, "SELECT CAST(REPLICATE(CAST('a' AS varchar(max)), 2000000) AS varbinary(max)) AS big")).Code);
+        Assert.Equal("db.result_too_large", (await RunAsync(key, "SELECT CAST('<r>' + REPLICATE(CAST('a' AS varchar(max)), 2000000) + '</r>' AS xml) AS big")).Code);
+    }
+
+    [Fact]
+    public async Task A_first_row_that_fits_then_a_second_that_does_not_is_truncated_with_one_row()
+    {
+        var result = await RunAsync(await AddConnectionAsync(), "SELECT 1 AS n, 'a' AS v UNION ALL SELECT 2, REPLICATE(CAST('a' AS varchar(max)), 2000000)");
+
+        Assert.True(result.Ok);
+        Assert.True(result.Truncated);
+        Assert.Single(result.Rows);
+    }
+
+    [Fact]
+    public async Task Duplicate_column_names_are_refused()
+    {
+        var result = await RunAsync(await AddConnectionAsync(), "SELECT a.id, b.id FROM dbo.Accounts a CROSS JOIN dbo.Accounts b");
+
+        Assert.Equal("db.bad_column", result.Code);
+        Assert.False(result.Retryable);
+    }
+
+    [Fact]
+    public async Task A_column_without_a_name_is_refused()
+    {
+        var result = await RunAsync(await AddConnectionAsync(), "SELECT COUNT(*) FROM dbo.Accounts");
+
+        Assert.Equal("db.bad_column", result.Code);
+    }
+
+    [Fact]
+    public async Task Limits_are_clamped_to_100_rows_and_60_seconds()
+    {
+        var key = await AddConnectionAsync();
+        var many = await RunAsync(key, "SELECT TOP 150 object_id FROM sys.all_objects", maxRows: 1000);
+        Assert.Equal(100, many.Rows.Count);
+        Assert.True(many.Truncated);
+
+        Assert.Single((await RunAsync(key, "SELECT TOP 5 object_id FROM sys.all_objects", maxRows: 0)).Rows);
+
+        var runner = new CapturingRunner();
+        await using var db = NewContext();
+        var service = new DatabaseQueryService(db, _secrets, [runner], new DatabaseConnectionOptions());
+        await service.RunAsync(new DatabaseQueryRequest(key, "SELECT 1 AS one", new Dictionary<string, object?>(), 5000, TimeSpan.FromHours(1)), CancellationToken.None);
+        Assert.Equal(100, runner.Seen!.MaxRows);
+        Assert.Equal(TimeSpan.FromSeconds(60), runner.Seen.Timeout);
+        await service.RunAsync(new DatabaseQueryRequest(key, "SELECT 1 AS one", new Dictionary<string, object?>(), -3, TimeSpan.Zero), CancellationToken.None);
+        Assert.Equal(1, runner.Seen.MaxRows);
+        Assert.Equal(TimeSpan.FromSeconds(1), runner.Seen.Timeout);
+    }
+
+    private sealed class CapturingRunner : IProviderQueryRunner
+    {
+        public string Provider => DatabaseProviders.SqlServer;
+        public DatabaseQueryRequest? Seen { get; private set; }
+
+        public Task<DatabaseQueryResult> RunAsync(DatabaseConnectionSettings settings, DatabaseQueryRequest request, CancellationToken ct)
+        {
+            Seen = request;
+            return Task.FromResult(DatabaseQueryResult.Success([], [], false, 0));
+        }
+    }
+
+    [Fact]
+    public async Task Cancelling_during_a_long_query_cancels_the_run_and_is_not_a_failure_result()
+    {
+        var key = await AddConnectionAsync();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        await using var db = NewContext();
+        var connection = await db.DatabaseConnections.AsNoTracking().SingleAsync(c => c.Key == key);
+        var settings = new DatabaseConnectionSettings(connection.Provider, connection.Server, 0, connection.Database, connection.UserName, _password, false, true, TimeSpan.FromSeconds(15));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            new SqlServerQueryRunner().RunAsync(settings, new DatabaseQueryRequest(key, "WAITFOR DELAY '00:00:10'", new Dictionary<string, object?>(), 1, TimeSpan.FromSeconds(30)), cts.Token));
+        Assert.True(started.Elapsed < TimeSpan.FromSeconds(8));
+    }
 }

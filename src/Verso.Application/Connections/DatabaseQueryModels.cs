@@ -45,6 +45,8 @@ public static class DatabaseQueryMessages
         "db.server_not_allowed" => "The administrator has not allowed the Worker to connect to this server (DatabaseConnections:AllowedServers).",
         "db.password_unreadable" => "The stored password can't be read: the Worker's Secrets:MasterKey is missing or differs from the API's.",
         "db.query_failed" => "The database could not run the query. Check the query, the table and column names and the login's permissions.",
+        "db.result_too_large" => "The result is larger than the 256 KB limit. Select fewer or shorter columns.",
+        "db.bad_column" => "Every column needs a unique name. Give each column an alias with AS.",
         "sql.empty" => "Type a SELECT query.",
         "sql.too_long" => "The query is too long.",
         "sql.multiple_statements" => "Only one statement is allowed.",

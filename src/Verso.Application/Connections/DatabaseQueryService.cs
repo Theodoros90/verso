@@ -12,8 +12,18 @@ public sealed class DatabaseQueryService(IVersoDbContext db, ISecretProtector se
 {
     private readonly Dictionary<string, IProviderQueryRunner> _runners = runners.ToDictionary(r => r.Provider, StringComparer.Ordinal);
 
+    public const int MaxRowsLimit = 100;
+    public const int MaxTimeoutSeconds = 60;
+
     public async Task<DatabaseQueryResult> RunAsync(DatabaseQueryRequest request, CancellationToken ct)
     {
+        // Defence in depth: whatever the caller asked for, a query returns 1..100 rows and runs 1..60 seconds (out of range is clamped, not refused).
+        request = request with
+        {
+            MaxRows = Math.Clamp(request.MaxRows, 1, MaxRowsLimit),
+            Timeout = TimeSpan.FromSeconds(Math.Clamp(request.Timeout.TotalSeconds, 1, MaxTimeoutSeconds)),
+        };
+
         var check = SqlGuard.Check(request.Sql);
         if (!check.Ok)
         {
