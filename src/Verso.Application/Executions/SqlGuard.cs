@@ -128,9 +128,29 @@ public static class SqlGuard
     /// Rewrites the <c>@name</c> placeholders to <paramref name="prefix"/> + name (Oracle wants <c>:name</c>), skipping comments, string literals and quoted names
     /// with the same rules as <see cref="Check"/>; <c>@@system</c> variables are left alone. Meant for text that <see cref="Check"/> accepted: from the first unclosed quote or comment on, the text is copied unchanged.
     /// </summary>
-    public static string RewriteParameters(string sql, string prefix)
+    public static string RewriteParameters(string sql, string prefix) =>
+        prefix == "@" ? sql : Rewrite(sql, name => prefix + name);
+
+    /// <summary>
+    /// Like <see cref="RewriteParameters"/> but renames the placeholders to <paramref name="prefix"/> + p1, p2, ... by order of first use (a name used twice keeps its number;
+    /// names differing in case are different, as in <see cref="Check"/>). <paramref name="names"/> lists the original names, index n is <c>p(n+1)</c>. For Oracle, which limits bind names
+    /// to 30 characters, forbids reserved words as bind names and ignores case.
+    /// </summary>
+    public static string RewriteParametersNumbered(string sql, string prefix, out IReadOnlyList<string> names)
     {
-        if (prefix == "@") return sql;
+        var order = new List<string>();
+        var rewritten = Rewrite(sql, name =>
+        {
+            var index = order.IndexOf(name);
+            if (index < 0) { order.Add(name); index = order.Count - 1; }
+            return prefix + "p" + (index + 1);
+        });
+        names = order;
+        return rewritten;
+    }
+
+    private static string Rewrite(string sql, Func<string, string> replacement)
+    {
         var result = new System.Text.StringBuilder(sql.Length + 16);
         var i = 0;
         while (i < sql.Length)
@@ -169,8 +189,10 @@ public static class SqlGuard
             }
             else if (c == '@' && IsAsciiWordChar(Peek(sql, i + 1)))
             {
-                result.Append(prefix);
-                i++;
+                var j = i + 1;
+                while (j < sql.Length && IsAsciiWordChar(sql[j])) j++;
+                result.Append(replacement(sql[(i + 1)..j]));
+                i = j;
                 continue;
             }
             else

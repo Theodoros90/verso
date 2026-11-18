@@ -191,4 +191,21 @@ public sealed class SqlGuardTests
         const string sql = "SELECT a FROM t WHERE id = @id AND '@x' = b";
         Assert.Equal(sql, SqlGuard.RewriteParameters(sql, "@"));
     }
+
+    [Fact]
+    public void RewriteParametersNumbered_numbers_by_first_use_and_reuses_a_repeated_name()
+    {
+        var sql = SqlGuard.RewriteParametersNumbered("SELECT '@no' FROM t WHERE b = @b AND a = @a AND c = @b -- @z\n AND d = @@ROWCOUNT", ":", out var names);
+        Assert.Equal("SELECT '@no' FROM t WHERE b = :p1 AND a = :p2 AND c = :p1 -- @z\n AND d = @@ROWCOUNT", sql);
+        Assert.Equal(["b", "a"], names);
+    }
+
+    [Fact]
+    public void RewriteParametersNumbered_treats_names_differing_in_case_as_different_and_handles_long_names()
+    {
+        var longName = new string('x', 64);
+        var sql = SqlGuard.RewriteParametersNumbered($"SELECT 1 WHERE a = @Id AND b = @id AND c = @{longName}", ":", out var names);
+        Assert.Equal("SELECT 1 WHERE a = :p1 AND b = :p2 AND c = :p3", sql);
+        Assert.Equal(["Id", "id", longName], names);
+    }
 }

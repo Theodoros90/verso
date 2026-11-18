@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Oracle.ManagedDataAccess.Client;
 using Verso.Application.Connections;
 using Verso.Databases;
 
@@ -11,6 +12,8 @@ namespace Verso.Api.Tests;
 // runner is covered in DatabaseQueryTests against LocalDB). These tests cover what needs no server: each runner's provider, that its connection string is the probe's
 // (so the TLS, timeout and no-pooling rules stay shared), the read-only statement, the Oracle SQL rewrite, the DI registration, the error mapping that does not need a driver
 // exception, and the provider-neutral result reader (DbQueryExecution) over a System.Data reader.
+// Known limitation, also NOT provable here: an Oracle NUMBER with more precision than .NET's decimal (about 28 digits) makes the Oracle driver throw when read; the step reports
+// db.query_failed (use TO_CHAR or ROUND in the query). The Oracle LONG / LOB fetch sizes are set (OracleQueryRunner.Configure) but their effect on a live server is untested.
 
 /// <summary>The Query database step's runners for PostgreSQL, MySQL and Oracle (no server contacted) and the shared result reader.</summary>
 public sealed class DatabaseQueryRunnerTests
@@ -53,10 +56,43 @@ public sealed class DatabaseQueryRunnerTests
     }
 
     [Fact]
-    public void Oracle_RewritesPlaceholders_AndDropsTrailingSemicolon()
+    public void Oracle_RewritesPlaceholdersToSyntheticNames_AndDropsTrailingSemicolon()
     {
-        Assert.Equal("SELECT a FROM t WHERE id = :id AND n = ':no'", OracleQueryRunner.PrepareSql("SELECT a FROM t WHERE id = @id AND n = ':no' ; \n"));
-        Assert.Equal("SELECT a FROM t WHERE id = :id AND x = :id", OracleQueryRunner.PrepareSql("SELECT a FROM t WHERE id = @id AND x = @id"));
+        var (sql, names) = OracleQueryRunner.PrepareSql("SELECT a FROM t WHERE id = @id AND n = ':no' AND x = @id ; \n");
+        Assert.Equal("SELECT a FROM t WHERE id = :p1 AND n = ':no' AND x = :p1", sql);
+        Assert.Equal(["id"], names);
+    }
+
+    [Fact]
+    public void Oracle_LongReservedAndCaseDifferingNames_AreAllSafe()
+    {
+        var longName = new string('a', 64);
+        var (sql, names) = OracleQueryRunner.PrepareSql($"SELECT 1 FROM t WHERE a = @{longName} AND b = @date AND c = @level AND d = @Id AND e = @id AND f = @user AND g = @number");
+        Assert.Equal("SELECT 1 FROM t WHERE a = :p1 AND b = :p2 AND c = :p3 AND d = :p4 AND e = :p5 AND f = :p6 AND g = :p7", sql);
+        Assert.Equal([longName, "date", "level", "Id", "id", "user", "number"], names);
+    }
+
+    [Fact]
+    public void Oracle_Renamed_BindsValuesUnderTheSyntheticNames()
+    {
+        var (sql, names) = OracleQueryRunner.PrepareSql("SELECT 1 FROM t WHERE a = @Id AND b = @date");
+        var request = new DatabaseQueryRequest("k", "ignored", new Dictionary<string, object?> { ["@id"] = 7, ["date"] = null, ["unused"] = 1 }, 5, TimeSpan.FromSeconds(5));
+        var renamed = OracleQueryRunner.Renamed(request, sql, names);
+        Assert.Equal(sql, renamed.Sql);
+        Assert.Equal(2, renamed.Parameters.Count);
+        Assert.Equal(7, renamed.Parameters["p1"]); // case-insensitive fallback, as the service checks
+        Assert.Null(renamed.Parameters["p2"]);
+        Assert.Throws<ArgumentException>(() => OracleQueryRunner.Renamed(request, sql, ["missing"]));
+    }
+
+    [Fact]
+    public void Oracle_Configure_BindsByName_AndSetsLongAndLobFetchSizes()
+    {
+        using var command = new OracleCommand();
+        OracleQueryRunner.Configure(command);
+        Assert.True(command.BindByName);
+        Assert.Equal(DbQueryExecution.MaxResultChars + 1, command.InitialLONGFetchSize);
+        Assert.Equal(DbQueryExecution.MaxResultChars + 1, command.InitialLOBFetchSize);
     }
 
     [Fact]
@@ -221,7 +257,7 @@ public sealed class DatabaseQueryRunnerTests
     }
 
     /// <summary>A DataTable reader whose GetChars / GetBytes work on strings and byte arrays like a real driver's (DataTableReader's own throws), so the chunked cell reading is exercised.</summary>
-    private sealed class ChunkingReader(DbDataReader inner) : DbDataReader
+    private class ChunkingReader(DbDataReader inner) : DbDataReader
     {
         public override string GetName(int ordinal) => inner.GetName(ordinal);
         public override int FieldCount => inner.FieldCount;
@@ -266,5 +302,108 @@ public sealed class DatabaseQueryRunnerTests
         public override bool IsDBNull(int ordinal) => inner.IsDBNull(ordinal);
         public override bool NextResult() => inner.NextResult();
         public override bool Read() => inner.Read();
+    }
+
+    // ---- the executor's error handling, through a fake connection whose reader throws ----
+
+    public static TheoryData<Exception> UnexpectedReadFailures => new()
+    {
+        new InvalidCastException("secret value 42"),
+        new OverflowException("secret value 42"),
+        new NotSupportedException("secret value 42"),
+        new SecretFailure("secret value 42"),
+    };
+
+    [Theory]
+    [MemberData(nameof(UnexpectedReadFailures))]
+    public async Task Executor_UnexpectedReadFailure_IsANonRetryableQueryFailure_WithoutDriverText(Exception thrown)
+    {
+        foreach (var kind in new[] { "number", "text", "bytes" })
+        {
+            var result = await RunFake(new ThrowingReader(OneRow(kind), thrown, kind));
+            Assert.Equal("db.query_failed", result.Code);
+            Assert.False(result.Retryable);
+            Assert.DoesNotContain("secret", result.Message);
+        }
+    }
+
+    [Fact]
+    public async Task Executor_Cancellation_StillPropagates()
+    {
+        using var cts = new CancellationTokenSource();
+        var cancel = new OperationCanceledException(cts.Token);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => RunFake(new ThrowingReader(OneRow("number"), cancel, "number")));
+    }
+
+    [Fact]
+    public async Task Executor_FailingRollback_DoesNotReplaceTheResult()
+    {
+        var t = Table("a");
+        t.Rows.Add("x");
+        foreach (Exception failure in new Exception[] { new TimeoutException("socket"), new IOException("socket") })
+        {
+            var result = await RunFake(new ChunkingReader(t.CreateDataReader()), failure);
+            Assert.True(result.Ok);
+            Assert.Equal("x", result.Rows[0]["a"]);
+        }
+    }
+
+    private static DataTable OneRow(string kind)
+    {
+        var t = new DataTable();
+        t.Columns.Add(kind, kind == "number" ? typeof(int) : kind == "bytes" ? typeof(byte[]) : typeof(string));
+        t.Rows.Add(kind == "number" ? 1 : kind == "bytes" ? new byte[] { 1 } : "x");
+        return t;
+    }
+
+    private static Task<DatabaseQueryResult> RunFake(DbDataReader reader, Exception? rollbackFailure = null) =>
+        DbQueryExecution.RunAsync(
+            new FakeConnection(reader, rollbackFailure), "BEGIN", true, "SELECT 1", new DatabaseQueryRequest("k", "SELECT 1", new Dictionary<string, object?>(), 10, TimeSpan.FromSeconds(5)),
+            "@", ex => DatabaseQueryResult.Failure("db.query_failed", true), CancellationToken.None);
+
+    /// <summary>Throws the given exception from whichever read call the column's kind uses (GetValue for numbers, GetChars for text, GetBytes for binary).</summary>
+    private sealed class ThrowingReader(DataTable table, Exception thrown, string kind) : ChunkingReader(table.CreateDataReader())
+    {
+        public override object GetValue(int ordinal) => kind == "number" ? throw thrown : base.GetValue(ordinal);
+        public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length) => kind == "text" ? throw thrown : base.GetChars(ordinal, dataOffset, buffer, bufferOffset, length);
+        public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length) => kind == "bytes" ? throw thrown : base.GetBytes(ordinal, dataOffset, buffer, bufferOffset, length);
+    }
+
+    private sealed class SecretFailure(string message) : Exception(message);
+
+    private sealed class FakeConnection(DbDataReader reader, Exception? rollbackFailure) : DbConnection
+    {
+        private ConnectionState _state = ConnectionState.Closed;
+        [System.Diagnostics.CodeAnalysis.AllowNull]
+        public override string ConnectionString { get => ""; set { } }
+        public override string Database => "";
+        public override string DataSource => "";
+        public override string ServerVersion => "";
+        public override ConnectionState State => _state;
+        public override void ChangeDatabase(string databaseName) { }
+        public override void Close() => _state = ConnectionState.Closed;
+        public override void Open() => _state = ConnectionState.Open;
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => throw new NotSupportedException();
+        protected override DbCommand CreateDbCommand() => new FakeCommand(this, reader, rollbackFailure);
+    }
+
+    private sealed class FakeCommand(FakeConnection connection, DbDataReader reader, Exception? rollbackFailure) : DbCommand
+    {
+        [System.Diagnostics.CodeAnalysis.AllowNull]
+        public override string CommandText { get => _text; set => _text = value ?? ""; }
+        private string _text = "";
+        public override int CommandTimeout { get; set; }
+        public override CommandType CommandType { get; set; }
+        public override bool DesignTimeVisible { get; set; }
+        public override UpdateRowSource UpdatedRowSource { get; set; }
+        protected override DbConnection? DbConnection { get => connection; set { } }
+        protected override DbParameterCollection DbParameterCollection => throw new NotSupportedException();
+        protected override DbTransaction? DbTransaction { get; set; }
+        public override void Cancel() { }
+        public override int ExecuteNonQuery() => CommandText == "ROLLBACK" && rollbackFailure is not null ? throw rollbackFailure : 0;
+        public override object? ExecuteScalar() => null;
+        public override void Prepare() { }
+        protected override DbParameter CreateDbParameter() => throw new NotSupportedException();
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) => reader;
     }
 }

@@ -75,7 +75,7 @@ public static class DbQueryExecution
                 }
             }
         }
-        catch (Exception ex) when (ex is DbException or TimeoutException && ct.IsCancellationRequested)
+        catch (Exception ex) when ((ex is DbException or TimeoutException) && ct.IsCancellationRequested)
         {
             throw new OperationCanceledException(ct); // a driver-side cancel is a cancel, not a retryable failure
         }
@@ -83,7 +83,9 @@ public static class DbQueryExecution
         {
             return map(ex);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException or IOException)
+        // Anything else (an InvalidCastException or OverflowException from a value the driver cannot convert, NotSupportedException from a column type, ...) is a final failure
+        // with Verso's own wording: never ex.Message, which can carry a value or a server detail. A cancel keeps propagating.
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return DatabaseQueryResult.Failure("db.query_failed", false);
         }
@@ -105,7 +107,7 @@ public static class DbQueryExecution
                 await rollback.ExecuteNonQueryAsync(CancellationToken.None);
             }
         }
-        catch (Exception ex) when (ex is InvalidOperationException or DbException)
+        catch (Exception ex) when (ex is InvalidOperationException or DbException or TimeoutException or IOException)
         {
             // the connection is gone or the transaction already ended; the connection is disposed next, which discards it
         }

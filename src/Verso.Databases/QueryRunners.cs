@@ -1,3 +1,4 @@
+using System.Data.Common;
 using MySqlConnector;
 using Npgsql;
 using Oracle.ManagedDataAccess.Client;
@@ -55,12 +56,65 @@ public sealed class OracleQueryRunner : IProviderQueryRunner
 
     internal static string ConnectionString(DatabaseConnectionSettings s) => OracleProbe.Build(s).ConnectionString;
 
-    internal static string PrepareSql(string sql) => SqlGuard.RewriteParameters(sql.TrimEnd().TrimEnd(';').TrimEnd(), ":");
+    /// <summary>
+    /// The statement for Oracle: placeholders become <c>:p1..:pN</c> by order of first use (Oracle limits bind names to 30 characters, forbids reserved words such as :date or :level
+    /// and ignores case, none of which the guard's names are held to), and a trailing semicolon is dropped. <c>Names</c> are the original placeholder names, index n is <c>p(n+1)</c>.
+    /// </summary>
+    internal static (string Sql, IReadOnlyList<string> Names) PrepareSql(string sql)
+    {
+        var rewritten = SqlGuard.RewriteParametersNumbered(sql.TrimEnd().TrimEnd(';').TrimEnd(), ":", out var names);
+        return (rewritten, names);
+    }
 
-    public Task<DatabaseQueryResult> RunAsync(DatabaseConnectionSettings settings, DatabaseQueryRequest request, CancellationToken ct) =>
-        DbQueryExecution.RunAsync(
-            new OracleConnection(ConnectionString(settings)), ReadOnlyStatement, false, PrepareSql(request.Sql), request, "", Map, ct,
-            command => ((OracleCommand)command).BindByName = true); // by default Oracle binds by position, which breaks a placeholder used twice
+    /// <summary>The request's values re-keyed to the synthetic names p1..pN (a missing exact name falls back to a case-insensitive match, as the service checks them).</summary>
+    internal static DatabaseQueryRequest Renamed(DatabaseQueryRequest request, string sql, IReadOnlyList<string> names)
+    {
+        var bound = new Dictionary<string, object?>(names.Count, StringComparer.Ordinal);
+        for (var n = 0; n < names.Count; n++)
+        {
+            var key = request.Parameters.Keys.FirstOrDefault(k => k.TrimStart('@') == names[n])
+                ?? request.Parameters.Keys.FirstOrDefault(k => string.Equals(k.TrimStart('@'), names[n], StringComparison.OrdinalIgnoreCase));
+            if (key is null)
+            {
+                throw new ArgumentException("A parameter is missing.");
+            }
+
+            bound["p" + (n + 1)] = request.Parameters[key];
+        }
+
+        return request with { Sql = sql, Parameters = bound };
+    }
+
+    public Task<DatabaseQueryResult> RunAsync(DatabaseConnectionSettings settings, DatabaseQueryRequest request, CancellationToken ct)
+    {
+        var (sql, names) = PrepareSql(request.Sql);
+        DatabaseQueryRequest renamed;
+        try
+        {
+            renamed = Renamed(request, sql, names);
+        }
+        catch (ArgumentException)
+        {
+            return Task.FromResult(DatabaseQueryResult.Failure("sql.bad_parameter", false));
+        }
+
+        return DbQueryExecution.RunAsync(
+            new OracleConnection(ConnectionString(settings)), ReadOnlyStatement, false, sql, renamed, "", Map, ct, Configure);
+    }
+
+    /// <summary>
+    /// By default Oracle binds by position (here by name, though the names are synthetic and each appears once), and fetches a LONG column as empty (InitialLONGFetchSize 0) and a LOB as a locator:
+    /// both are set to one more than the result cap so the shared reader sees an oversized value and answers db.result_too_large instead of an empty cell.
+    /// Known limitation: an Oracle NUMBER with more precision than .NET's decimal (about 28 digits) makes the driver throw on read; that is reported as db.query_failed (use TO_CHAR or ROUND in the query).
+    /// Not proven without a live Oracle server.
+    /// </summary>
+    internal static void Configure(DbCommand command)
+    {
+        var oracle = (OracleCommand)command;
+        oracle.BindByName = true;
+        oracle.InitialLONGFetchSize = DbQueryExecution.MaxResultChars + 1;
+        oracle.InitialLOBFetchSize = DbQueryExecution.MaxResultChars + 1;
+    }
 
     internal static DatabaseQueryResult Map(Exception ex) => DbQueryExecution.MapFailure(
         OracleProbe.Describe(ex),
