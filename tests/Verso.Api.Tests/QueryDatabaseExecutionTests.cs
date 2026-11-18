@@ -263,6 +263,34 @@ public sealed class QueryDatabaseExecutionTests(MigratedDatabaseFixture fixture)
     }
 
     [Fact]
+    public async Task An_unexpected_exception_from_the_query_service_fails_the_run_without_retry_and_without_its_text()
+    {
+        // Final review minor: the engine and the service now agree that an unexpected failure is final (it used to be retryable here and final there).
+        _query.Throw = new InvalidOperationException("secret server text Server=db01;User=sa");
+
+        var (_, done) = await RunAsync(Query());
+
+        Assert.Equal("Failed", done.GetProperty("status").GetString());
+        Assert.Equal("db.query_failed", done.GetProperty("failureCode").GetString());
+        Assert.Empty(_jobs.Scheduled);
+        Assert.Equal(1, _query.CallCount);
+        Assert.DoesNotContain("secret", done.GetRawText(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Missing_parameter_message_says_missing_or_null_and_an_empty_text_is_bound()
+    {
+        var (_, missing) = await RunAsync(Query(), Data(poNumber: null));
+        var message = Assert.Single(Step(missing, "query").GetProperty("result").GetProperty("issues").EnumerateArray()).GetProperty("message").GetString()!;
+        Assert.Contains("missing or null", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("empty in the data", message, StringComparison.Ordinal);
+
+        var (_, empty) = await RunAsync(Query(), Data(poNumber: ""));
+        Assert.Equal("Succeeded", empty.GetProperty("status").GetString());
+        Assert.Equal("", _query.Requests[^1].Parameters["po"]);
+    }
+
+    [Fact]
     public async Task Resumed_run_requeries()
     {
         var id = await AwaitingApprovalAsync();

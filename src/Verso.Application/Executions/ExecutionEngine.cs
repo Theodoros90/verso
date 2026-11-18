@@ -905,7 +905,7 @@ public sealed partial class ExecutionEngine(
         {
             if (!DataPath.TryResolve(data, path, out var value))
             {
-                issues.Add(new { code = "query.parameter_missing", message = $"Parameter '{name}' has no value: '{path}' is missing or empty in the data.", field = path });
+                issues.Add(new { code = "query.parameter_missing", message = $"Parameter '{name}' has no value: '{path}' is missing or null in the data (an empty text is a value).", field = path });
                 continue;
             }
 
@@ -944,7 +944,7 @@ public sealed partial class ExecutionEngine(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // The service reports failures as results; anything else is unexpected and its text could name the server or the login, so it is not kept.
-            throw new StepException("db.query_failed", DatabaseQueryMessages.For("db.query_failed"), retryable: true);
+            throw new StepException("db.query_failed", DatabaseQueryMessages.For("db.query_failed"), retryable: false); // final, as in DatabaseQueryService: an unknown failure is not retried blindly
         }
 
         if (!read.Ok)

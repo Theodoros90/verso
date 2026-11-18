@@ -24,6 +24,9 @@ internal sealed class FakeDatabaseQuery : IDatabaseQuery
 
     public int FailTimes { get; set; } = int.MaxValue;
 
+    /// <summary>When set, every call throws it (a service that broke its contract of returning failures as results).</summary>
+    public Exception? Throw { get; set; }
+
     /// <summary>Called before each answer with the 1-based call number; may change <see cref="Rows"/> (e.g. a database that changed meanwhile).</summary>
     public Action<int>? BeforeAnswer { get; set; }
 
@@ -54,6 +57,11 @@ internal sealed class FakeDatabaseQuery : IDatabaseQuery
         }
 
         BeforeAnswer?.Invoke(call);
+        if (Throw is not null)
+        {
+            throw Throw;
+        }
+
         if (Failure is not null && _failed < FailTimes)
         {
             _failed++;

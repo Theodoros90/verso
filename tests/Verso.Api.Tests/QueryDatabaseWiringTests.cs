@@ -1,0 +1,82 @@
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Verso.Application;
+using Verso.Application.Connections;
+using Verso.Application.Documents;
+using Verso.Application.Executions;
+using Verso.Databases;
+using Verso.Infrastructure;
+using Verso.Rendering;
+using Verso.Rendering.Docx;
+
+namespace Verso.Api.Tests;
+
+/// <summary>
+/// Final review: the Worker's registrations give the execution engine the real query service with all four runners, and the API never references
+/// the database drivers (ADR 0019 §5: the API never connects to a customer database).
+/// </summary>
+public sealed class QueryDatabaseWiringTests
+{
+    [Fact]
+    public void WorkerRegistrations_ResolveTheEngine_WithTheRealQueryService_AndAllFourRunners()
+    {
+        // The Query-database part of src/Verso.Worker/Program.cs, plus fakes for what needs Chromium, files or Hangfire. Nothing connects: resolving opens no connection.
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:Verso"] = "Server=(localdb)\\MSSQLLocalDB;Database=verso-wiring-not-opened;Integrated Security=true",
+        }).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddVersoPersistence(configuration);
+        services.AddVersoWorkerUseCases();
+        services.AddVersoDatabaseConnections(configuration);
+        services.AddVersoDatabaseDrivers();
+        services.AddSingleton<IPdfPrinter, FakePdfPrinter>();
+        services.AddSingleton<IDocxWriter, FakeDocxWriter>();
+        services.AddSingleton<IPdfCombiner, FakePdfCombiner>();
+        services.AddSingleton<IEmailSender, FakeEmailSender>();
+        services.AddSingleton<IPrintSpooler, FakePrintSpooler>();
+        services.AddSingleton<IDocumentStore, TestDocumentStore>();
+        services.AddSingleton<IExecutionJobs, RecordingExecutionJobs>();
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var scope = provider.CreateScope();
+
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<ExecutionEngine>());
+        Assert.IsType<DatabaseQueryService>(scope.ServiceProvider.GetRequiredService<IDatabaseQuery>());
+        var providers = scope.ServiceProvider.GetServices<IProviderQueryRunner>().Select(r => r.Provider).Order(StringComparer.Ordinal).ToList();
+        Assert.Equal(new[] { DatabaseProviders.MySql, DatabaseProviders.Oracle, DatabaseProviders.PostgreSql, DatabaseProviders.SqlServer }.Order(StringComparer.Ordinal), providers);
+    }
+
+    [Fact]
+    public void TheApi_DoesNotReference_TheDatabaseDrivers()
+    {
+        // Read from the compiled Verso.Api assembly's metadata (as RendererPurityTests does for the renderer).
+        using var stream = File.OpenRead(typeof(Program).Assembly.Location);
+        using var pe = new PEReader(stream);
+        var md = pe.GetMetadataReader();
+        var assemblies = md.AssemblyReferences.Select(h => md.GetString(md.GetAssemblyReference(h).Name)).ToList();
+
+        Assert.Contains("Verso.Infrastructure", assemblies); // the check reads the right assembly
+        Assert.DoesNotContain("Verso.Databases", assemblies);
+        Assert.DoesNotContain(assemblies, a => a is "Npgsql" or "MySqlConnector" or "Oracle.ManagedDataAccess");
+
+        // And the project file itself names no reference to it (a reference whose types are unused would not show in the metadata).
+        var project = Path.Combine(RepositoryRoot(), "src", "Verso.Api", "Verso.Api.csproj");
+        Assert.DoesNotContain("Verso.Databases", File.ReadAllText(project), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string RepositoryRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Verso.slnx")))
+        {
+            dir = dir.Parent;
+        }
+
+        return dir?.FullName ?? throw new InvalidOperationException("Verso.slnx not found above the test output.");
+    }
+}

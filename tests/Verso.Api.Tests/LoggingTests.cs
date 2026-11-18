@@ -65,6 +65,43 @@ public sealed class LoggingTests(MigratedDatabaseFixture fixture) : IDisposable
     }
 
     [Fact]
+    public async Task QueryDatabaseValues_NeverReachTheLogs()
+    {
+        // ADR 0019: parameter values and column values are never logged. A found run, a run whose query fails (retryable, then final) and a run whose parameter is missing.
+        var parameterMarker = "QPARAM" + Guid.NewGuid().ToString("N")[..12];
+        var rowMarker = "QROW" + Guid.NewGuid().ToString("N")[..12];
+        var query = new FakeDatabaseQuery { Rows = [FakeDatabaseQuery.Row(("name", rowMarker), ("address", rowMarker + " street"))] };
+        var config = new JsonObject
+        {
+            ["connection"] = "crm-db", ["sql"] = "SELECT name, address FROM customers WHERE po_number = @po", ["parameters"] = "po = invoice.poNumber",
+            ["resultName"] = "customer", ["maxRows"] = 1, ["timeoutSeconds"] = 20,
+        };
+        var key = await Kit.PublishInvoiceWorkflowAsync(queryConfig: config);
+        var data = ExecutionTestKit.Sample.DeepClone();
+        data["invoice"]!["poNumber"] = parameterMarker;
+
+        var found = await Kit.SubmitNewAsync(key, data);
+        await RunEngineAsync(found, _store, query);
+
+        var failing = await Kit.SubmitNewAsync(key, data);
+        query.Failure = Verso.Application.Connections.DatabaseQueryResult.Failure("db.timeout", true);
+        for (var attempt = 0; attempt < ExecutionEngine.MaxStepAttempts; attempt++)
+        {
+            await RunEngineAsync(failing, _store, query);
+        }
+
+        var missing = data.DeepClone();
+        missing["invoice"]!.AsObject().Remove("poNumber");
+        missing["customer"]!["name"] = rowMarker; // a submitted value that equals a row value must not be logged either
+        await RunEngineAsync(await Kit.SubmitNewAsync(key, missing), _store, query);
+
+        Assert.Contains(query.Requests, r => Equals(r.Parameters["po"], parameterMarker)); // the value was used
+        var leaks = fixture.Factory.Logs.Entries.Where(e => e.AllText.Contains(parameterMarker, StringComparison.Ordinal) || e.AllText.Contains(rowMarker, StringComparison.Ordinal)).ToList();
+        Assert.True(leaks.Count == 0, "Query values in logs:\n" + string.Join("\n", leaks.Take(5).Select(l => $"[{l.Category}] {l.Message}")));
+        Assert.Contains(fixture.Factory.Logs.Entries, e => e.Category.Contains("ExecutionEngine", StringComparison.Ordinal) && e.Level == LogLevel.Warning); // the failure was logged
+    }
+
+    [Fact]
     public async Task RequestsAndRuns_LogTheirCorrelationId()
     {
         var key = await Kit.PublishInvoiceWorkflowAsync();
@@ -104,11 +141,11 @@ public sealed class LoggingTests(MigratedDatabaseFixture fixture) : IDisposable
         Assert.Matches("^[0-9a-f]{32}$", other.Headers.GetValues("X-Correlation-Id").Single()); // a malformed one is replaced, not echoed
     }
 
-    private async Task RunEngineAsync(Guid id, TestDocumentStore store)
+    private async Task RunEngineAsync(Guid id, TestDocumentStore store, FakeDatabaseQuery? query = null)
     {
         await using var scope = fixture.Factory.Services.CreateAsyncScope();
         var engine = new ExecutionEngine(
-            scope.ServiceProvider.GetRequiredService<VersoDbContext>(), new FakePdfPrinter(), new FakeDocxWriter(), new FakePdfCombiner(), new FakeEmailSender(), new FakePrintSpooler(), new FakeDatabaseQuery(), store, new RecordingExecutionJobs(),
+            scope.ServiceProvider.GetRequiredService<VersoDbContext>(), new FakePdfPrinter(), new FakeDocxWriter(), new FakePdfCombiner(), new FakeEmailSender(), new FakePrintSpooler(), query ?? new FakeDatabaseQuery(), store, new RecordingExecutionJobs(),
             TimeProvider.System, scope.ServiceProvider.GetRequiredService<ILogger<ExecutionEngine>>()); // logs go to the capture
         await engine.RunAsync(id, CancellationToken.None);
     }
