@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react'
 import { useEffect, useId, useState } from 'react'
 
 import { Select } from '@/components/ui/form'
+import { providerName } from '@/features/connections/DbFields'
 import { databaseConnectionsApi } from '@/lib/api/databaseConnections'
 import type { DatabaseConnectionOptionDto } from '@/lib/api/generated'
 
@@ -37,7 +38,7 @@ export function DatabaseConnectionSelect({ value, onChange, ...rest }: Omit<Comp
         {value && !known && <option value={value}>{options === null ? value : `Unknown connection (${value})`}</option>}
         {list.map((o) => (
           <option key={o.key} value={o.key}>
-            {o.name} ({o.provider})
+            {o.name} ({providerName(o.provider)})
           </option>
         ))}
       </Select>
