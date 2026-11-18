@@ -353,6 +353,23 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { name: 'Agreement pack', files: 'agreement.pdf\nterms.pdf', format: 'zip', filename: 'agreement-pack.zip' },
   },
   {
+    type: 'query-database', label: 'Query database', category: 'process', description: 'Reads data from a database connection.',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'found', label: 'Found', required: true }, { id: 'not-found', label: 'Not found', required: false }, { id: 'failed', label: 'Failed', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        connection: { type: 'string', title: 'Database connection', 'x-widget': 'database-connection' },
+        sql: { type: 'string', title: 'SQL (one SELECT)', 'x-widget': 'sql' },
+        parameters: { type: 'string', title: 'Parameters (one per line)', 'x-widget': 'multiline' },
+        resultName: { type: 'string', title: 'Result name', 'x-widget': 'mono' },
+        maxRows: { type: 'integer', title: 'Most rows to read' },
+      },
+      required: ['connection', 'sql', 'resultName'],
+    },
+    defaults: { connection: '', sql: 'SELECT name FROM customers WHERE id = @id', parameters: 'id = customer.id', resultName: 'db', maxRows: 1 },
+  },
+  {
     type: 'deliver-api', label: 'Deliver via API', category: 'output', description: 'Posts the document to another system (simulated).',
     inputs: [{ id: 'in', label: 'In', required: true }],
     outputs: [{ id: 'delivered', label: 'Delivered', required: true }, { id: 'failed', label: 'Failed', required: false }],
@@ -686,6 +703,25 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'lookup-enrich', config: { key: 'customer.id', destination: 'customer.profile', missing: 'continue' } })
+  })
+
+  it('adds a Query database step with a connection choice, a SQL box, a summary and its three outputs', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Query database' }))
+
+    expect(await screen.findByRole('heading', { name: 'Query database', level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /SQL/ })).toHaveClass('font-mono')
+    expect(screen.getByText('One SELECT only. Write values as @name and map them below. Use a read-only database login.')).toBeInTheDocument()
+    for (const port of ['Found', 'Not found', 'Failed']) expect(screen.getByLabelText(`Query database: output ${port}`)).toBeInTheDocument()
+    expect(screen.getByText('query: (no connection) → db')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'query-database', config: { resultName: 'db', maxRows: 1 } })
   })
 
   it('adds a Deduplicate step with its defaults and saves them', async () => {

@@ -98,6 +98,7 @@ describe('Database connections (real connections in the Connections tab)', () =>
     expect(within(dialog).queryByLabelText('Secret (managed outside Verso)')).not.toBeInTheDocument()
     expect(within(dialog).queryByRole('button', { name: 'Test connection' })).not.toBeInTheDocument()
     expect(within(dialog).getByText(/After you create it, open Configure and use Test connection/)).toBeInTheDocument()
+    expect(within(dialog).getByText('Use a read-only login: Verso checks that queries are a single SELECT, but the database login is the real protection.')).toBeInTheDocument()
   })
 
   it('creates the connection, sending the typed password once and never showing it again', async () => {

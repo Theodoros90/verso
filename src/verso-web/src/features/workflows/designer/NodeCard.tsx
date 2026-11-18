@@ -1,5 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { Archive, ArrowLeftRight, CalendarClock, Circle, Clock, CopyCheck, Database, DatabaseZap, ClipboardList, FileCode, Files, FilePenLine, Folders, FileSignature, FileText, LayoutTemplate, FolderInput, FolderSync, GitBranch, GitFork, GitMerge, Inbox, Merge, Mail, MousePointerClick, Printer, Repeat, Send, Server, Shuffle, ShieldCheck, Search, Split, Upload, UserCheck, Webhook, type LucideIcon } from 'lucide-react'
+import { Archive, ArrowLeftRight, CalendarClock, Circle, Clock, CopyCheck, Database, DatabaseZap, ClipboardList, FileCode, Files, FilePenLine, Folders, FileSignature, FileText, LayoutTemplate, FolderInput, FolderSync, GitBranch, GitFork, GitMerge, Inbox, Merge, Mail, MousePointerClick, Printer, Repeat, Send, Server, Shuffle, ShieldCheck, Search, Split, TableProperties, Upload, UserCheck, Webhook, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NodeTypeDto, WorkflowIssueDto } from '@/lib/api/generated'
@@ -31,6 +31,7 @@ export const NODE_ICONS: Record<string, LucideIcon> = {
   'sftp-folder': FolderInput,
   'email-inbox': Inbox,
   'database-query': DatabaseZap,
+  'query-database': TableProperties,
   'form-submission': ClipboardList,
   'scheduled-trigger': CalendarClock,
   'manual-trigger': MousePointerClick,
@@ -132,6 +133,11 @@ export function NodeCard({ data, selected }: NodeProps<VersoFlowNode>) {
           {errors > 1 ? ` (${errors})` : ''}
         </span>
       </div>
+      {node.type === 'query-database' && (
+        <div className="truncate px-2.5 pb-1.5 font-mono text-[11px] text-ink-3">
+          query: {typeof node.config.connection === 'string' && node.config.connection ? node.config.connection : '(no connection)'} → {typeof node.config.resultName === 'string' && node.config.resultName ? node.config.resultName : '?'}
+        </div>
+      )}
       {outputs.length > 0 && (
         <div className="flex flex-col border-t border-line py-1">
           {outputs.map((p) => {

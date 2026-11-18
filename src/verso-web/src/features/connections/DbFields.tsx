@@ -194,6 +194,7 @@ export function DbFields({
       <Field label="Connection key" htmlFor="db-key" error={errors.key} hint="A short name for this connection in workflows later. It cannot change.">
         <Input id="db-key" className="font-mono" value={form.key} disabled={!!existing} onChange={(e) => onChange({ key: e.target.value.toLowerCase() })} aria-invalid={!!errors.key} placeholder="lasernet" />
       </Field>
+      <p className="m-0 text-xs text-ink-3">Use a read-only login: Verso checks that queries are a single SELECT, but the database login is the real protection.</p>
       {errors.form && <p role="alert" className="text-[13px] text-err">{errors.form}</p>}
     </>
   )
