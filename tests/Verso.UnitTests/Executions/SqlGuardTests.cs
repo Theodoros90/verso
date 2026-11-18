@@ -63,12 +63,17 @@ public sealed class SqlGuardTests
     }
 
     [Fact]
-    public void Rejects_comment_hiding_text()
+    public void Accepts_comments_that_hide_text()
     {
         Assert.True(SqlGuard.Check("SELECT 1 -- ; DROP").Ok);
+        Assert.True(SqlGuard.Check("/* hi */ SELECT 1").Ok);
+    }
+
+    [Fact]
+    public void Rejects_comment_hiding_text()
+    {
         Assert.Equal("sql.multiple_statements", SqlGuard.Check("SELECT 1 /* x */; DELETE FROM t").Code);
         Assert.Equal("sql.not_select", SqlGuard.Check("/* SELECT */ DELETE FROM t").Code);
-        Assert.True(SqlGuard.Check("/* hi */ SELECT 1").Ok);
     }
 
     [Fact]
@@ -96,5 +101,60 @@ public sealed class SqlGuardTests
         var r = SqlGuard.Check("SELECT 1 FROM t WHERE a = @b AND c = @B AND d = @b AND e = @a1 AND f = @@ROWCOUNT");
         Assert.True(r.Ok);
         Assert.Equal("b,B,a1", string.Join(",", r.Parameters));
+    }
+
+    [Theory]
+    [InlineData("WITH x AS (SELECT 1) DELETE FROM t")]
+    [InlineData("WITH x AS (SELECT 1) UPDATE t SET a = 1")]
+    [InlineData("WITH x AS (SELECT 1 a) INSERT INTO t SELECT a FROM x")]
+    [InlineData("WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d")]
+    [InlineData("SELECT 1 FROM t; ALTER TABLE t ADD c int")]
+    [InlineData("WITH x AS (SELECT 1) CREATE TABLE y (a int)")]
+    public void Rejects_cte_followed_by_write(string sql)
+    {
+        Assert.False(SqlGuard.Check(sql).Ok);
+    }
+
+    [Fact]
+    public void Write_keywords_only_count_as_bare_words()
+    {
+        Assert.True(SqlGuard.Check("SELECT updated_at, \"delete\", 'update' FROM t").Ok);
+    }
+
+    [Theory]
+    [InlineData("SELECT $$'$$; DROP TABLE t; --'")]
+    [InlineData("SELECT $tag$x$tag$")]
+    public void Rejects_dollar_quoting(string sql)
+    {
+        Assert.Equal("sql.unsupported_syntax", SqlGuard.Check(sql).Code);
+    }
+
+    [Fact]
+    public void Allows_dollar_in_identifier()
+    {
+        Assert.True(SqlGuard.Check("SELECT a$b FROM t WHERE x = $1").Ok);
+    }
+
+    [Fact]
+    public void Rejects_double_dash_without_space_hiding_statement()
+    {
+        Assert.False(SqlGuard.Check("SELECT 5--1; DELETE FROM t").Ok);
+        Assert.Equal("sql.multiple_statements", SqlGuard.Check("SELECT 5--1; SELECT 2").Code);
+    }
+
+    [Theory]
+    [InlineData("SELECT 1 /*! DELETE FROM t */")]
+    [InlineData("SELECT 1 /*!50000 , 2 */")]
+    public void Rejects_mysql_executable_comment(string sql)
+    {
+        Assert.Equal("sql.unsupported_syntax", SqlGuard.Check(sql).Code);
+    }
+
+    [Fact]
+    public void Accepts_double_dash_comment_with_space_at_end()
+    {
+        Assert.True(SqlGuard.Check("SELECT 1 -- note").Ok);
+        Assert.True(SqlGuard.Check("SELECT 1 --").Ok);
+        Assert.True(SqlGuard.Check("SELECT 1 --\nFROM t").Ok);
     }
 }
