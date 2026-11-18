@@ -64,6 +64,7 @@ public sealed class RoleMatrixTests(MigratedDatabaseFixture fixture)
         { "POST", "/api/v1/email-relays/{id:guid}/activate", $"/api/v1/email-relays/{Id}/activate", "X" },
         { "POST", "/api/v1/email-relays/{id:guid}/tests", $"/api/v1/email-relays/{Id}/tests", "X" },
         { "GET", "/api/v1/email-relays/tests/{testId:guid}", $"/api/v1/email-relays/tests/{Id}", "X" },
+        { "GET", "/api/v1/database-connection-options", "/api/v1/database-connection-options", "WX" },
         { "GET", "/api/v1/database-connections/", "/api/v1/database-connections", "X" },
         { "POST", "/api/v1/database-connections/", "/api/v1/database-connections", "X" },
         { "PUT", "/api/v1/database-connections/{id:guid}", $"/api/v1/database-connections/{Id}", "X" },
