@@ -157,4 +157,20 @@ public sealed class SqlGuardTests
         Assert.True(SqlGuard.Check("SELECT 1 --").Ok);
         Assert.True(SqlGuard.Check("SELECT 1 --\nFROM t").Ok);
     }
+
+    [Theory]
+    [InlineData(@"SELECT 'a\'' ; DELETE FROM t ; --'")]
+    [InlineData(@"SELECT 'a\\b'")]
+    [InlineData(@"SELECT ""a\b""")]
+    public void Rejects_backslash_escape_in_string(string sql)
+    {
+        Assert.Equal("sql.unsupported_syntax", SqlGuard.Check(sql).Code);
+    }
+
+    [Fact]
+    public void Accepts_string_without_backslash()
+    {
+        Assert.True(SqlGuard.Check("SELECT 'a''b' FROM t WHERE p = 'x/y'").Ok);
+        Assert.True(SqlGuard.Check("SELECT [a\\b] FROM t").Ok);
+    }
 }

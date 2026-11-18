@@ -58,6 +58,8 @@ public static class SqlGuard
                 var closed = false;
                 while (j < sql.Length)
                 {
+                    if (sql[j] == '\\' && close is '\'' or '"')
+                        return Fail("sql.unsupported_syntax", "Backslashes are not allowed inside text values; pass the value as a parameter.");
                     if (sql[j] == close)
                     {
                         if (Peek(sql, j + 1) == close) { j += 2; continue; } // doubled quote is an escape
