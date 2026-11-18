@@ -1,6 +1,6 @@
 /** Database connection endpoints (docs/api.md#database-connections, ADR 0016). Administrators only. The password is write-only: no response has it. */
 import { request } from './client'
-import type { DatabaseConnectionDto, DatabaseConnectionTestDto, SaveDatabaseConnectionRequest } from './generated'
+import type { DatabaseConnectionDto, DatabaseConnectionOptionDto, DatabaseConnectionTestDto, SaveDatabaseConnectionRequest } from './generated'
 
 const base = '/api/v1/database-connections'
 
@@ -9,6 +9,9 @@ export type DatabaseConnectionInput = Partial<SaveDatabaseConnectionRequest>
 export const databaseConnectionsApi = {
   list: (includeInactive = true, signal?: AbortSignal) =>
     request<DatabaseConnectionDto[]>(`${base}?includeInactive=${includeInactive}`, { signal }).then((r) => r.body),
+
+  /** Key, name and provider of the active connections, for the Query database step (workflow authors and administrators). */
+  listOptions: (signal?: AbortSignal) => request<DatabaseConnectionOptionDto[]>('/api/v1/database-connection-options', { signal }).then((r) => r.body),
 
   create: (body: DatabaseConnectionInput) => request<DatabaseConnectionDto>(base, { method: 'POST', body }).then((r) => r.body),
 

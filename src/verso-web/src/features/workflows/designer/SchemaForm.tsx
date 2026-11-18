@@ -9,10 +9,11 @@ import { parseRetention, retentionUnits } from '@/lib/retention'
 import { cn } from '@/lib/utils'
 
 import { jsonObjectProblem } from '../model/payloadSchema'
+import { DatabaseConnectionSelect } from './DatabaseConnectionSelect'
 
 /** The JSON Schema subset the node catalog uses (see ConfigSchemaValidator on the server), plus designer hints. */
 export interface FieldSchema {
-  type: 'object' | 'array' | 'string' | 'boolean'
+  type: 'object' | 'array' | 'string' | 'boolean' | 'integer'
   title?: string
   description?: string
   properties?: Record<string, FieldSchema>
@@ -20,8 +21,11 @@ export interface FieldSchema {
   items?: FieldSchema
   enum?: string[]
   'x-enumLabels'?: string[]
-  'x-widget'?: 'multiline' | 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches' | 'retention' | 'email-relay'
+  'x-widget'?: 'multiline' | 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches' | 'retention' | 'email-relay' | 'database-connection' | 'sql'
   maxItems?: number
+  maxLength?: number
+  minimum?: number
+  maximum?: number
 }
 
 export interface TemplateOption {
@@ -121,6 +125,24 @@ function PropertyField({
         <Switch checked={value === true} onCheckedChange={(v) => onChange(v, path)} label={field.title ?? name} disabled={ctx.readOnly} />
         {errors[0] && <p className="text-xs text-err">{errors[0]}</p>}
       </div>
+    )
+  }
+
+  if (field.type === 'integer') {
+    return (
+      <Field label={label} htmlFor={id} hint={field.description} error={errors[0]}>
+        <Input
+          id={id}
+          type="number"
+          step={1}
+          min={field.minimum}
+          max={field.maximum}
+          disabled={ctx.readOnly}
+          aria-invalid={errors.length > 0}
+          value={typeof value === 'number' ? String(value) : ''}
+          onChange={(e) => onChange(e.target.value === '' ? '' : Math.trunc(Number(e.target.value)), path)}
+        />
+      </Field>
     )
   }
 
@@ -245,6 +267,25 @@ function StringInput({
 
   if (field['x-widget'] === 'email-relay') {
     return <EmailRelaySelect common={common} value={value} onChange={(v) => onChange(v, path)} />
+  }
+
+  if (field['x-widget'] === 'database-connection') {
+    return <DatabaseConnectionSelect {...common} value={value} onChange={(v) => onChange(v, path)} />
+  }
+
+  if (field['x-widget'] === 'sql') {
+    const max = field.maxLength ?? 4000
+    return (
+      <div className="flex flex-col gap-1">
+        <Textarea {...common} value={value} rows={8} maxLength={max} spellCheck={false} className="font-mono text-[12px]" onChange={(e) => onChange(e.target.value, path)} />
+        <div className="flex items-start justify-between gap-2 text-xs text-ink-3">
+          <span>One SELECT only. Write values as @name and map them below. Use a read-only database login.</span>
+          <span className="flex-none tabular-nums">
+            {value.length} / {max}
+          </span>
+        </div>
+      </div>
+    )
   }
 
   if (field['x-widget'] === 'template') {
