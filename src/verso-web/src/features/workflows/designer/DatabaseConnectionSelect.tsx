@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 
 import { Select } from '@/components/ui/form'
 import { databaseConnectionsApi } from '@/lib/api/databaseConnections'
@@ -11,6 +11,7 @@ import type { DatabaseConnectionOptionDto } from '@/lib/api/generated'
  */
 export function DatabaseConnectionSelect({ value, onChange, ...rest }: Omit<ComponentProps<typeof Select>, 'value' | 'onChange'> & { value: string; onChange: (v: string) => void }) {
   const [options, setOptions] = useState<DatabaseConnectionOptionDto[] | null>(null)
+  const errorId = useId()
   const [failed, setFailed] = useState(false)
   useEffect(() => {
     const controller = new AbortController()
@@ -29,7 +30,7 @@ export function DatabaseConnectionSelect({ value, onChange, ...rest }: Omit<Comp
   const known = list.some((o) => o.key === value)
   return (
     <div className="flex flex-col gap-1">
-      <Select {...rest} value={value} onChange={(e) => onChange(e.target.value)}>
+      <Select {...rest} aria-describedby={failed ? errorId : undefined} value={value} onChange={(e) => onChange(e.target.value)}>
         {options === null && !value && <option value="">Loading…</option>}
         {options !== null && list.length === 0 && !failed && <option value="">No connections yet. Create one in Configuration, Connections.</option>}
         {(list.length > 0 || failed) && !value && <option value="">Choose a connection…</option>}
@@ -40,7 +41,7 @@ export function DatabaseConnectionSelect({ value, onChange, ...rest }: Omit<Comp
           </option>
         ))}
       </Select>
-      {failed && <p className="text-xs text-err">The connections could not be loaded.</p>}
+      {failed && <p id={errorId} role="alert" className="text-xs text-err">The connections could not be loaded.</p>}
     </div>
   )
 }

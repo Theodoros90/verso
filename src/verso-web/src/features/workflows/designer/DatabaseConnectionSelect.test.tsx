@@ -43,7 +43,9 @@ describe('DatabaseConnectionSelect', () => {
   it('shows an error line and still keeps the saved key when the list cannot be loaded', async () => {
     stubOptions({ title: 'Forbidden' }, 403)
     render(<DatabaseConnectionSelect aria-label="Database connection" value="core-db" onChange={() => {}} />)
-    expect(await screen.findByText('The connections could not be loaded.')).toBeInTheDocument()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('The connections could not be loaded.')
+    expect(screen.getByRole('combobox', { name: 'Database connection' })).toHaveAccessibleDescription('The connections could not be loaded.')
     expect(screen.getByRole('combobox', { name: 'Database connection' })).toHaveValue('core-db')
   })
 })

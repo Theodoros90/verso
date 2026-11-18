@@ -53,4 +53,21 @@ describe('SQL setting of the Query database step', () => {
     await userEvent.type(input, '5')
     expect(seen.at(-1)?.maxRows).toBe(15)
   })
+  it('removes the key when the number box is cleared, so the server default applies', async () => {
+    const seen: Record<string, unknown>[] = []
+    render(<Harness initial={{ sql: '', maxRows: 1 }} onValue={(v) => seen.push(v)} />)
+    const input = screen.getByRole('spinbutton', { name: /Most rows/ })
+    await userEvent.clear(input)
+    expect(seen.at(-1)).not.toHaveProperty('maxRows')
+    expect(input).toHaveValue(null)
+    await userEvent.type(input, '5')
+    expect(seen.at(-1)?.maxRows).toBe(5)
+  })
+
+  it('cuts a decimal to its whole part (Math.trunc), because the server wants a whole number', async () => {
+    const seen: Record<string, unknown>[] = []
+    render(<Harness initial={{ sql: '' }} onValue={(v) => seen.push(v)} />)
+    await userEvent.type(screen.getByRole('spinbutton', { name: /Most rows/ }), '1.5')
+    expect(seen.at(-1)?.maxRows).toBe(1)
+  })
 })

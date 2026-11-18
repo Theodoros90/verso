@@ -63,7 +63,11 @@ export function SchemaForm({
   const props = Object.entries(schema.properties ?? {}).filter(([, f]) => f['x-widget'] !== 'legacy') // legacy settings stay in the saved workflow but aren't shown
   if (props.length === 0) return <p className="text-[12.5px] text-ink-3">This step has no settings.</p>
 
-  const set = (name: string, v: unknown, key = name) => onChange({ ...value, [name]: v }, key)
+  const set = (name: string, v: unknown, key = name) => {
+    const next = { ...value, [name]: v }
+    if (v === undefined) delete next[name] // an emptied optional number is left out, so the server default applies
+    onChange(next, key)
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -140,7 +144,8 @@ function PropertyField({
           disabled={ctx.readOnly}
           aria-invalid={errors.length > 0}
           value={typeof value === 'number' ? String(value) : ''}
-          onChange={(e) => onChange(e.target.value === '' ? '' : Math.trunc(Number(e.target.value)), path)}
+          // Whole numbers only (the server rejects decimals): 1.5 becomes 1. Empty removes the setting.
+          onChange={(e) => onChange(e.target.value === '' || Number.isNaN(Number(e.target.value)) ? undefined : Math.trunc(Number(e.target.value)), path)}
         />
       </Field>
     )
