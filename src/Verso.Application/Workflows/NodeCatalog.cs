@@ -41,6 +41,7 @@ public static class NodeCatalog
     public const string TransformData = "transform";
     public const string MergeData = "merge-data";
     public const string QueryDatabase = "query-database";
+    public const string WriteDatabase = "write-database";
     public const string LookupEnrich = "lookup-enrich";
     public const string Deduplicate = "deduplicate";
     public const string IfElse = "if-else";
@@ -626,6 +627,25 @@ public static class NodeCatalog
               "required": ["connection", "sql", "resultName"] }
             """,
             """{ "connection": "", "sql": "SELECT name, status FROM customers WHERE id = @id", "parameters": "id = customer.id", "resultName": "db", "maxRows": 1, "timeoutSeconds": 15 }"""),
+
+        Node(WriteDatabase, "Write to database", "output",
+            "Changes data in a database with one INSERT, UPDATE or DELETE. The connection must have writes switched on by an administrator. The step is never retried automatically and never repeated on resume.",
+            [In], [new PortDto("written", "Written", true), new PortDto("failed", "Failed", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "connection": { "type": "string", "title": "Database connection", "minLength": 2, "maxLength": 64, "pattern": "{{Escape(Connections.DatabaseServers.KeyPattern)}}", "x-widget": "database-connection", "x-requires-writes": true,
+                  "description": "Which database connection to write to. Only connections an administrator has switched writes on for can be used." },
+                "sql": { "type": "string", "title": "SQL (one INSERT, UPDATE or DELETE)", "minLength": 1, "maxLength": {{Executions.SqlGuard.MaxLength}}, "x-widget": "sql",
+                  "description": "One INSERT, UPDATE or DELETE (an UPDATE or DELETE needs a WHERE). Write values as @name placeholders and list them below; never paste values into the text." },
+                "parameters": { "type": "string", "title": "Parameters (one per line)", "maxLength": 2000, "x-widget": "multiline",
+                  "description": "One line per @placeholder, as name = data.path, such as id = customer.id (without the @). Up to {{Executions.DatabaseQueryStep.MaxParameters}}." },
+                "maxRows": { "type": "integer", "title": "Most rows to change", "minimum": 1, "maximum": 1000,
+                  "description": "The most rows the statement may change. If it would change more, nothing is changed and the step fails." },
+                "timeoutSeconds": { "type": "integer", "title": "Time limit (seconds)", "minimum": 1, "maximum": 60 } },
+              "required": ["connection", "sql"] }
+            """,
+            """{ "connection": "", "sql": "UPDATE customers SET status = @status WHERE id = @id", "parameters": "status = customer.status\nid = customer.id", "maxRows": 1, "timeoutSeconds": 15 }"""),
 
         Node(IfElse, "If / else", "logic",
             "Sends the run down the Yes path when its conditions are met, otherwise the No path. The data is not changed.",

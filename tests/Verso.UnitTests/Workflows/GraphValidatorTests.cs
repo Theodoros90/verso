@@ -774,7 +774,7 @@ public sealed class GraphValidatorTests
                 NodeCatalog.SwitchRoute => ["field"],
                 NodeCatalog.ForEach => ["field"],
                 NodeCatalog.PrintQueue => ["queue"],
-                NodeCatalog.QueryDatabase => ["connection"],
+                NodeCatalog.QueryDatabase or NodeCatalog.WriteDatabase => ["connection"],
                 NodeCatalog.DeliverApi => ["url"],
                 _ => Array.Empty<string>(),
             };

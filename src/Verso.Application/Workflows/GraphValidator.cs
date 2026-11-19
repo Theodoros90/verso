@@ -321,6 +321,7 @@ public static class GraphValidator
         (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail, "failed") => "Data that can't make a complete document will end the run as Rejected.",
         (NodeCatalog.SendEmail, "failed") => "Data that can't make a complete email will end the run as Rejected.",
         (NodeCatalog.QueryDatabase, "failed") => "Data that can't make a valid query (for example a missing value for a parameter) will end the run as Rejected.",
+        (NodeCatalog.WriteDatabase, "failed") => "Data that can't make a valid statement (for example a missing value for a parameter) will end the run as Rejected.",
         (NodeCatalog.QueryDatabase, "not-found") => "A query that finds no row ends the run here.",
         (NodeCatalog.CombinePdfs, "failed") => "A run with fewer than two PDFs to combine ends here as Rejected.",
         _ => $"'{port.Label}' isn't connected; the run ends there.",
@@ -474,28 +475,24 @@ public static class GraphValidator
                 }
 
                 var sqlCheck = Executions.SqlGuard.Check(sqlText);
-                if (!sqlCheck.Ok)
+                foreach (var issue in SqlStatementRules(node, sqlCheck.Ok, sqlCheck.Message, sqlCheck.Parameters, "query"))
                 {
-                    yield return new(Error, "config.invalid", sqlCheck.Message ?? "The query isn't allowed.", NodeId: node.Id, Field: "sql");
-                    break;
+                    yield return issue;
                 }
 
-                var (mappings, mappingProblem) = Executions.DatabaseQueryStep.ParseParameters(
-                    c.TryGetProperty("parameters", out var parametersElement) && parametersElement.ValueKind == JsonValueKind.String ? parametersElement.GetString() : "");
-                if (mappingProblem is not null)
+                break;
+
+            case NodeCatalog.WriteDatabase:
+                var writeSql = c.TryGetProperty("sql", out var writeSqlElement) && writeSqlElement.ValueKind == JsonValueKind.String ? writeSqlElement.GetString()! : "";
+                if (writeSql.Trim().Length == 0)
                 {
-                    yield return new(Error, "config.invalid", mappingProblem, NodeId: node.Id, Field: "parameters");
-                    break;
+                    break; // reported once by the schema check (it trims)
                 }
 
-                foreach (var placeholder in sqlCheck.Parameters.Where(p => !mappings.Any(m => m.Name == p)))
+                var writeCheck = Executions.SqlGuard.CheckWrite(writeSql);
+                foreach (var issue in SqlStatementRules(node, writeCheck.Ok, writeCheck.Message, writeCheck.Parameters, "statement"))
                 {
-                    yield return new(Error, "config.invalid", $"The query uses @{placeholder} but no parameter line maps it. Add '{placeholder} = data.path'.", NodeId: node.Id, Field: "parameters");
-                }
-
-                foreach (var (mappedName, _) in mappings.Where(m => !sqlCheck.Parameters.Contains(m.Name)))
-                {
-                    yield return new(Error, "config.invalid", $"Parameter '{mappedName}' isn't used: the query has no @{mappedName}.", NodeId: node.Id, Field: "parameters");
+                    yield return issue;
                 }
 
                 break;
@@ -576,6 +573,34 @@ public static class GraphValidator
                 }
 
                 break;
+        }
+    }
+
+    /// <summary>The SQL-text, parameter and placeholder rules shared by Query database and Write to database; only the guard result and the noun differ.</summary>
+    private static IEnumerable<WorkflowIssueDto> SqlStatementRules(WorkflowNode node, bool ok, string? guardMessage, IReadOnlyList<string> placeholders, string noun)
+    {
+        if (!ok)
+        {
+            yield return new(Error, "config.invalid", guardMessage ?? $"The {noun} isn't allowed.", NodeId: node.Id, Field: "sql");
+            yield break;
+        }
+
+        var (mappings, mappingProblem) = Executions.DatabaseQueryStep.ParseParameters(
+            node.Config.TryGetProperty("parameters", out var parametersElement) && parametersElement.ValueKind == JsonValueKind.String ? parametersElement.GetString() : "");
+        if (mappingProblem is not null)
+        {
+            yield return new(Error, "config.invalid", mappingProblem, NodeId: node.Id, Field: "parameters");
+            yield break;
+        }
+
+        foreach (var placeholder in placeholders.Where(p => !mappings.Any(m => m.Name == p)))
+        {
+            yield return new(Error, "config.invalid", $"The {noun} uses @{placeholder} but no parameter line maps it. Add '{placeholder} = data.path'.", NodeId: node.Id, Field: "parameters");
+        }
+
+        foreach (var (mappedName, _) in mappings.Where(m => !placeholders.Contains(m.Name)))
+        {
+            yield return new(Error, "config.invalid", $"Parameter '{mappedName}' isn't used: the {noun} has no @{mappedName}.", NodeId: node.Id, Field: "parameters");
         }
     }
 
