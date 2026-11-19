@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Field, Input, Select, Switch } from '@/components/ui/form'
@@ -39,9 +39,11 @@ export interface DbForm {
   timeoutSeconds: string
   /** Workflows may run INSERT, UPDATE and DELETE on this connection (Write to database step). */
   allowWrites: boolean
+  /** The switch was changed in this dialog. Only then is allowWrites sent when saving an existing connection, so an unrelated edit never overwrites a change made by someone else. */
+  writesTouched: boolean
 }
 
-export const blankDb: DbForm = { provider: 'SqlServer', key: '', server: '', port: '', database: '', userName: '', password: '', clearPassword: false, encrypt: true, trustServerCertificate: false, timeoutSeconds: '15', allowWrites: false }
+export const blankDb: DbForm = { provider: 'SqlServer', key: '', server: '', port: '', database: '', userName: '', password: '', clearPassword: false, encrypt: true, trustServerCertificate: false, timeoutSeconds: '15', allowWrites: false, writesTouched: true }
 
 const asProvider = (p: string): DbProvider => (DB_PROVIDERS.some((x) => x.id === p) ? (p as DbProvider) : 'SqlServer')
 
@@ -58,6 +60,7 @@ export const toDbForm = (c: DatabaseConnectionDto): DbForm => ({
   trustServerCertificate: c.trustServerCertificate,
   timeoutSeconds: String(c.timeoutSeconds),
   allowWrites: c.allowWrites === true,
+  writesTouched: false,
 })
 
 export type DbErrors = Record<string, string>
@@ -91,7 +94,7 @@ export function dbBody(form: DbForm, name: string) {
     timeoutSeconds: Number(form.timeoutSeconds),
     password: form.password === '' ? null : form.password,
     clearPassword: form.clearPassword,
-    allowWrites: form.allowWrites,
+    allowWrites: form.writesTouched ? form.allowWrites : null, // null: the server keeps the saved value
   }
 }
 
@@ -122,9 +125,22 @@ export function DbFields({
   const defaultPort = DB_PROVIDERS.find((p) => p.id === form.provider)?.port ?? 0
   const oracle = form.provider === 'Oracle'
   const [confirmingWrites, setConfirmingWrites] = useState(false)
+  const keepOff = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!confirmingWrites) return
+    keepOff.current?.focus() // the safe choice has focus
+    // Escape cancels the question only; the window listener runs before the dialog's own Escape handling.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      setConfirmingWrites(false)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [confirmingWrites])
   return (
     <>
-      <Field label="Database type" htmlFor="db-provider" hint={existing ? 'The type cannot change after creation.' : 'Choose the engine. Use a read-only account on a non-production server.'}>
+      <Field label="Database type" htmlFor="db-provider" hint={existing ? 'The type cannot change after creation.' : (form.allowWrites ? 'Choose the engine. Use a non-production server and a login limited to what your workflows need.' : 'Choose the engine. Use a read-only account on a non-production server.')}>
         <Select id="db-provider" value={form.provider} disabled={!!existing} onChange={(e) => onChange({ provider: e.target.value as DbProvider, trustServerCertificate: e.target.value === 'Oracle' ? false : form.trustServerCertificate })}>
           {DB_PROVIDERS.map((p) => (
             <option key={p.id} value={p.id}>
@@ -210,7 +226,7 @@ export function DbFields({
               setConfirmingWrites(true) // turning writes on asks first
             } else {
               setConfirmingWrites(false)
-              onChange({ allowWrites: false })
+              onChange({ allowWrites: false, writesTouched: true })
             }
           }}
           label="Allow workflows to change data"
@@ -220,17 +236,21 @@ export function DbFields({
           <div role="group" aria-label="Confirm writes" className="flex flex-col gap-2 rounded-md border border-warn/50 bg-warn-soft p-3 text-[13px] text-ink">
             <p className="m-0">Workflows will be able to run INSERT, UPDATE and DELETE statements on this connection. Verso runs only the statement an author typed, with this login's permissions.</p>
             <div className="flex gap-2">
-              <Button type="button" size="sm" variant="primary" onClick={() => { setConfirmingWrites(false); onChange({ allowWrites: true }) }}>
+              <Button type="button" size="sm" variant="primary" onClick={() => { setConfirmingWrites(false); onChange({ allowWrites: true, writesTouched: true }) }}>
                 Allow changes
               </Button>
-              <Button type="button" size="sm" onClick={() => setConfirmingWrites(false)}>
+              <Button ref={keepOff} type="button" size="sm" onClick={() => setConfirmingWrites(false)}>
                 Keep writes off
               </Button>
             </div>
           </div>
         )}
       </div>
-      <p className="m-0 text-xs text-ink-3">Use a read-only login: Verso checks that queries are a single SELECT, but the database login is the real protection.</p>
+      <p className="m-0 text-xs text-ink-3">
+        {form.allowWrites
+          ? 'This login can change data. Give it permission to write only the tables your workflows need; the database login is the real protection, not Verso’s checks.'
+          : 'Use a read-only login: Verso checks that queries are a single SELECT, but the database login is the real protection.'}
+      </p>
       {errors.form && <p role="alert" className="text-[13px] text-err">{errors.form}</p>}
     </>
   )

@@ -432,6 +432,7 @@ function mockApi(opts: { issues?: WorkflowIssueDto[]; publish?: 'ok' | 'invalid'
       calls.push({ method, url, body: init.body ? JSON.parse(String(init.body)) : undefined, ifMatch: headers['if-match'] })
       if (url === '/api/health') return json({ status: 'Healthy', totalDurationMs: 1, checks: [] })
       if (url === '/api/v1/node-types') return json(nodeTypes)
+      if (url === '/api/v1/database-connection-options') return json([{ key: 'core-db', name: 'Core DB', provider: 'SqlServer', allowsWrites: false }, { key: 'ledger', name: 'Ledger', provider: 'Oracle', allowsWrites: true }])
       if (url === `/api/v1/workflows/${WF}`) return json({ id: WF, key: 'invoice-standard', name: 'Invoice standard', description: null, createdAt: '', createdBy: '', latestPublishedVersion: null, draftVersionId: 'v1', isActive: active })
       if (url === `/api/v1/workflows/${WF}/deactivate` && method === 'POST') {
         active = false
@@ -758,6 +759,29 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'write-database', config: { maxRows: 1 } })
+  })
+
+  it('the x-requires-writes flag reaches the connection select: the write step marks and warns, the query step does not', async () => {
+    mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Write to database' }))
+    expect(await screen.findByRole('heading', { name: 'Write to database', level: 3 })).toBeInTheDocument()
+    const writeSelect = await screen.findByRole('combobox', { name: /Database connection/ })
+    expect(await screen.findByRole('option', { name: 'Core DB (SQL Server), writes off' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Ledger (Oracle)' })).toBeInTheDocument()
+    await user.selectOptions(writeSelect, 'core-db')
+    expect(await screen.findByText(/Writes are switched off for this connection/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Add Query database' }))
+    expect(await screen.findByRole('heading', { name: 'Query database', level: 3 })).toBeInTheDocument()
+    const querySelect = await screen.findByRole('combobox', { name: /Database connection/ })
+    await screen.findByRole('option', { name: 'Core DB (SQL Server)' })
+    expect(screen.queryByRole('option', { name: /writes off/ })).not.toBeInTheDocument()
+    await user.selectOptions(querySelect, 'core-db')
+    expect(screen.queryByText(/Writes are switched off for this connection/)).not.toBeInTheDocument()
   })
 
   it('adds a Deduplicate step with its defaults and saves them', async () => {

@@ -239,6 +239,77 @@ describe('Database connections (real connections in the Connections tab)', () =>
     })
   })
 
+  describe('saving an existing connection (the writes switch is sent only when changed)', () => {
+    const switchName = 'Allow workflows to change data'
+    const open = async (items: DatabaseConnectionDto[]) => {
+      const api = dbApi(items)
+      const drawer = await openConfiguration('Connections', api.handler)
+      await userEvent.click(await within(drawer).findByRole('button', { name: 'Configure Reporting DB' }))
+      return { api, drawer, dialog: screen.getByRole('dialog', { name: 'Reporting DB' }) }
+    }
+
+    it('renaming a connection that allows writes sends no allowWrites value', async () => {
+      const { api, drawer, dialog } = await open([connection({ allowWrites: true })])
+      await userEvent.clear(within(dialog).getByLabelText('Name'))
+      await userEvent.type(within(dialog).getByLabelText('Name'), 'Reporting DB 2')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Save settings' }))
+      await within(drawer).findByText('Settings saved for Reporting DB 2.')
+      expect(api.bodies[0]?.allowWrites ?? null).toBeNull()
+      expect(api.bodies[0]).toMatchObject({ name: 'Reporting DB 2' })
+    })
+
+    it('turning it on, then confirming, sends true', async () => {
+      const { api, drawer, dialog } = await open([connection()])
+      await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Allow changes' }))
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Save settings' }))
+      await within(drawer).findByText('Settings saved for Reporting DB.')
+      expect(api.bodies[0]).toMatchObject({ allowWrites: true })
+    })
+
+    it('turning it on, then cancelling, sends nothing about writes', async () => {
+      const { api, drawer, dialog } = await open([connection()])
+      await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Keep writes off' }))
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Save settings' }))
+      await within(drawer).findByText('Settings saved for Reporting DB.')
+      expect(api.bodies[0]?.allowWrites ?? null).toBeNull()
+    })
+
+    it('the guidance beside the switch follows it', async () => {
+      const { dialog } = await open([connection()])
+      const readOnly = 'Use a read-only login: Verso checks that queries are a single SELECT, but the database login is the real protection.'
+      const canWrite = 'This login can change data. Give it permission to write only the tables your workflows need; the database login is the real protection, not Verso’s checks.'
+      expect(within(dialog).getByText(readOnly)).toBeInTheDocument()
+      await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Allow changes' }))
+      expect(within(dialog).getByText(canWrite)).toBeInTheDocument()
+      expect(within(dialog).queryByText(readOnly)).not.toBeInTheDocument()
+    })
+
+    it('the confirmation starts on the safe choice and Escape cancels it without closing the dialog', async () => {
+      const { dialog } = await open([connection()])
+      await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+      expect(within(dialog).getByRole('button', { name: 'Keep writes off' })).toHaveFocus()
+
+      await userEvent.keyboard('{Escape}')
+
+      expect(within(dialog).queryByRole('group', { name: 'Confirm writes' })).not.toBeInTheDocument()
+      expect(screen.getByRole('dialog', { name: 'Reporting DB' })).toBeInTheDocument()
+      expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'false')
+      await userEvent.keyboard('{Escape}')
+      expect(screen.queryByRole('dialog', { name: 'Reporting DB' })).not.toBeInTheDocument()
+    })
+
+    it('a pending confirmation does not carry over to the next connection that is opened', async () => {
+      const { drawer, dialog } = await open([connection(), connection({ id: 'd-2', key: 'other', name: 'Other DB' })])
+      await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+      await userEvent.click(within(drawer).getByRole('button', { name: 'Configure Other DB' }))
+      expect(within(screen.getByRole('dialog', { name: 'Other DB' })).queryByRole('group', { name: 'Confirm writes' })).not.toBeInTheDocument()
+    })
+  })
+
   it('Test connection asks the Worker to connect and reports success with the server version', async () => {
     const api = dbApi([connection()])
     const drawer = await openConfiguration('Connections', api.handler)
