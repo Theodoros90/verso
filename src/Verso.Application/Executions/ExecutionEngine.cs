@@ -33,7 +33,7 @@ public sealed class StepException(string code, string message, bool retryable) :
 /// Hangfire's own retry is off for this job); data problems end the run as Rejected.
 /// </summary>
 public sealed partial class ExecutionEngine(
-    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IPdfCombiner combiner, IEmailSender email, IPrintSpooler spooler, IDatabaseQuery query, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
+    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IPdfCombiner combiner, IEmailSender email, IPrintSpooler spooler, IDatabaseQuery query, IDatabaseWrite write, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
 {
     /// <summary>Attempts per step (plan §6.3), within one execution attempt.</summary>
     public const int MaxStepAttempts = 3;
@@ -290,6 +290,14 @@ public sealed partial class ExecutionEngine(
             return new StepResult(step.OutputPort, step);
         }
 
+        if (node.Type == NodeCatalog.WriteDatabase && step.Status == StepStatus.Running)
+        {
+            // A write that an earlier run started and never recorded as finished (the Worker crashed, or stopped mid-write: see the shutdown catch in RunStepAsync).
+            // The statement may or may not have changed data, so the engine never sends it again: the run fails and a person decides (an operator retry runs it).
+            await FailUnfinishedWriteAsync(run, node, step);
+            return null;
+        }
+
         if (node.Type == NodeCatalog.ApprovalStep)
         {
             await RequestApprovalAsync(run, node, step, shutdown);
@@ -349,7 +357,7 @@ public sealed partial class ExecutionEngine(
     private static bool Rejects(string nodeType, string? port) => (nodeType, port) is
         (NodeCatalog.Validate, "invalid") or (NodeCatalog.ParseContent, "failed") or (NodeCatalog.MapFields, "failed")
         or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail or NodeCatalog.CombinePdfs or NodeCatalog.SendEmail, "failed")
-        or (NodeCatalog.QueryDatabase, "failed")
+        or (NodeCatalog.QueryDatabase, "failed") or (NodeCatalog.WriteDatabase, "failed")
         or (NodeCatalog.ApprovalStep, Approval.Rejected);
 
     private sealed record Outcome(string? Port, object? Result, Func<Task>? AfterSave = null);
@@ -412,7 +420,9 @@ public sealed partial class ExecutionEngine(
         {
             // The Worker is stopping. Leave the run resumable: Hangfire re-queues the job and the next run
             // continues here (or the dispatcher re-queues it if that doesn't happen).
-            if (step.Status == StepStatus.Running)
+            // A Write to database step stays Running: its statement may already have reached the database, so the next run must not send it again
+            // (StepAsync fails the run with write.outcome_unknown when it finds the step Running).
+            if (step.Status == StepStatus.Running && node.Type != NodeCatalog.WriteDatabase)
             {
                 step.Interrupt();
             }
@@ -426,7 +436,7 @@ public sealed partial class ExecutionEngine(
 #pragma warning restore CA1031
         {
             now = clock.GetUtcNow();
-            var (code, message, retryable) = Describe(ex, timeoutToken);
+            var (code, message, retryable) = Describe(ex, node.Type, timeoutToken);
             step.Fail(message, now);
             LogStepFailed(logger, node.Id, execution.Id, step.Attempt, code);
             Event(execution, ExecutionEventTypes.StepFailed, now, node.Id, Data(step, ("attempt", step.Attempt), ("code", code)));
@@ -474,6 +484,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.CombinePdfs => CombinePdfsAsync(run, node, ct),
         NodeCatalog.SendEmail => SendEmailAsync(run, node, ct),
         NodeCatalog.QueryDatabase => QueryDatabaseAsync(run, node, ct),
+        NodeCatalog.WriteDatabase => WriteDatabaseAsync(run, node, ct),
         NodeCatalog.PrintQueue => PrintQueueAsync(run, node, ct),
         NodeCatalog.UploadSftp => Task.FromResult(UploadSftp(node)),
         NodeCatalog.DeliverApi => Task.FromResult(DeliverApi(node)),
@@ -981,6 +992,63 @@ public sealed partial class ExecutionEngine(
         return JsonSerializer.Deserialize<JsonElement>(root.ToJsonString());
     }
 
+    /// <summary>
+    /// Write to database: runs the step's one INSERT, UPDATE or DELETE on the named Database connection (writes must be switched on for it), its @parameters bound
+    /// from the run data with the same rules as Query database. A parameter whose path has no value, or holds an object or a list, is the data's fault: port 'failed'
+    /// (the run ends Rejected unless handled) and the database is not called. Every failure of the write itself ends the run Failed and is never retried
+    /// automatically: the statement may have reached the database, so only a person decides to run it again (the message says when the outcome is unknown).
+    /// The run's data is not changed. The result holds the row count, the duration and the connection key; never a value, never the SQL.
+    /// </summary>
+    private async Task<Outcome> WriteDatabaseAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    {
+        var (bound, issues) = QueryParameters(node, run.Data);
+        if (issues.Count > 0)
+        {
+            return new Outcome("failed", new { issues });
+        }
+
+        var connection = QuerySetting(node, "connection");
+        var request = new DatabaseWriteRequest(connection, QuerySetting(node, "sql"), bound,
+            QueryNumber(node, "maxRows", 1), TimeSpan.FromSeconds(QueryNumber(node, "timeoutSeconds", 15)));
+        DatabaseWriteResult written;
+        try
+        {
+            written = await write.RunAsync(request, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The service reports failures as results; anything else is unexpected, may have happened after the statement was sent, and its text could name
+            // the server or the login, so it is not kept. A cancellation is left to RunStepAsync (shutdown: the step stays Running; otherwise a final failure).
+            throw new StepException("db.query_failed", DatabaseQueryMessages.OutcomeUnknown, retryable: false);
+        }
+
+        if (!written.Ok)
+        {
+            // Never retryable, whatever the code: the message already carries the outcome-unknown warning when the statement may have run.
+            throw new StepException(written.Code!, written.Message ?? (written.OutcomeUnknown ? DatabaseQueryMessages.OutcomeUnknown : DatabaseQueryMessages.For(written.Code!)), retryable: false);
+        }
+
+        return new Outcome("written", new { rowsAffected = written.RowsAffected, durationMs = written.DurationMs, connection });
+    }
+
+    /// <summary>
+    /// A Write to database step found Running: an earlier run started it and never recorded how it ended. It is not run again; it is recorded failed with the
+    /// outcome-unknown warning and the run fails (not retried), with the same events as any other final failure. An operator retry runs it again.
+    /// </summary>
+    private async Task FailUnfinishedWriteAsync(Run run, Workflows.WorkflowNode node, ExecutionStep step)
+    {
+        const string code = "write.outcome_unknown";
+        var execution = run.Execution;
+        var now = clock.GetUtcNow();
+        step.Fail(DatabaseQueryMessages.OutcomeUnknown, now);
+        LogStepFailed(logger, node.Id, execution.Id, step.Attempt, code);
+        Event(execution, ExecutionEventTypes.StepFailed, now, node.Id, Data(step, ("attempt", step.Attempt), ("code", code)));
+        execution.Fail(code, $"Step '{node.Title}' was started but never recorded as finished (the Worker stopped or crashed): the statement may or may not have changed data. Check the database before retrying.", now);
+        Event(execution, ExecutionEventTypes.Failed, now, node.Id, Data(step, ("code", code)));
+        Completed(execution, now);
+        await SaveAsync(execution, CancellationToken.None);
+    }
+
     /// <summary>Upload to SFTP is simulated: nothing connects to a server. The step succeeds and its result says that nothing was uploaded.</summary>
     private static Outcome UploadSftp(Workflows.WorkflowNode node)
     {
@@ -1228,6 +1296,9 @@ public sealed partial class ExecutionEngine(
 
             run.Data = WithQueryResult(node, run.Data, read);
         }
+
+        // A Write to database step that succeeded is deliberately NOT handled here: it changed nothing in the run's data, and running it again would repeat
+        // the write. Its row count stays in the step record; the database is never called on resume (WriteDatabaseExecutionTests).
     }
 
     /// <summary>A step that succeeded before can't be re-established on resume: the run fails (an operator retry resumes here). Only the code is logged.</summary>
@@ -1290,6 +1361,10 @@ public sealed partial class ExecutionEngine(
                 execution.Reject("data.query_invalid", $"The data can't make a valid query in step '{last.Title}' (see its issues).", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;
+            case (NodeCatalog.WriteDatabase, "failed"):
+                execution.Reject("data.write_invalid", $"The data can't make a valid statement in step '{last.Title}' (see its issues).", now);
+                Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
+                break;
             case (NodeCatalog.CombinePdfs, "failed"):
                 execution.Reject("combine.not_enough_documents", $"Step '{last.Title}' found fewer than two PDFs to combine (see its issues).", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
@@ -1311,11 +1386,20 @@ public sealed partial class ExecutionEngine(
         new { documentId = d.Id, d.FileName, d.SizeBytes, d.Sha256, warnings, renderWarnings };
 
     /// <summary>Code, sanitized message and retryability of a step failure. Messages never contain payload values.</summary>
-    private static (string Code, string Message, bool Retryable) Describe(Exception ex, CancellationToken timeoutToken)
+    private static (string Code, string Message, bool Retryable) Describe(Exception ex, string nodeType, CancellationToken timeoutToken)
     {
         if (ex is StepException step)
         {
             return (step.Code, step.Message, step.Retryable);
+        }
+
+        if (nodeType == NodeCatalog.WriteDatabase)
+        {
+            // A write is never retried automatically: a cancellation that is not the Worker stopping (the run's time limit) or any other surprise may have
+            // come after the statement reached the database.
+            return ex is OperationCanceledException && timeoutToken.IsCancellationRequested
+                ? ("execution.timeout", $"The run exceeded its time limit of {RunTimeout.TotalMinutes:0} minutes while the statement was running. {DatabaseQueryMessages.OutcomeUnknown}", false)
+                : ("db.query_failed", DatabaseQueryMessages.OutcomeUnknown, false);
         }
 
         if (ex is OperationCanceledException && timeoutToken.IsCancellationRequested)

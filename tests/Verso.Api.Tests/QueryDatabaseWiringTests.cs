@@ -2,6 +2,7 @@ using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Verso.Application;
 using Verso.Application.Connections;
@@ -53,6 +54,49 @@ public sealed class QueryDatabaseWiringTests
         // Write to database step (Phase 2): the write service resolves in a scope; the SQL Server write runner is registered (the other providers arrive with Verso.Databases).
         Assert.IsType<DatabaseWriteService>(scope.ServiceProvider.GetRequiredService<IDatabaseWrite>());
         Assert.Contains(scope.ServiceProvider.GetServices<IProviderWriteRunner>(), r => r.Provider == DatabaseProviders.SqlServer);
+    }
+
+    [Fact]
+    public void Worker_DI_resolves_the_engine_with_IDatabaseWrite()
+    {
+        // Write to database step, Task 6: the engine now needs IDatabaseWrite. With the Worker's registrations it resolves (ValidateScopes: the scoped write
+        // service is taken in a scope); without IDatabaseWrite it does not, so the engine really asks for it.
+        using (var provider = WorkerServices().BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true }))
+        using (var scope = provider.CreateScope())
+        {
+            Assert.NotNull(scope.ServiceProvider.GetRequiredService<ExecutionEngine>());
+            Assert.IsType<DatabaseWriteService>(scope.ServiceProvider.GetRequiredService<IDatabaseWrite>());
+        }
+
+        var withoutWrite = WorkerServices();
+        withoutWrite.RemoveAll<IDatabaseWrite>();
+        using var broken = withoutWrite.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var brokenScope = broken.CreateScope();
+        var ex = Assert.Throws<InvalidOperationException>(() => brokenScope.ServiceProvider.GetRequiredService<ExecutionEngine>());
+        Assert.Contains(nameof(IDatabaseWrite), ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>The Worker's registrations (src/Verso.Worker/Program.cs) relevant to the engine, with fakes for what needs Chromium, files or Hangfire. Nothing connects.</summary>
+    private static ServiceCollection WorkerServices()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:Verso"] = "Server=(localdb)\\MSSQLLocalDB;Database=verso-wiring-not-opened;Integrated Security=true",
+        }).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddVersoPersistence(configuration);
+        services.AddVersoWorkerUseCases();
+        services.AddVersoDatabaseConnections(configuration);
+        services.AddVersoDatabaseDrivers();
+        services.AddSingleton<IPdfPrinter, FakePdfPrinter>();
+        services.AddSingleton<IDocxWriter, FakeDocxWriter>();
+        services.AddSingleton<IPdfCombiner, FakePdfCombiner>();
+        services.AddSingleton<IEmailSender, FakeEmailSender>();
+        services.AddSingleton<IPrintSpooler, FakePrintSpooler>();
+        services.AddSingleton<IDocumentStore, TestDocumentStore>();
+        services.AddSingleton<IExecutionJobs, RecordingExecutionJobs>();
+        return services;
     }
 
     [Fact]
