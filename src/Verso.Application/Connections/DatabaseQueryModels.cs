@@ -47,7 +47,7 @@ public static class DatabaseQueryMessages
     {
         "db.writes_not_allowed" => "Writes are switched off for this connection. An administrator can switch them on in Configuration, Connections.",
         "db.too_many_rows_affected" => "The statement would change more rows than the step allows, so nothing was changed.",
-        "db.outcome_unknown" => OutcomeUnknown,
+        "db.rows_affected_unknown" => "The server did not report how many rows changed (for example because of SET NOCOUNT), so nothing was kept.",
         "db.connection_unavailable" => "The connection no longer exists or is switched off.",
         "db.server_not_allowed" => "The administrator has not allowed the Worker to connect to this server (DatabaseConnections:AllowedServers).",
         "db.password_unreadable" => "The stored password can't be read: the Worker's Secrets:MasterKey is missing or differs from the API's.",

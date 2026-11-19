@@ -229,9 +229,8 @@ public sealed class DatabaseWriteTests : IAsyncLifetime
         Assert.Equal(Seeded, await RowsAsync());
 
         // The same connection and key without requireWrites reach the decrypt step and fail there: so the refusal above came before it.
-        var (settings, allowsWrites, code) = await new DatabaseConnectionResolver(db, wrongKey, new DatabaseConnectionOptions()).ResolveAsync(key, requireWrites: false, CancellationToken.None);
+        var (settings, code) = await new DatabaseConnectionResolver(db, wrongKey, new DatabaseConnectionOptions()).ResolveAsync(key, requireWrites: false, CancellationToken.None);
         Assert.Null(settings);
-        Assert.False(allowsWrites);
         Assert.Equal("db.password_unreadable", code);
     }
 
@@ -344,11 +343,40 @@ public sealed class DatabaseWriteTests : IAsyncLifetime
                 new DatabaseWriteRequest(key, "DELETE FROM dbo.VersoWriteTest WHERE id = 1", new Dictionary<string, object?>(), 1, TimeSpan.FromSeconds(5)), cancelled.Token));
         }
 
-        // A cancel while the statement runs: a cancellation (the engine's shutdown handling decides), after the rollback.
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new SqlServerWriteRunner().RunAsync(
-            Settings(), new DatabaseWriteRequest(key, SlowInsert, new Dictionary<string, object?>(), 1000, TimeSpan.FromSeconds(30)), cts.Token));
+        // A cancel while the statement runs: a cancellation (the engine's shutdown handling decides), after the rollback. The cancel is sent only once the server
+        // shows the INSERT running for the "Verso write" session, so it really lands during the statement (not while connecting).
+        using var cts = new CancellationTokenSource();
+        var run = new SqlServerWriteRunner().RunAsync(
+            Settings(), new DatabaseWriteRequest(key, SlowInsert, new Dictionary<string, object?>(), 1000, TimeSpan.FromSeconds(30)), cts.Token);
+        Assert.True(await WaitForRunningWriteAsync(TimeSpan.FromSeconds(15)), "the INSERT never showed as running");
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
         Assert.Equal(Seeded, await RowsAsync());
+    }
+
+    /// <summary>Polls sys.dm_exec_requests (the test's own Windows login sees every session on LocalDB) until an INSERT of a "Verso write" session runs.</summary>
+    private async Task<bool> WaitForRunningWriteAsync(TimeSpan limit)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*) FROM sys.dm_exec_requests r JOIN sys.dm_exec_sessions s ON s.session_id = r.session_id
+            WHERE s.program_name = N'Verso write' AND r.command LIKE N'INSERT%'
+            """;
+        while (clock.Elapsed < limit)
+        {
+            if ((int)(await command.ExecuteScalarAsync())! > 0)
+            {
+                return true;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return false;
     }
 
     [Fact]
@@ -554,10 +582,83 @@ public sealed class DatabaseWriteExecutorTests
 
         var result = await Run(connection, raw);
 
-        Assert.Equal("db.query_failed", result.Code);
+        Assert.Equal("db.rows_affected_unknown", result.Code);
         Assert.False(result.OutcomeUnknown);
+        Assert.Equal("The server did not report how many rows changed (for example because of SET NOCOUNT), so nothing was kept.", result.Message);
         Assert.Equal(0, connection.TransactionCommits);
         Assert.DoesNotContain("COMMIT", connection.Executed);
+    }
+
+    [Fact]
+    public async Task Raw_mode_without_a_begin_statement_is_refused_before_opening()
+    {
+        // Without BEGIN the statement would autocommit and the cap's ROLLBACK would undo nothing.
+        var connection = new FakeConnection();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => DbWriteExecution.RunAsync(
+            connection, null, true, Sql, new DatabaseWriteRequest("k", Sql, new Dictionary<string, object?>(), 1, TimeSpan.FromSeconds(5)), "@",
+            (ex, sent) => DatabaseWriteResult.Failure("db.mapped", sent), CancellationToken.None));
+
+        Assert.Equal(ConnectionState.Closed, connection.State);
+        Assert.Empty(connection.Executed);
+    }
+
+    public static TheoryData<bool, Exception, bool> FailuresWhileClosing => new()
+    {
+        { false, new IOException("socket"), false },
+        { false, new InvalidOperationException("closed"), false },
+        { false, new FakeDbException("gone"), true },
+        { false, new NotSupportedException("odd"), true },
+        { false, new NotSupportedException("odd"), false }, // not one of the tolerated failures: still success, the commit happened
+        { true, new TimeoutException("socket"), true },     // raw mode has no driver transaction: only the connection is closed
+        { true, new NotSupportedException("odd"), true },
+    };
+
+    [Theory]
+    [MemberData(nameof(FailuresWhileClosing))]
+    public async Task A_committed_write_is_success_whatever_closing_throws(bool raw, Exception failure, bool onConnection)
+    {
+        var connection = new FakeConnection
+        {
+            TransactionDisposeFailure = onConnection ? null : failure,
+            ConnectionDisposeFailure = onConnection ? failure : null,
+        };
+
+        var result = await Run(connection, raw);
+
+        Assert.True(result.Ok, result.Code);
+        Assert.Equal(1, result.RowsAffected);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_cancel_after_the_commit_still_reports_success(bool raw)
+    {
+        using var cts = new CancellationTokenSource();
+        var connection = new FakeConnection { OnCommit = cts.Cancel, ConnectionDisposeFailure = new InvalidOperationException("closed") };
+
+        var result = await Run(connection, raw, ct: cts.Token);
+
+        Assert.True(cts.IsCancellationRequested);
+        Assert.True(result.Ok, result.Code);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_failing_dispose_does_not_turn_a_known_failure_into_an_unknown_one(bool raw)
+    {
+        foreach (Exception failure in new Exception[] { new IOException("socket"), new FakeDbException("gone"), new InvalidOperationException("closed"), new TimeoutException("x") })
+        {
+            var overCap = await Run(new FakeConnection { RowsAffected = 5, TransactionDisposeFailure = failure, ConnectionDisposeFailure = failure }, raw);
+            Assert.Equal("db.too_many_rows_affected", overCap.Code);
+            Assert.False(overCap.OutcomeUnknown);
+
+            var known = await Run(new FakeConnection { StatementFailure = new KnownServerError("x"), TransactionDisposeFailure = failure, ConnectionDisposeFailure = failure }, raw);
+            Assert.Equal("db.mapped", known.Code);
+            Assert.False(known.OutcomeUnknown);
+        }
     }
 
     public static TheoryData<bool, Exception> CommitFailures => new()
@@ -703,6 +804,9 @@ public sealed class DatabaseWriteExecutorTests
         public Exception? CommitFailure { get; init; }
         public Exception? RollbackFailure { get; init; }
         public Action? OnStatement { get; init; }
+        public Action? OnCommit { get; init; }
+        public Exception? TransactionDisposeFailure { get; init; }
+        public Exception? ConnectionDisposeFailure { get; init; }
 
         public List<string> Executed { get; } = [];
         public List<string> Parameters { get; } = [];
@@ -739,6 +843,15 @@ public sealed class DatabaseWriteExecutorTests
         }
 
         protected override DbCommand CreateDbCommand() => new FakeCommand(this);
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing && ConnectionDisposeFailure is not null)
+            {
+                throw ConnectionDisposeFailure;
+            }
+        }
     }
 
     private sealed class FakeTransaction(FakeConnection connection) : DbTransaction
@@ -754,6 +867,7 @@ public sealed class DatabaseWriteExecutorTests
             }
 
             connection.TransactionCommits++;
+            connection.OnCommit?.Invoke();
         }
 
         public override void Rollback()
@@ -762,6 +876,15 @@ public sealed class DatabaseWriteExecutorTests
             if (connection.RollbackFailure is not null)
             {
                 throw connection.RollbackFailure;
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing && connection.TransactionDisposeFailure is not null)
+            {
+                throw connection.TransactionDisposeFailure;
             }
         }
     }
@@ -805,6 +928,7 @@ public sealed class DatabaseWriteExecutorTests
                     }
 
                     connection.Executed.Add(CommandText);
+                    connection.OnCommit?.Invoke();
                     return 0;
                 case "ROLLBACK":
                     connection.RawRollbacks++;

@@ -36,7 +36,7 @@ public sealed class DatabaseWriteService(DatabaseConnectionResolver resolver, IE
             return DatabaseWriteResult.Failure("sql.bad_parameter", false);
         }
 
-        var (settings, _, code) = await resolver.ResolveAsync(request.ConnectionKey, requireWrites: true, ct);
+        var (settings, code) = await resolver.ResolveAsync(request.ConnectionKey, requireWrites: true, ct);
         if (settings is null)
         {
             return DatabaseWriteResult.Failure(code ?? "db.connection_unavailable", false);

@@ -37,7 +37,7 @@ public sealed class DatabaseQueryService(IVersoDbContext db, ISecretProtector se
             return DatabaseQueryResult.Failure("sql.bad_parameter", false);
         }
 
-        var (settings, _, code) = await _resolver.ResolveAsync(request.ConnectionKey, requireWrites: false, ct);
+        var (settings, code) = await _resolver.ResolveAsync(request.ConnectionKey, requireWrites: false, ct);
         if (settings is null)
         {
             return DatabaseQueryResult.Failure(code ?? "db.connection_unavailable", false);

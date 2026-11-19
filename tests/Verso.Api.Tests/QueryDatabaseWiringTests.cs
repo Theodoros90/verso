@@ -56,6 +56,16 @@ public sealed class QueryDatabaseWiringTests
     }
 
     [Fact]
+    public async Task TheApiHost_CannotResolve_TheWriteService_OrAnyWriteRunner()
+    {
+        await using var factory = new VersoApiFactory(new TestDatabase("nowrite").ConnectionString); // no DB access needed
+        using var scope = factory.Services.CreateScope();
+
+        Assert.Null(scope.ServiceProvider.GetService<IDatabaseWrite>());
+        Assert.Empty(scope.ServiceProvider.GetServices<IProviderWriteRunner>());
+    }
+
+    [Fact]
     public void TheApi_DoesNotReference_TheDatabaseDrivers()
     {
         // Read from the compiled Verso.Api assembly's metadata (as RendererPurityTests does for the renderer).
