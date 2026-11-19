@@ -629,7 +629,7 @@ public static class NodeCatalog
             """{ "connection": "", "sql": "SELECT name, status FROM customers WHERE id = @id", "parameters": "id = customer.id", "resultName": "db", "maxRows": 1, "timeoutSeconds": 15 }"""),
 
         Node(WriteDatabase, "Write to database", "output",
-            "Changes data in a database with one INSERT, UPDATE or DELETE. The connection must have writes switched on by an administrator. The step is never retried automatically and never repeated on resume.",
+            "Changes data in a database with one INSERT, UPDATE or DELETE. The connection must have writes switched on by an administrator. The step is never retried automatically and never repeated on resume. A failed run may have partly happened (earlier writes stay, and a write whose outcome is unknown may have been applied): check the database before running it again.",
             [In], [new PortDto("written", "Written", true), new PortDto("failed", "Failed", false)],
             $$"""
             { "type": "object",

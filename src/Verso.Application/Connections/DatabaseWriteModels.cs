@@ -16,7 +16,7 @@ public sealed record DatabaseWriteResult(string? Code, string? Message, bool Out
     public bool Ok => Code is null;
 
     public static DatabaseWriteResult Failure(string code, bool outcomeUnknown) =>
-        new(code, outcomeUnknown ? DatabaseQueryMessages.OutcomeUnknown : DatabaseQueryMessages.For(code), outcomeUnknown, 0, 0);
+        new(code, outcomeUnknown ? DatabaseQueryMessages.OutcomeUnknown : DatabaseQueryMessages.ForWrite(code), outcomeUnknown, 0, 0);
 
     public static DatabaseWriteResult Success(int rowsAffected, long durationMs) => new(null, null, false, rowsAffected, durationMs);
 }

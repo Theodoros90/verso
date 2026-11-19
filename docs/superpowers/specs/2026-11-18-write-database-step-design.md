@@ -1,6 +1,6 @@
 # Write to database step (Phase 2): design
 
-Date: 2026-11-18. Status: **awaiting owner approval**. Will become ADR 0020. Builds on ADR 0019 (Query database step, Phase 1, branch `feature/query-database-step`, not yet merged).
+Date: 2026-11-18. Status: **approved by the owner on 2026-11-19**, as was the implementation plan (`docs/superpowers/plans/2026-11-19-write-database-step.md`). Became [ADR 0020](../../adr/0020-write-database-step.md), which records what was built (including the later review additions: the `loop.items_changed` check and the `DatabaseWriteExecuted` audit entry). Builds on ADR 0019 (Query database step, Phase 1, branch `feature/query-database-step`, not yet merged).
 
 ## Intent
 A workflow can change data in a database during a run: for example insert a row built from values in the parsed XML. The author types one `INSERT`, `UPDATE` or `DELETE` in the step, maps `@parameters` to data fields, and the Worker runs it with the Database connection from Configuration.

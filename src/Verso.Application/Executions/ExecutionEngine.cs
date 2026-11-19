@@ -1083,7 +1083,7 @@ public sealed partial class ExecutionEngine(
         if (!written.Ok)
         {
             // Never retryable, whatever the code: the message already carries the outcome-unknown warning when the statement may have run.
-            throw new StepException(written.Code!, written.Message ?? (written.OutcomeUnknown ? DatabaseQueryMessages.OutcomeUnknown : DatabaseQueryMessages.For(written.Code!)), retryable: false);
+            throw new StepException(written.Code!, written.Message ?? (written.OutcomeUnknown ? DatabaseQueryMessages.OutcomeUnknown : DatabaseQueryMessages.ForWrite(written.Code!)), retryable: false);
         }
 
         // Audited when the write is known to have happened; the entry is saved with the step's success (the same SaveChanges in RunStepAsync). Counts and keys only.

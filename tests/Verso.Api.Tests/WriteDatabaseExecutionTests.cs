@@ -213,7 +213,7 @@ public sealed class WriteDatabaseExecutionTests(MigratedDatabaseFixture fixture)
         var (id, done) = await RunAsync(Write());
 
         await AssertFailedWithoutRetryAsync(id, done, "db.query_failed", calls: 1);
-        Assert.Contains(DatabaseQueryMessages.For("db.query_failed"), done.GetProperty("failureMessage").GetString(), StringComparison.Ordinal);
+        Assert.Contains(DatabaseQueryMessages.ForWrite("db.query_failed"), done.GetProperty("failureMessage").GetString(), StringComparison.Ordinal);
         Assert.Equal(1, Step(done, "write").GetProperty("attempt").GetInt32());
     }
 
@@ -237,7 +237,7 @@ public sealed class WriteDatabaseExecutionTests(MigratedDatabaseFixture fixture)
         var (id, done) = await RunAsync(Write());
 
         await AssertFailedWithoutRetryAsync(id, done, "db.too_many_rows_affected", calls: 1);
-        Assert.Contains(DatabaseQueryMessages.For("db.too_many_rows_affected"), done.GetProperty("failureMessage").GetString(), StringComparison.Ordinal);
+        Assert.Contains(DatabaseQueryMessages.ForWrite("db.too_many_rows_affected"), done.GetProperty("failureMessage").GetString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -390,10 +390,11 @@ public sealed class WriteDatabaseExecutionTests(MigratedDatabaseFixture fixture)
     }
 
     [Fact]
-    public async Task Step_timeout_during_a_write_is_a_non_retryable_unknown_failure()
+    public async Task A_cancellation_that_is_neither_shutdown_nor_the_run_limit_fails_the_write_unknown_without_retry()
     {
-        // A cancellation that is not the Worker stopping (the run's time limit; any other step would treat it as a retryable timeout).
-        // The fake throws it while the statement "runs"; the run's real 5-minute limit takes the same branch with the code execution.timeout.
+        // The fake throws a bare OperationCanceledException while the statement "runs": neither the Worker's shutdown token nor the run's time limit is cancelled,
+        // so the engine takes the write's generic outcome-unknown path (db.query_failed, not retried). The run's real 5-minute limit (execution.timeout) is a
+        // separate branch that no test reaches (no seam to shorten the limit; ADR 0020 item 7).
         _write.Throw = new OperationCanceledException();
 
         var (id, done) = await RunAsync(Write());

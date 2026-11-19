@@ -66,4 +66,16 @@ public static class DatabaseQueryMessages
         "sql.unsupported_syntax" => "This SQL syntax is not supported by the Query database step.",
         _ => DatabaseProbeMessages.For(code),
     };
+
+    /// <summary>Verso's own wording for each failure code of a write (Write to database step): the query wording where it fits, a statement's where it doesn't.</summary>
+    public static string ForWrite(string code) => code switch
+    {
+        "db.query_failed" => "The database could not run the statement. Check the statement, the table and column names and the login's permissions.",
+        "sql.empty" => "Type an INSERT, UPDATE or DELETE statement.",
+        "sql.too_long" => "The statement is too long.",
+        "sql.select_into" => "INTO is allowed only right after INSERT (SELECT ... INTO and OUTPUT ... INTO are not).",
+        "sql.unterminated" => "The statement has an unclosed quote or comment.",
+        "sql.unsupported_syntax" => "This SQL syntax is not supported by the Write to database step.",
+        _ => For(code),
+    };
 }

@@ -199,7 +199,7 @@ public sealed class DatabaseWriteTests : IAsyncLifetime
 
         Assert.Equal("db.too_many_rows_affected", result.Code);
         Assert.False(result.OutcomeUnknown);
-        Assert.Equal(DatabaseQueryMessages.For("db.too_many_rows_affected"), result.Message);
+        Assert.Equal(DatabaseQueryMessages.ForWrite("db.too_many_rows_affected"), result.Message);
         Assert.Equal(0, result.RowsAffected);
         Assert.Equal(Seeded, await RowsAsync());
     }
@@ -222,7 +222,7 @@ public sealed class DatabaseWriteTests : IAsyncLifetime
         var unique = await RunAsync(key, "UPDATE dbo.VersoWriteTest SET holder = @holder WHERE id = @id", new() { ["holder"] = "Ada", ["id"] = 2 });
         Assert.Equal("db.query_failed", unique.Code);
         Assert.False(unique.OutcomeUnknown);
-        Assert.Equal(DatabaseQueryMessages.For("db.query_failed"), unique.Message);
+        Assert.Equal("The database could not run the statement. Check the statement, the table and column names and the login's permissions.", unique.Message); // the write wording, not the query's
 
         var notNull = await RunAsync(key, "INSERT INTO dbo.VersoWriteTest (id, holder, grp) VALUES (@id, @holder, 1)", new() { ["id"] = 9, ["holder"] = null });
         Assert.Equal("db.query_failed", notNull.Code);
@@ -485,7 +485,7 @@ public sealed class DatabaseWriteTests : IAsyncLifetime
 
         Assert.Equal(code, result.Code);
         Assert.Equal(unknown, result.OutcomeUnknown);
-        Assert.Equal(unknown ? DatabaseQueryMessages.OutcomeUnknown : DatabaseQueryMessages.For(code), result.Message);
+        Assert.Equal(unknown ? DatabaseQueryMessages.OutcomeUnknown : DatabaseQueryMessages.ForWrite(code), result.Message);
         Assert.DoesNotContain(Marker, result.Message!, StringComparison.Ordinal);
     }
 

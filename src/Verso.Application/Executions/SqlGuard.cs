@@ -22,8 +22,10 @@ public sealed record SqlWriteCheck(bool Ok, string? Code, string? Message, IRead
 /// below apply to both exactly.
 /// <para>
 /// The guard filters tokens; it does not parse SQL. On SQL Server, where statements need no ';', a read-only second statement may therefore still get through in a
-/// spelling nobody foresaw. It cannot write data: every write, DDL and procedure keyword is refused anywhere in the text, inside parentheses too. And it cannot
-/// satisfy the WHERE rule: a second statement can only bring a top-level WHERE with a top-level SELECT, UPDATE, DELETE or MERGE, and all of them are refused.
+/// spelling nobody foresaw. Such a statement can do nothing the write statement itself could not already do: every write, DDL and procedure keyword is refused
+/// anywhere in the text, inside parentheses too, so it cannot write data with them; it can still call functions (for example an EXTERNAL_ACCESS CLR function),
+/// use sequences or take locks, as a SELECT can. And it cannot satisfy the WHERE rule: a second statement can only bring a top-level WHERE with a top-level SELECT,
+/// UPDATE, DELETE or MERGE, and all of them are refused.
 /// </para>
 /// <para>
 /// One text is checked for four databases (SQL Server, PostgreSQL, MySQL / MariaDB, Oracle) that do not tokenize SQL the same way. Wherever they could disagree

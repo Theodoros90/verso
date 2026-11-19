@@ -77,6 +77,7 @@ public sealed class WriteDatabaseNodeTests
         Assert.Equal(1, type.Defaults.GetProperty("maxRows").GetInt32());
         Assert.Equal(15, type.Defaults.GetProperty("timeoutSeconds").GetInt32());
         Assert.Contains("never retried automatically and never repeated on resume", type.Description, StringComparison.Ordinal);
+        Assert.Contains("A failed run may have partly happened", type.Description, StringComparison.Ordinal); // spec Design 6 helper text
     }
 
     [Theory]

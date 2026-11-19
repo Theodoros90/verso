@@ -4,6 +4,54 @@ namespace Verso.UnitTests.Executions;
 
 public sealed class SqlGuardWriteTests
 {
+    [Fact]
+    public void The_sample_SQL_of_the_write_database_recipe_is_accepted_exactly_as_documented()
+    {
+        // docs/samples/write-database-audit-row.md says its SQL passes CheckWrite: the text is read from the document itself, so the two cannot drift apart.
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Verso.slnx")))
+        {
+            dir = dir.Parent;
+        }
+
+        Assert.NotNull(dir);
+        var doc = File.ReadAllText(Path.Combine(dir.FullName, "docs", "samples", "write-database-audit-row.md")).ReplaceLineEndings("\n");
+        var blocks = doc.Split("```sql\n").Skip(1).Select(b => b[..b.IndexOf("```", StringComparison.Ordinal)].Trim()).ToList();
+        var sql = Assert.Single(blocks, b => b.StartsWith("INSERT", StringComparison.Ordinal));
+        Assert.Contains("WHERE NOT EXISTS", sql, StringComparison.Ordinal);
+
+        var r = SqlGuard.CheckWrite(sql);
+        Assert.True(r.Ok, r.Message);
+        Assert.Equal("INSERT", r.Verb);
+        Assert.Equal("no,doc", string.Join(",", r.Parameters));
+    }
+
+    [Theory]
+    [InlineData("INSERT IGNORE INTO t (a) VALUES (@a)")]
+    [InlineData("REPLACE INTO t (a) VALUES (@a)")]
+    [InlineData("INSERT TOP (5) INTO t (a) SELECT a FROM u WHERE x = @x")]
+    [InlineData("DELETE FROM t OUTPUT COALESCE((SELECT 1), deleted.a) WHERE id = @id")]
+    public void Documented_false_rejections_are_refused(string sql)
+    {
+        // ADR 0020, Consequences: harmless SQL the conservative guard refuses (rewrite it). If one of these starts to pass, update the ADR's list.
+        Assert.False(SqlGuard.CheckWrite(sql).Ok);
+    }
+
+    [Theory]
+    [InlineData("db.query_failed", "The database could not run the statement. Check the statement, the table and column names and the login's permissions.")]
+    [InlineData("sql.empty", "Type an INSERT, UPDATE or DELETE statement.")]
+    [InlineData("sql.unsupported_syntax", "This SQL syntax is not supported by the Write to database step.")]
+    [InlineData("sql.select_into", "INTO is allowed only right after INSERT (SELECT ... INTO and OUTPUT ... INTO are not).")]
+    [InlineData("sql.too_long", "The statement is too long.")]
+    [InlineData("sql.unterminated", "The statement has an unclosed quote or comment.")]
+    public void Write_failures_have_statement_wording_and_query_wording_is_unchanged(string code, string message)
+    {
+        Assert.Equal(message, Verso.Application.Connections.DatabaseQueryMessages.ForWrite(code));
+        Assert.Equal(message, Verso.Application.Connections.DatabaseWriteResult.Failure(code, outcomeUnknown: false).Message);
+        Assert.NotEqual(message, Verso.Application.Connections.DatabaseQueryMessages.For(code)); // Phase 1 (Query database) keeps its own wording
+        Assert.Equal(Verso.Application.Connections.DatabaseQueryMessages.For("db.writes_not_allowed"), Verso.Application.Connections.DatabaseQueryMessages.ForWrite("db.writes_not_allowed"));
+    }
+
     [Theory]
     [InlineData("INSERT INTO audit (a, b) VALUES (@a, @b)", "INSERT", "a,b")]
     [InlineData("UPDATE t SET a = @a WHERE id = @id", "UPDATE", "a,id")]
