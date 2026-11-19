@@ -282,15 +282,29 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
         if (writeConfig is not null)
         {
             // A Write to database step: by default validate (valid) → write (written) → whatever validate led to (the approval, the loop or pdf);
-            // "in-loop": loop (each) → write → pdf. Its 'failed' output is left open (the run ends Rejected there).
+            // "in-loop": loop (each) → write → pdf; "in-loop-branch": loop (each) → if / else (yes, always taken) → write → pdf, its 'no' left open.
+            // Its 'failed' output is left open (the run ends Rejected there).
             var nodes = definition["nodes"]!.AsArray();
             var edges = definition["edges"]!.AsArray();
             var write = JsonNode.Parse("""{ "id": "write", "type": "write-database", "title": "Write to database", "position": { "x": 400, "y": 560 }, "config": {} }""")!;
             write["config"] = writeConfig.DeepClone();
             nodes.Add(write);
-            var before = edges.First(e => (string?)e!["id"] == (writeAt == "in-loop" ? "e11" : "e2"))!;
+            var before = edges.First(e => (string?)e!["id"] == (writeAt is "in-loop" or "in-loop-branch" ? "e11" : "e2"))!;
             var target = (string)before["target"]!;
-            before["target"] = "write";
+            if (writeAt == "in-loop-branch")
+            {
+                nodes.Add(JsonNode.Parse("""
+                    { "id": "loopif", "type": "if-else", "title": "If / else in the loop", "position": { "x": 400, "y": 680 },
+                      "config": { "conditions": [ { "field": "customer.name", "op": "is-not-empty", "value": "" } ], "yesLabel": "Yes", "noLabel": "No" } }
+                    """)!);
+                before["target"] = "loopif";
+                edges.Add(JsonNode.Parse("""{ "id": "w0", "source": "loopif", "sourcePort": "yes", "target": "write", "targetPort": "in" }"""));
+            }
+            else
+            {
+                before["target"] = "write";
+            }
+
             edges.Add(JsonNode.Parse($$"""{ "id": "w1", "source": "write", "sourcePort": "written", "target": "{{target}}", "targetPort": "in" }"""));
         }
 

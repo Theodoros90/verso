@@ -111,7 +111,7 @@ public sealed partial class ExecutionEngine(
             if (node.Type == NodeCatalog.ForEach && port == ForEach.Each)
             {
                 // The loop runs the steps after 'each' once per item; when the last item is done the run is over.
-                if (!await RunLoopAsync(run, node, timeout.Token, ct))
+                if (!await RunLoopAsync(run, node, step.Step, timeout.Token, ct))
                 {
                     return;
                 }
@@ -147,10 +147,29 @@ public sealed partial class ExecutionEngine(
     /// Runs the steps after a For each's <c>each</c> output once per item. An item ends where its path ends or returns to the For each.
     /// The first item that is rejected or fails ends the whole run (and no later item runs). False when the run ended or stopped.
     /// Items already done are found again by their step rows and skipped over, so a retried or redelivered run resumes in the right item.
+    /// <para>
+    /// Step rows are matched to items by position, and the list is rebuilt from the data on every resume (a Query database step before the loop reads again).
+    /// When the loop contains a Write to database step, a list that changed would skip an item whose position already has a succeeded write, or write an item
+    /// again at a later position. So before any item runs, the list is compared with the fingerprint the first pass recorded; on any difference (count, order or
+    /// content) the run fails with <c>loop.items_changed</c> and nothing in the loop runs. A recorded result without a fingerprint can't be verified and fails the
+    /// same way (only a run started before this check existed could have one, and write steps are newer than the check).
+    /// </para>
     /// </summary>
-    private async Task<bool> RunLoopAsync(Run run, Workflows.WorkflowNode forEach, CancellationToken timeoutToken, CancellationToken shutdown)
+    private async Task<bool> RunLoopAsync(Run run, Workflows.WorkflowNode forEach, ExecutionStep loopStep, CancellationToken timeoutToken, CancellationToken shutdown)
     {
         var items = ForEach.Items(forEach.Config, run.Data);
+        if (LoopWrites(run.Plan, forEach.Id) && RecordedFingerprint(loopStep) != ForEach.Fingerprint(run.Execution.Id, forEach.Id, items))
+        {
+            var before = RecordedCount(loopStep) is { } c ? c.ToString(System.Globalization.CultureInfo.InvariantCulture) : "an unknown number of";
+            await FailRestoreAsync(run, forEach, loopStep, new StepException(
+                "loop.items_changed",
+                $"The list of step '{forEach.Title}' is not the same as when the run started ({before} item(s) then, {items.Count} now, or the same number in another order or with other content), and the loop contains a Write to database step. " +
+                "The run can't continue: matching the list again could skip an item or write one twice. Writes already made for earlier items are kept and were not repeated; no later item ran. " +
+                "Check the database, then submit the data again if needed (a new run writes every item again).",
+                retryable: false));
+            return false;
+        }
+
         var baseData = run.Data;
         var first = run.Plan.Next(forEach.Id, ForEach.Each)
             ?? throw new StepException("foreach.not_connected", $"Step '{forEach.Title}' has no steps connected to repeat.", retryable: false);
@@ -562,17 +581,56 @@ public sealed partial class ExecutionEngine(
 
     /// <summary>
     /// Counts the list: <c>each</c> when there are items (the engine then runs the loop), <c>empty</c> when there are none. The data is
-    /// unchanged, so a resumed run has nothing to rebuild. The result holds the count, never the items.
+    /// unchanged, so a resumed run has nothing to rebuild. The result holds the count, never the items; when the loop contains a Write to database step it also
+    /// holds the list's <see cref="ForEach.Fingerprint"/> (a keyed hash, no value), which <see cref="RunLoopAsync"/> compares on resume.
     /// </summary>
     private static Outcome Repeat(Run run, Workflows.WorkflowNode node)
     {
-        var count = ForEach.Items(node.Config, run.Data).Count;
+        var items = ForEach.Items(node.Config, run.Data);
+        var count = items.Count;
         if (count > ForEach.MaxItems)
         {
             throw new StepException("foreach.too_many_items", $"The list has {count} items; at most {ForEach.MaxItems} are allowed in a For each.", retryable: false);
         }
 
-        return new Outcome(count == 0 ? ForEach.Empty : ForEach.Each, new { count });
+        var port = count == 0 ? ForEach.Empty : ForEach.Each;
+        return LoopWrites(run.Plan, node.Id)
+            ? new Outcome(port, new { count, itemsFingerprint = ForEach.Fingerprint(run.Execution.Id, node.Id, items) })
+            : new Outcome(port, new { count });
+    }
+
+    /// <summary>Whether the loop of this For each contains a Write to database step anywhere in its body (behind a branch too).</summary>
+    private static bool LoopWrites(ExecutionPlan plan, string forEachId) =>
+        plan.Loops.FirstOrDefault(l => l.ForEach.Id == forEachId) is { } loop
+        && loop.Body.Any(id => plan.Node(id).Type == NodeCatalog.WriteDatabase);
+
+    /// <summary>The fingerprint the first pass recorded in the For each step's result; null when there is none.</summary>
+    private static string? RecordedFingerprint(ExecutionStep step)
+    {
+        if (step.Result is null)
+        {
+            return null;
+        }
+
+        using var result = JsonDocument.Parse(step.Result);
+        return result.RootElement.ValueKind == JsonValueKind.Object
+               && result.RootElement.TryGetProperty("itemsFingerprint", out var f) && f.ValueKind == JsonValueKind.String
+            ? f.GetString()
+            : null;
+    }
+
+    private static int? RecordedCount(ExecutionStep step)
+    {
+        if (step.Result is null)
+        {
+            return null;
+        }
+
+        using var result = JsonDocument.Parse(step.Result);
+        return result.RootElement.ValueKind == JsonValueKind.Object
+               && result.RootElement.TryGetProperty("count", out var c) && c.TryGetInt32(out var n)
+            ? n
+            : null;
     }
 
     private static Outcome Validate(Run run, Workflows.WorkflowNode node)

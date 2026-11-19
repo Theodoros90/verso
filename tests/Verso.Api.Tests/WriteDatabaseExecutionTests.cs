@@ -30,7 +30,11 @@ public sealed class WriteDatabaseExecutionTests(MigratedDatabaseFixture fixture)
     private readonly FakePdfPrinter _printer = new();
     private readonly RecordingExecutionJobs _jobs = new();
     private readonly FakeDatabaseWrite _write = new();
+    private readonly FakeDatabaseQuery _query = new();
     private ExecutionTestKit Kit => new(fixture.Factory, _client);
+
+    /// <summary>A value that exists only in the rows the fake query returns (the list a For each repeats over).</summary>
+    private const string RowMarker = "ROWMARK-5521";
 
     public void Dispose()
     {
@@ -66,7 +70,7 @@ public sealed class WriteDatabaseExecutionTests(MigratedDatabaseFixture fixture)
         execution.GetProperty("steps").EnumerateArray().Single(s => s.GetProperty("nodeId").GetString() == nodeId && s.GetProperty("iteration").GetInt32() == iteration);
 
     private Task RunEngineAsync(Guid id, bool captureLogs = false, CancellationToken ct = default) =>
-        Kit.RunEngineAsync(id, _printer, _store, _jobs, ct: ct, write: _write, captureLogs: captureLogs);
+        Kit.RunEngineAsync(id, _printer, _store, _jobs, ct: ct, query: _query, write: _write, captureLogs: captureLogs);
 
     private async Task<(Guid Id, JsonElement Done)> RunAsync(JsonObject config, JsonNode? data = null)
     {
@@ -408,6 +412,165 @@ public sealed class WriteDatabaseExecutionTests(MigratedDatabaseFixture fixture)
             ["Electricity supply, October 2026 (commercial tariff)", "Reactive power surcharge", "Meter rental"],
             _write.Requests.Select(r => (string?)r.Parameters["line"]));
         Assert.All(Enumerable.Range(1, 3), i => Assert.Equal(1, Step(done, "write", i).GetProperty("attempt").GetInt32()));
+    }
+
+    private static JsonObject PendingQuery() => new()
+    {
+        ["connection"] = "crm-db",
+        ["sql"] = "SELECT id, label FROM pending WHERE processed = 0",
+        ["parameters"] = "",
+        ["resultName"] = "pending",
+        ["maxRows"] = 10,
+        ["timeoutSeconds"] = 20,
+    };
+
+    private static IReadOnlyDictionary<string, object?> Pending(string id, string? label = null) =>
+        FakeDatabaseQuery.Row(("id", id), ("label", label ?? RowMarker + "-" + id));
+
+    private static IEnumerable<JsonElement> Steps(JsonElement execution, string nodeId) =>
+        execution.GetProperty("steps").EnumerateArray().Where(s => s.GetProperty("nodeId").GetString() == nodeId);
+
+    /// <summary>
+    /// Query database (rows A, B, C) → For each row → [If / else →] Write (UPDATE ... WHERE id = @id) → PDF → Archive, the review's pattern. The first pass writes
+    /// items 1 and 2, then the PDF of item 2 fails on a storage outage (a technical failure: an automatic retry is scheduled, the run is not over).
+    /// </summary>
+    private async Task<Guid> FirstPassStopsAtThePdfOfItemTwoAsync(string writeAt = "in-loop")
+    {
+        _query.Rows = [Pending("A"), Pending("B"), Pending("C")];
+        var key = await Kit.PublishInvoiceWorkflowAsync(
+            queryConfig: PendingQuery(),
+            forEachConfig: new JsonObject { ["field"] = "pending", ["mode"] = "each", ["item"] = "row" },
+            writeConfig: Write(sql: "UPDATE " + SqlMarker + " SET processed = 1 WHERE id = @id", parameters: "id = row.id"), writeAt: writeAt);
+        var id = await Kit.SubmitNewAsync(key, Data());
+        _write.During = (call, _) => { if (call == 2) { _store.FailWrites = true; } };
+        await RunEngineAsync(id);
+        _write.During = null;
+        _store.FailWrites = false;
+
+        var paused = await Kit.GetExecutionAsync(id);
+        Assert.Single(_jobs.Scheduled); // the automatic retry of the PDF step
+        Assert.Equal(["A", "B"], _write.Requests.Select(r => (string?)r.Parameters["id"]));
+        Assert.Equal("Failed", Step(paused, "pdf", 2).GetProperty("status").GetString());
+        var loop = Step(paused, "loop").GetProperty("result");
+        Assert.Equal(["count", "itemsFingerprint"], loop.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(3, loop.GetProperty("count").GetInt32());
+        Assert.Matches("^[0-9a-f]{64}$", loop.GetProperty("itemsFingerprint").GetString());
+        return id;
+    }
+
+    /// <summary>The resumed run stopped before any item: Failed with loop.items_changed, no write repeated or sent for the new list, nothing printed, no value recorded.</summary>
+    private async Task AssertItemsChangedAsync(Guid id, int printedBefore)
+    {
+        var done = await Kit.GetExecutionAsync(id);
+        Assert.Equal("Failed", done.GetProperty("status").GetString());
+        Assert.Equal("loop.items_changed", done.GetProperty("failureCode").GetString());
+        var message = done.GetProperty("failureMessage").GetString()!;
+        Assert.Contains("For each line", message, StringComparison.Ordinal);
+        Assert.Contains("Check the database", message, StringComparison.Ordinal);
+
+        Assert.Equal(["A", "B"], _write.Requests.Select(r => (string?)r.Parameters["id"])); // items 1 and 2 not written again, nothing written for the new list
+        Assert.DoesNotContain(Steps(done, "write"), s => s.GetProperty("iteration").GetInt32() == 3); // item 3 never started: not skipped as succeeded either
+        Assert.All(Steps(done, "write"), s => Assert.Equal(1, s.GetProperty("attempt").GetInt32()));
+        Assert.Equal(printedBefore, _printer.Calls);
+        Assert.Single(_jobs.Scheduled); // only the first pass's retry: this failure is final
+        var events = await EventTypesAsync(id);
+        Assert.Equal(ExecutionEventTypes.Failed, events[^1]);
+
+        // Counts and a fingerprint only: no row value in the execution, its events or its audit.
+        using var eventsResponse = await _client.GetAsync(new Uri($"/api/v1/executions/{id}/events", UriKind.Relative));
+        var audit = await Kit.WithDbAsync(db => db.AuditEntries.Where(a => a.EntityId == id.ToString()).Select(a => a.Action + " " + a.Details).ToListAsync());
+        foreach (var text in new[] { done.GetRawText(), await eventsResponse.Content.ReadAsStringAsync(), string.Join('\n', audit) })
+        {
+            Assert.DoesNotContain(RowMarker, text, StringComparison.Ordinal);
+            Assert.DoesNotContain(SqlMarker, text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task Loop_over_rows_that_shrank_before_resume_fails_without_skipping_or_repeating_a_write()
+    {
+        // The review's example: A and B were marked processed by their writes, so the query now returns only C. By position C would land on item 1, whose write
+        // already succeeded, and the run would end Succeeded with C never written.
+        var id = await FirstPassStopsAtThePdfOfItemTwoAsync();
+        var printed = _printer.Calls;
+        _query.Rows = [Pending("C")];
+
+        await RunEngineAsync(id);
+
+        await AssertItemsChangedAsync(id, printed);
+    }
+
+    [Fact]
+    public async Task Loop_over_rows_reordered_before_resume_fails_items_changed()
+    {
+        // A SELECT without ORDER BY: the same rows in another order would give item 3 a row that was already written.
+        var id = await FirstPassStopsAtThePdfOfItemTwoAsync();
+        var printed = _printer.Calls;
+        _query.Rows = [Pending("B"), Pending("A"), Pending("C")];
+
+        await RunEngineAsync(id);
+
+        await AssertItemsChangedAsync(id, printed);
+    }
+
+    [Fact]
+    public async Task Loop_over_rows_with_the_same_count_but_other_content_fails_items_changed()
+    {
+        var id = await FirstPassStopsAtThePdfOfItemTwoAsync();
+        var printed = _printer.Calls;
+        _query.Rows = [Pending("A"), Pending("B"), Pending("C", RowMarker + "-C-changed")];
+
+        await RunEngineAsync(id);
+
+        await AssertItemsChangedAsync(id, printed);
+    }
+
+    [Fact]
+    public async Task Loop_over_unchanged_rows_resumes_without_repeating_a_write()
+    {
+        var id = await FirstPassStopsAtThePdfOfItemTwoAsync();
+
+        await RunEngineAsync(id); // the query returns the same rows A, B, C
+
+        var done = await Kit.GetExecutionAsync(id);
+        Assert.Equal("Succeeded", done.GetProperty("status").GetString());
+        Assert.Equal(["A", "B", "C"], _write.Requests.Select(r => (string?)r.Parameters["id"])); // each row written once
+        Assert.All(Enumerable.Range(1, 3), i => Assert.Equal("Succeeded", Step(done, "archive", i).GetProperty("status").GetString()));
+        Assert.DoesNotContain(RowMarker, done.GetRawText(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_write_behind_a_branch_inside_the_loop_also_protects_it()
+    {
+        var id = await FirstPassStopsAtThePdfOfItemTwoAsync(writeAt: "in-loop-branch");
+        var printed = _printer.Calls;
+        _query.Rows = [Pending("C")];
+
+        await RunEngineAsync(id);
+
+        await AssertItemsChangedAsync(id, printed);
+    }
+
+    [Fact]
+    public async Task A_loop_without_a_write_step_is_unaffected()
+    {
+        // Query → For each → PDF → Archive, no write: the For each result stays { count } and a changed list on resume behaves as before (matched by position).
+        _query.Rows = [Pending("A"), Pending("B"), Pending("C")];
+        var key = await Kit.PublishInvoiceWorkflowAsync(
+            queryConfig: PendingQuery(), forEachConfig: new JsonObject { ["field"] = "pending", ["mode"] = "each", ["item"] = "row" });
+        var id = await Kit.SubmitNewAsync(key, Data());
+        _store.AfterWrite = k => { if (!k.StartsWith("staging/", StringComparison.Ordinal)) { _store.FailWrites = true; } }; // item 1 archived, then item 2's PDF fails
+        await RunEngineAsync(id);
+        _store.AfterWrite = null;
+        _store.FailWrites = false;
+        Assert.Single(_jobs.Scheduled);
+
+        _query.Rows = [Pending("B"), Pending("A"), Pending("C")];
+        await RunEngineAsync(id);
+
+        var done = await Kit.GetExecutionAsync(id);
+        Assert.Equal("Succeeded", done.GetProperty("status").GetString());
+        Assert.Equal(["count"], Step(done, "loop").GetProperty("result").EnumerateObject().Select(p => p.Name));
     }
 
     [Fact]

@@ -1,3 +1,6 @@
+using System.Buffers.Binary;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Verso.Application.Workflows;
 using Verso.Rendering.Binding;
@@ -65,6 +68,29 @@ public static class ForEach
             JsonValueKind.String when string.IsNullOrWhiteSpace(value.GetString()) => [],
             _ => [value],
         };
+    }
+
+    /// <summary>
+    /// A fingerprint of the whole list, in order: an HMAC-SHA256 keyed by the execution and the step (so the same list in another run gives another value)
+    /// over the item count and each item's JSON text, length-prefixed. Any change of count, order or content changes it. It holds no value and one hash for the
+    /// whole list (not one per item), so it can't be matched item by item. Used to check that a loop with a Write to database step resumes over the same list.
+    /// </summary>
+    public static string Fingerprint(Guid executionId, string nodeId, IReadOnlyList<JsonElement> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        using var hmac = IncrementalHash.CreateHMAC(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes($"verso/for-each-items/v1/{executionId:N}/{nodeId}"));
+        var length = new byte[8];
+        BinaryPrimitives.WriteInt64LittleEndian(length, items.Count);
+        hmac.AppendData(length);
+        foreach (var item in items)
+        {
+            var bytes = Encoding.UTF8.GetBytes(item.GetRawText());
+            BinaryPrimitives.WriteInt64LittleEndian(length, bytes.Length);
+            hmac.AppendData(length);
+            hmac.AppendData(bytes);
+        }
+
+        return Convert.ToHexStringLower(hmac.GetHashAndReset());
     }
 
     /// <summary>The data one item runs with. The result owns its memory (it outlives the data it was built from).</summary>
