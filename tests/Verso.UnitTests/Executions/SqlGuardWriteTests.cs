@@ -260,6 +260,39 @@ public sealed class SqlGuardWriteTests
     [InlineData("DELETE FROM t WHERE c = '1' COLLATE Latin1_General_CI_AS(SELECT 42)")]
     [InlineData("UPDATE t SET a = CASE WHEN b = 1 THEN 1 ELSE 2 END WHERE id = 1 OR b = CASE WHEN c = 1 THEN 1 END (SELECT 42)")]
     [InlineData("DELETE FROM t WHERE id = t.id (SELECT 42)")] // a syntax error on SQL Server, refused all the same: only known names count as calls
+    // review round 2 (checked on LocalDB: each ran as an INSERT / DELETE plus a second statement)
+    // A. MINUS is not a T-SQL keyword: SQL Server reads it as an alias and starts a new statement at the SELECT
+    [InlineData("INSERT INTO t (a) SELECT a FROM u MINUS SELECT 'SECOND' AS m")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u AS MINUS SELECT 'SECOND' AS m")]
+    [InlineData("INSERT INTO t (a) SELECT 1 MINUS SELECT 'SECOND' AS m")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u MINUS SELECT * FROM v WITH (TABLOCKX, HOLDLOCK)")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u MINUS SELECT NEXT VALUE FOR dbo.s")]
+    [InlineData("INSERT INTO t (a) SELECT 1 MINUS (SELECT 'SECOND' AS m)")]
+    // B. an alias (or other name) spelled like a function or APPLY, followed by a query in parentheses
+    [InlineData("INSERT INTO t (a) SELECT 1 AS MAX (SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t (a) SELECT 1 AS COUNT (SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t (a) SELECT 1 MAX (SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t (a) SELECT 1 MAX(SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t (a) SELECT 1 AS LENGTH(SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t (a) SELECT 1 AS GREATEST (SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t (a) SELECT 1 AS APPLY (SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t (a) SELECT 1 AS LEFT (SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t (a) SELECT 1 AS FORMAT ((SELECT 'SECOND' AS m))")]
+    [InlineData("INSERT INTO t (a) SELECT 1 AS [MAX] (SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t (a) SELECT 1 AS \"MAX\" (SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u MAX (SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM MAX (SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u APPLY (SELECT 'SECOND' AS m) x")]
+    [InlineData("INSERT INTO t (a) SELECT dbo.MAX ((SELECT 'SECOND' AS m))")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u WHERE b = 1 ORDER BY b DESC (SELECT 'SECOND' AS m)")]
+    [InlineData("DELETE FROM t OUTPUT deleted.a AS MAX (SELECT 'SECOND' AS m) UNION (SELECT 'x' AS m)")]
+    [InlineData("DELETE FROM t OUTPUT deleted.a AS MAX (SELECT 'SECOND' AS m) UNION (SELECT 'x' AS m) WHERE id = 1")]
+    // ... and the two found while re-deriving the rule
+    [InlineData("INSERT INTO t DEFAULT VALUES (SELECT 'SECOND' AS m)")]
+    [InlineData("DELETE t OUTPUT deleted.* (SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t OUTPUT inserted.* (SELECT 'SECOND' AS m) SELECT 1")]
+    [InlineData("INSERT INTO t SELECT * (SELECT 'SECOND' AS m)")]
+    [InlineData("INSERT INTO t SELECT a, * (SELECT 'SECOND' AS m) FROM u")]
     // a ')' without its '(' (a syntax error on SQL Server, refused so that the parenthesis depth stays meaningful)
     [InlineData("DELETE FROM t WHERE id = 1) SELECT 1")]
     public void Rejects_a_second_statement_after_the_write(string sql)
@@ -275,7 +308,6 @@ public sealed class SqlGuardWriteTests
     [InlineData("DELETE t FROM t JOIN u ON u.id = t.id WHERE u.x = @x")]
     [InlineData("INSERT INTO t (a) SELECT a FROM u UNION ALL SELECT b FROM v")]
     [InlineData("INSERT INTO t (a) SELECT a FROM u UNION SELECT b FROM v INTERSECT SELECT c FROM w EXCEPT SELECT d FROM x")]
-    [InlineData("INSERT INTO t (a) SELECT a FROM u MINUS SELECT b FROM v")]
     [InlineData("INSERT INTO t (a) SELECT a FROM u UNION /* all of them */ ALL SELECT b FROM v")]
     [InlineData("INSERT INTO t (a) SELECT a FROM u UNION DISTINCT SELECT b FROM v")]
     [InlineData("INSERT INTO t (a) SELECT a FROM u UNION (SELECT b FROM v)")]
@@ -302,6 +334,19 @@ public sealed class SqlGuardWriteTests
     [InlineData("INSERT INTO t (a) SELECT a FROM (SELECT a FROM u ORDER BY a OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY) s")]
     [InlineData("INSERT INTO t (a) SELECT IIF(x IS NULL, 1, 2) FROM u")]
     [InlineData("UPDATE t SET a = (SELECT IF(1, 2, 3)) WHERE id = 1")]
+    // review round 2: the tighter rule (a function name opens a subquery only where an expression starts) must not refuse these
+    [InlineData("UPDATE t SET a = COALESCE((SELECT 1), 0), b = ISNULL((SELECT 2), 0), c = LEN((SELECT 'x')), d = ROUND((SELECT 1.5), 0), e = ABS((SELECT -1)) WHERE id = 1")]
+    [InlineData("UPDATE t SET a = IIF((SELECT 1) = 1, 2, 3) WHERE id = 1 AND COALESCE((SELECT 1), 0) = 1 OR NOT LEN((SELECT 'x')) > 2")]
+    [InlineData("INSERT INTO t (a) SELECT COALESCE((SELECT 1), 0) FROM u WHERE ISNULL((SELECT 1), 0) = 1 AND b LIKE LEFT((SELECT 'x'), 1)")]
+    [InlineData("INSERT INTO t (a, b) SELECT MAX((SELECT 1)), FORMAT((SELECT 1), 'N') FROM u")]
+    [InlineData("INSERT INTO t (a) SELECT DISTINCT RIGHT((SELECT 'ab'), 1) FROM u")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u CROSS APPLY (SELECT 1 AS y) z OUTER APPLY (SELECT 2 AS w) v")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u GROUP BY a HAVING COUNT(*) > (SELECT 1) AND SUM((SELECT 1)) > 0")]
+    [InlineData("INSERT INTO t (a) SELECT CASE WHEN EXISTS (SELECT 1) THEN COALESCE((SELECT 1), 0) ELSE ABS((SELECT 2)) END FROM u")]
+    [InlineData("DELETE FROM t WHERE a IN (SELECT a FROM u) AND b = ANY (SELECT b FROM v) AND c * (SELECT 2) > 1 AND (d) * (SELECT 3) > 1 AND 4 * (SELECT 4) > 1")]
+    [InlineData("UPDATE t SET a = (SELECT 1) WHERE id = 1 AND b BETWEEN COALESCE((SELECT 1), 0) AND (SELECT 2)")]
+    [InlineData("DELETE t FROM t JOIN u ON COALESCE((SELECT 1), 0) = u.a WHERE t.id = 1")]
+    [InlineData("INSERT INTO t (a) SELECT STRING_AGG(a, ',') FROM u WHERE EOMONTH(d) = DATALENGTH((SELECT 'x')) + POWER((SELECT 2), 2) + SIGN((SELECT -1))")]
     public void Accepts_legitimate_write_shapes(string sql)
     {
         var r = SqlGuard.CheckWrite(sql);

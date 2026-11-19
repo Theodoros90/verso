@@ -12,13 +12,19 @@ public sealed record SqlWriteCheck(bool Ok, string? Code, string? Message, IRead
 /// <summary>
 /// First safety net for the Query database step (<see cref="SqlGuard.Check"/>, read mode): accepts exactly one statement that starts with SELECT or WITH and contains
 /// no INTO, write, DDL, transaction, session or procedure keyword. And for the Write to database step (<see cref="SqlGuard.CheckWrite"/>, write mode): exactly one
-/// INSERT, UPDATE or DELETE whose verb is its first word. Because SQL Server runs a second statement after a DML statement without any ';', write mode refuses at
-/// the top level (outside parentheses) everything that could start one: every other write, DDL, transaction, session or procedure keyword; the read-only T-SQL
-/// statement verbs (IF, PRINT, THROW, RETURN, GOTO, READTEXT, FETCH, BREAK, CONTINUE, GET, MOVE); a WITH that is not a table hint; any SELECT in an UPDATE or
-/// DELETE, and in an INSERT any SELECT but its source and one after each UNION / INTERSECT / EXCEPT / MINUS; a query in parentheses that does not follow an
-/// operator, a comma, a subquery keyword or a known function name; a ')' without its '('. It also refuses INTO except right after INSERT, SET except as the one SET
-/// clause of an UPDATE, UPDATE STATISTICS, and an UPDATE or DELETE without a top-level WHERE. Both modes share one tokenizer (comments, string literals and quoted
-/// identifiers are skipped; the raw text is not searched), so the dialect rules below apply to both exactly.
+/// INSERT, UPDATE or DELETE whose verb is its first word. SQL Server runs a second statement after a DML statement without any ';', so write mode refuses at the
+/// top level (outside parentheses) the starts of a second statement it knows of: every other write, DDL, transaction, session or procedure keyword; the read-only
+/// T-SQL statement verbs (IF, PRINT, THROW, RETURN, GOTO, READTEXT, FETCH, BREAK, CONTINUE, GET, MOVE); MINUS (not a T-SQL keyword: Oracle's MINUS is lost in a
+/// write, EXCEPT works); a WITH that is not a table hint; any SELECT in an UPDATE or DELETE, and in an INSERT any SELECT but its source and one after each UNION /
+/// INTERSECT / EXCEPT; a query in parentheses that does not stand where the grammar needs an expression or a table (see OpensSubquery); a ')' without its '('.
+/// It also refuses INTO except right after INSERT, SET except as the one SET clause of an UPDATE, UPDATE STATISTICS, and an UPDATE or DELETE without a top-level
+/// WHERE. Both modes share one tokenizer (comments, string literals and quoted identifiers are skipped; the raw text is not searched), so the dialect rules
+/// below apply to both exactly.
+/// <para>
+/// The guard filters tokens; it does not parse SQL. On SQL Server, where statements need no ';', a read-only second statement may therefore still get through in a
+/// spelling nobody foresaw. It cannot write data: every write, DDL and procedure keyword is refused anywhere in the text, inside parentheses too. And it cannot
+/// satisfy the WHERE rule: a second statement can only bring a top-level WHERE with a top-level SELECT, UPDATE, DELETE or MERGE, and all of them are refused.
+/// </para>
 /// <para>
 /// One text is checked for four databases (SQL Server, PostgreSQL, MySQL / MariaDB, Oracle) that do not tokenize SQL the same way. Wherever they could disagree
 /// about where a comment, a string or a quoted name ends, the text is <b>refused</b> (<c>sql.unsupported_syntax</c>), because a quote that one database reads inside
@@ -67,23 +73,47 @@ public static class SqlGuard
         "IF", "PRINT", "THROW", "RETURN", "GOTO", "READTEXT", "FETCH", "BREAK", "CONTINUE", "GET", "MOVE",
     };
 
-    // Write mode only: the words after which a top-level "(SELECT" is a subquery and not a second statement. Keywords that expect an expression or a table next, and
-    // function names (SQL Server reads any name followed by '(' as a call; these are listed so that "COALESCE ((SELECT ...), 0)" passes). Not listed on purpose: words
-    // that end an expression (NULL, CURRENT_TIMESTAMP, USER, END, ASC ...) and plain names (columns, aliases, collations).
-    private static readonly HashSet<string> SubqueryOpeners = new(StringComparer.Ordinal)
+    // Write mode only. Where may a top-level "(SELECT" / "(WITH" stand without SQL Server reading it as the start of a second statement (it does so after a value, a
+    // quoted name, ')', a label "name:", an alias, a table or column name used as the last word of a clause, and words that end an expression such as NULL,
+    // CURRENT_TIMESTAMP, USER, END, DESC or a collation; all checked on LocalDB)? Only where the grammar needs an expression or a table next:
+    //  - right after an operator (for '*' only when it multiplies, see OpensSubquery) or a comma (a comma before a name in a FROM or SET list is a syntax error);
+    //  - right after one of these reserved T-SQL keywords, which can never be a name or an alias (VALUES not after DEFAULT: "DEFAULT VALUES (SELECT ..." is two statements);
+    private static readonly HashSet<string> KeywordOpeners = new(StringComparer.Ordinal)
     {
-        "IN", "EXISTS", "ANY", "ALL", "SOME", "FROM", "JOIN", "APPLY", "UNION", "INTERSECT", "EXCEPT", "MINUS", "DISTINCT", "AND", "OR", "NOT", "CASE", "WHEN",
-        "THEN", "ELSE", "WHERE", "ON", "HAVING", "SELECT", "TOP", "VALUES", "LIKE", "BETWEEN",
-        "COALESCE", "ISNULL", "IFNULL", "NVL", "NULLIF", "IIF", "CAST", "TRY_CAST", "CONVERT", "TRY_CONVERT", "ABS", "ROUND", "FLOOR", "CEILING", "MAX", "MIN",
-        "SUM", "AVG", "COUNT", "CONCAT", "UPPER", "LOWER", "LEN", "LENGTH", "TRIM", "LTRIM", "RTRIM", "SUBSTRING", "REPLACE", "DATEADD", "DATEDIFF", "GREATEST", "LEAST",
+        "IN", "EXISTS", "ANY", "ALL", "SOME", "FROM", "JOIN", "UNION", "INTERSECT", "EXCEPT", "DISTINCT", "AND", "OR", "NOT", "CASE", "WHEN", "THEN", "ELSE",
+        "WHERE", "ON", "HAVING", "SELECT", "TOP", "VALUES", "LIKE", "BETWEEN",
     };
 
-    private static bool OpensSubquery(char previous, string lastWord) =>
+    //  - right after CROSS APPLY / OUTER APPLY (APPLY alone can be an alias);
+    //  - right after one of these function names, but only when the name itself stands where an expression starts (after an operator, a comma or one of the
+    //    ExpressionKeywords), so that it is a call: "AS MAX (SELECT", "1 MAX (SELECT", "u MAX (SELECT", "dbo.MAX ((SELECT" are aliases / names and are refused.
+    //    Any other function (user-defined ones included) takes a subquery only as a later argument or inside CAST((SELECT ...) AS type).
+    private static readonly HashSet<string> FunctionOpeners = new(StringComparer.Ordinal)
+    {
+        "COALESCE", "ISNULL", "IFNULL", "NVL", "NVL2", "NULLIF", "IIF", "CHOOSE", "DECODE", "CAST", "TRY_CAST", "CONVERT", "TRY_CONVERT", "TRY_PARSE", "ABS", "ROUND",
+        "FLOOR", "CEILING", "POWER", "SIGN", "MAX", "MIN", "SUM", "AVG", "COUNT", "STRING_AGG", "CONCAT", "UPPER", "LOWER", "LEN", "LENGTH", "DATALENGTH", "TRIM",
+        "LTRIM", "RTRIM", "SUBSTRING", "REPLACE", "LEFT", "RIGHT", "FORMAT", "TO_CHAR", "DATEADD", "DATEDIFF", "EOMONTH", "GREATEST", "LEAST",
+    };
+
+    // The reserved keywords after which an expression starts (so a following function name is a call, not an alias or a table).
+    private static readonly HashSet<string> ExpressionKeywords = new(StringComparer.Ordinal)
+    {
+        "AND", "OR", "NOT", "CASE", "WHEN", "THEN", "ELSE", "WHERE", "ON", "HAVING", "SELECT", "DISTINCT", "LIKE", "BETWEEN",
+    };
+
+    private static bool IsOperator(char kind) => kind is '=' or '<' or '>' or '+' or '-' or '/' or '%' or '!' or '&' or '|' or '^' or '~';
+
+    /// <summary>Whether a top-level '(' holding a query is a subquery, from the two tokens before it ('v' value or quoted name, 'w' word, else the punctuation).</summary>
+    private static bool OpensSubquery(char previous, string previousWord, char before, string beforeWord) =>
         previous switch
         {
-            'w' => SubqueryOpeners.Contains(lastWord),
-            '=' or '<' or '>' or '+' or '-' or '*' or '/' or '%' or ',' or '!' or '&' or '|' or '^' or '~' => true,
-            _ => false, // a value, a quoted name, ')', a label's ':', '.', or nothing before it
+            'w' when KeywordOpeners.Contains(previousWord) => !(previousWord == "VALUES" && before == 'w' && beforeWord == "DEFAULT"),
+            'w' when previousWord == "APPLY" => before == 'w' && beforeWord is "CROSS" or "OUTER",
+            'w' when FunctionOpeners.Contains(previousWord) => IsOperator(before) || before == ',' || (before == 'w' && ExpressionKeywords.Contains(beforeWord)),
+            // '*' multiplies only after a value, ')' or a name; after SELECT, DISTINCT, ',' or '.' it is the "all columns" star and ends the select list
+            '*' => before is 'v' or ')' || (before == 'w' && !KeywordOpeners.Contains(beforeWord) && beforeWord is not ("OUTPUT" or "RETURNING")),
+            ',' => true,
+            _ => IsOperator(previous), // a value, a quoted name, ')', a label's ':', '.', any other word, or nothing before it: refused
         };
 
     /// <summary>The bare words <see cref="Check"/> refuses (besides INTO), for tests and documentation.</summary>
@@ -129,11 +159,13 @@ public static class SqlGuard
         var depth = 0;
         var topLevelWhere = false;
         var setSeen = false;
-        var topLevelSelects = 0;  // top-level SELECTs of an INSERT (its source, then one after each UNION / INTERSECT / EXCEPT / MINUS)
+        var topLevelSelects = 0;  // top-level SELECTs of an INSERT (its source, then one after each UNION / INTERSECT / EXCEPT)
         var valuesSeen = false;   // a top-level VALUES / VALUE / DEFAULT: the INSERT has its rows, a top-level SELECT after it is a second statement
         var setOperator = -2;     // the token number of the last top-level set operator (or of the ALL / DISTINCT right after it)
-        char previous = '\0', current = '\0';
-        var lastWord = "";        // the last word read, upper-case (the previous token's text when previous is 'w')
+        // the kinds of the current token and the two before it ('v' a value or quoted name, 'w' a word, otherwise the punctuation character itself),
+        // and their text, upper-case, when they are words ("" otherwise)
+        char before = '\0', previous = '\0', current = '\0';
+        string beforeWord = "", previousWord = "", currentWord = "";
         while (i < sql.Length)
         {
             var c = sql[i];
@@ -170,9 +202,12 @@ public static class SqlGuard
             if (c == ';') { semicolon = true; i++; continue; }
 
             tokens++;
-            // the kind of this token and of the one before it: 'v' a value or quoted name, 'w' a word, otherwise the punctuation character itself
+            before = previous;
             previous = current;
             current = c is '\'' or '"' or '[' or '`' or '@' || char.IsAsciiDigit(c) ? 'v' : char.IsAsciiLetter(c) || c == '_' ? 'w' : c;
+            beforeWord = previousWord;
+            previousWord = currentWord;
+            currentWord = ""; // set by the word branch
 
             if (c is '\'' or '"')
             {
@@ -272,7 +307,7 @@ public static class SqlGuard
                     return Fail(Unsupported, "A text value right after a name (such as q'[...]' or _utf8'...') is not allowed; only N'...', B'...', X'...' and E'...' are.");
                 if (write)
                 {
-                    lastWord = word.ToUpperInvariant();
+                    currentWord = word.ToUpperInvariant();
                     if (first is not { Length: > 0 })
                     {
                         // the leading verb: the only place an INSERT, UPDATE or DELETE may appear ("" = the text started with a value, not a word)
@@ -305,6 +340,9 @@ public static class SqlGuard
                         var upper = word.ToUpperInvariant();
                         if (ReadOnlyStatementVerbs.Contains(upper))
                             return Fail(NotWrite, $"Only one statement is allowed: {upper} would start a second statement on SQL Server (put it in parentheses or quote a column with that name).");
+                        if (upper == "MINUS")
+                            // not a T-SQL keyword: SQL Server reads it as an alias, and the SELECT after it as a second statement
+                            return Fail(NotWrite, "MINUS is not allowed in a write statement: SQL Server reads it as a name and would run the query after it as a second statement. Use EXCEPT (Oracle 21c and later also accept it).");
                         if (upper == "WITH" && NextSignificant(sql, j) != '(')
                             return Fail(NotWrite, "Only one statement is allowed: a WITH here starts a second statement; only table hints such as WITH (ROWLOCK) are allowed.");
                         if (upper == "SELECT")
@@ -316,7 +354,7 @@ public static class SqlGuard
                             topLevelSelects++;
                         }
                         else if (upper is "VALUES" or "VALUE" or "DEFAULT") valuesSeen = true;
-                        else if (upper is "UNION" or "INTERSECT" or "EXCEPT" or "MINUS") setOperator = tokens;
+                        else if (upper is "UNION" or "INTERSECT" or "EXCEPT") setOperator = tokens;
                         else if (upper is "ALL" or "DISTINCT" && tokens == setOperator + 1) setOperator = tokens;
                         else if (upper == "WHERE") topLevelWhere = true;
                     }
@@ -341,11 +379,12 @@ public static class SqlGuard
             // other punctuation and operators
             if (c == '(')
             {
-                // SQL Server starts a second statement at "(SELECT" / "(WITH" (also behind more '(') right after a value, a ')', a label "name:" or a word that
-                // ends an expression (NULL, CURRENT_TIMESTAMP, USER, END, a collation name ...), all checked on LocalDB. So at the top level such a '(' must follow
-                // an operator, a comma, a subquery keyword or a known function name (OpensSubquery).
-                if (write && depth == 0 && !OpensSubquery(previous, lastWord) && StartsQuery(sql, i + 1))
-                    return Fail(NotWrite, "Only one statement is allowed: a query in parentheses here would run as a second statement on SQL Server.");
+                // SQL Server starts a second statement at "(SELECT" / "(WITH" (also behind more '(') in many places (see KeywordOpeners): at the top level such a
+                // '(' must stand where the grammar needs an expression or a table (OpensSubquery).
+                if (write && depth == 0 && !OpensSubquery(previous, previousWord, before, beforeWord) && StartsQuery(sql, i + 1))
+                    return Fail(NotWrite, "Only one statement is allowed: on SQL Server a query in parentheses here could run as a second statement. Put it after an operator, "
+                        + "a comma or a keyword such as IN, EXISTS, SELECT or WHERE; as the first argument of a function the guard does not know (a user-defined one, say), "
+                        + "write CAST((SELECT ...) AS type) or move it after another argument.");
                 depth++;
             }
             else if (c == ')' && --depth < 0 && write)
