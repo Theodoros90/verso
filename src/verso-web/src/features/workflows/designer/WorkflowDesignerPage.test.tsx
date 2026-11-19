@@ -370,6 +370,22 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { connection: '', sql: 'SELECT name FROM customers WHERE id = @id', parameters: 'id = customer.id', resultName: 'db', maxRows: 1 },
   },
   {
+    type: 'write-database', label: 'Write to database', category: 'output', description: 'Changes data in a database with one INSERT, UPDATE or DELETE.',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'written', label: 'Written', required: true }, { id: 'failed', label: 'Failed', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        connection: { type: 'string', title: 'Database connection', 'x-widget': 'database-connection', 'x-requires-writes': true },
+        sql: { type: 'string', title: 'SQL (one INSERT, UPDATE or DELETE)', 'x-widget': 'sql' },
+        parameters: { type: 'string', title: 'Parameters (one per line)', 'x-widget': 'multiline' },
+        maxRows: { type: 'integer', title: 'Most rows to change' },
+      },
+      required: ['connection', 'sql'],
+    },
+    defaults: { connection: '', sql: 'UPDATE customers SET status = @status WHERE id = @id', parameters: 'status = customer.status\nid = customer.id', maxRows: 1 },
+  },
+  {
     type: 'deliver-api', label: 'Deliver via API', category: 'output', description: 'Posts the document to another system (simulated).',
     inputs: [{ id: 'in', label: 'In', required: true }],
     outputs: [{ id: 'delivered', label: 'Delivered', required: true }, { id: 'failed', label: 'Failed', required: false }],
@@ -722,6 +738,26 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'query-database', config: { resultName: 'db', maxRows: 1 } })
+  })
+
+  it('adds a Write to database step with a "changes data" marker, a summary, its SQL box and its Written and Failed outputs', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Write to database' }))
+
+    expect(await screen.findByRole('heading', { name: 'Write to database', level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /SQL/ })).toHaveClass('font-mono')
+    expect(screen.queryByText('One SELECT only. Write values as @name and map them below. Use a read-only database login.')).not.toBeInTheDocument()
+    for (const port of ['Written', 'Failed']) expect(screen.getByLabelText(`Write to database: output ${port}`)).toBeInTheDocument()
+    expect(screen.getByText('write: (no connection)')).toBeInTheDocument()
+    expect(screen.getByText('Changes data')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'write-database', config: { maxRows: 1 } })
   })
 
   it('adds a Deduplicate step with its defaults and saves them', async () => {

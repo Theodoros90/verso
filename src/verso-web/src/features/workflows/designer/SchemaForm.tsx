@@ -21,6 +21,8 @@ export interface FieldSchema {
   items?: FieldSchema
   enum?: string[]
   'x-enumLabels'?: string[]
+  /** On a database connection field: the step changes data, so the connection must allow writes. */
+  'x-requires-writes'?: boolean
   'x-widget'?: 'multiline' | 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches' | 'retention' | 'email-relay' | 'database-connection' | 'sql'
   maxItems?: number
   maxLength?: number
@@ -85,6 +87,7 @@ export function SchemaForm({
           value={value[name]}
           parent={value}
           required={schema.required?.includes(name) ?? false}
+          writes={props.some(([, f]) => f['x-requires-writes'] === true)}
           onChange={(v, key) => set(name, v, key)}
           ctx={ctx}
           listId={listId}
@@ -101,6 +104,7 @@ function PropertyField({
   value,
   parent,
   required,
+  writes,
   onChange,
   ctx,
   listId,
@@ -111,6 +115,8 @@ function PropertyField({
   value: unknown
   parent: Value
   required: boolean
+  /** The step changes data (one of its fields has x-requires-writes). */
+  writes: boolean
   onChange: (v: unknown, key: string) => void
   ctx: FormContext
   listId: string
@@ -153,7 +159,7 @@ function PropertyField({
 
   return (
     <Field label={label} htmlFor={id} hint={field.description} error={errors[0]}>
-      <StringInput id={id} path={path} field={field} value={typeof value === 'string' ? value : ''} parent={parent} onChange={onChange} ctx={ctx} listId={listId} invalid={errors.length > 0} />
+      <StringInput id={id} path={path} field={field} value={typeof value === 'string' ? value : ''} parent={parent} writes={writes} onChange={onChange} ctx={ctx} listId={listId} invalid={errors.length > 0} />
     </Field>
   )
 }
@@ -195,6 +201,7 @@ function StringInput({
   field,
   value,
   parent,
+  writes,
   onChange,
   ctx,
   listId,
@@ -206,6 +213,7 @@ function StringInput({
   field: FieldSchema
   value: string
   parent: Value
+  writes?: boolean
   onChange: (v: unknown, key: string) => void
   ctx: FormContext
   listId: string
@@ -275,7 +283,7 @@ function StringInput({
   }
 
   if (field['x-widget'] === 'database-connection') {
-    return <DatabaseConnectionSelect {...common} value={value} onChange={(v) => onChange(v, path)} />
+    return <DatabaseConnectionSelect {...common} requiresWrites={field['x-requires-writes'] === true} value={value} onChange={(v) => onChange(v, path)} />
   }
 
   if (field['x-widget'] === 'sql') {
@@ -284,7 +292,11 @@ function StringInput({
       <div className="flex flex-col gap-1">
         <Textarea {...common} value={value} rows={8} maxLength={max} spellCheck={false} className="font-mono text-[12px]" onChange={(e) => onChange(e.target.value, path)} />
         <div className="flex items-start justify-between gap-2 text-xs text-ink-3">
-          <span>One SELECT only. Write values as @name and map them below. Use a read-only database login.</span>
+          <span>
+            {writes
+              ? 'One INSERT, UPDATE or DELETE. Write values as @name and map them below. Use a login that can write only what this step needs.'
+              : 'One SELECT only. Write values as @name and map them below. Use a read-only database login.'}
+          </span>
           <span className="flex-none tabular-nums">
             {value.length} / {max}
           </span>

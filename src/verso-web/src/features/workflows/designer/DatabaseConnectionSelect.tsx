@@ -10,9 +10,15 @@ import type { DatabaseConnectionOptionDto } from '@/lib/api/generated'
  * The database connection of a Query database step: a dropdown of the active database connections (key, name and provider only).
  * A saved key that is not in the list (deleted or switched off) stays selected and is marked, so an old workflow doesn't silently change.
  */
-export function DatabaseConnectionSelect({ value, onChange, ...rest }: Omit<ComponentProps<typeof Select>, 'value' | 'onChange'> & { value: string; onChange: (v: string) => void }) {
+export function DatabaseConnectionSelect({
+  value,
+  onChange,
+  requiresWrites = false,
+  ...rest
+}: Omit<ComponentProps<typeof Select>, 'value' | 'onChange'> & { value: string; onChange: (v: string) => void; /** The step changes data (Write to database): connections that do not allow writes are marked and warned about. */ requiresWrites?: boolean }) {
   const [options, setOptions] = useState<DatabaseConnectionOptionDto[] | null>(null)
   const errorId = useId()
+  const writesId = useId()
   const [failed, setFailed] = useState(false)
   useEffect(() => {
     const controller = new AbortController()
@@ -29,20 +35,26 @@ export function DatabaseConnectionSelect({ value, onChange, ...rest }: Omit<Comp
 
   const list = options ?? []
   const known = list.some((o) => o.key === value)
+  const writesOff = requiresWrites && list.some((o) => o.key === value && !o.allowsWrites)
   return (
     <div className="flex flex-col gap-1">
-      <Select {...rest} aria-describedby={failed ? errorId : undefined} value={value} onChange={(e) => onChange(e.target.value)}>
+      <Select {...rest} aria-describedby={failed ? errorId : writesOff ? writesId : undefined} value={value} onChange={(e) => onChange(e.target.value)}>
         {options === null && !value && <option value="">Loading…</option>}
         {options !== null && list.length === 0 && !failed && <option value="">No connections yet. Create one in Configuration, Connections.</option>}
         {(list.length > 0 || failed) && !value && <option value="">Choose a connection…</option>}
         {value && !known && <option value={value}>{options === null ? value : `Unknown connection (${value})`}</option>}
         {list.map((o) => (
           <option key={o.key} value={o.key}>
-            {o.name} ({providerName(o.provider)})
+            {o.name} ({providerName(o.provider)}){requiresWrites && !o.allowsWrites ? ', writes off' : ''}
           </option>
         ))}
       </Select>
       {failed && <p id={errorId} role="alert" className="text-xs text-err">The connections could not be loaded.</p>}
+      {writesOff && (
+        <p id={writesId} role="alert" className="text-xs text-err">
+          Writes are switched off for this connection. An administrator can switch them on in Configuration, Connections.
+        </p>
+      )}
     </div>
   )
 }

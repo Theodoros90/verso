@@ -69,6 +69,7 @@ export function DatabaseCard({ connection, onToggle, onConfigure }: { connection
           {!connection.isActive ? 'Off' : missingPassword ? 'No password' : 'Ready'}
         </StatusPill>
         {connection.hasPassword && <span>Password saved</span>}
+        {connection.allowWrites && <StatusPill tone="warn">Writes on</StatusPill>}
         <Button type="button" size="sm" className="ml-auto" onClick={onConfigure} aria-label={`Configure ${connection.name}`}>
           Configure
         </Button>

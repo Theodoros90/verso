@@ -46,6 +46,50 @@ describe('DatabaseConnectionSelect', () => {
     expect(screen.getByRole('combobox', { name: 'Database connection' })).toHaveValue('old-db')
   })
 
+  describe('when the step changes data (requiresWrites)', () => {
+    const options = [
+      { key: 'core-db', name: 'Core DB', provider: 'SqlServer', allowsWrites: false },
+      { key: 'ledger', name: 'Ledger', provider: 'Oracle', allowsWrites: true },
+    ]
+    const warning = 'Writes are switched off for this connection. An administrator can switch them on in Configuration, Connections.'
+
+    it('warns under the select when the chosen connection does not allow writes, and keeps the saved key', async () => {
+      stubOptions(options)
+      render(<DatabaseConnectionSelect aria-label="Database connection" requiresWrites value="core-db" onChange={() => {}} />)
+      expect(await screen.findByText(warning)).toBeInTheDocument()
+      expect(screen.getByRole('combobox', { name: 'Database connection' })).toHaveValue('core-db')
+      expect(screen.getByRole('combobox', { name: 'Database connection' })).toHaveAccessibleDescription(warning)
+    })
+
+    it('shows no warning for a connection that allows writes', async () => {
+      stubOptions(options)
+      render(<DatabaseConnectionSelect aria-label="Database connection" requiresWrites value="ledger" onChange={() => {}} />)
+      await screen.findByRole('option', { name: 'Ledger (Oracle)' })
+      expect(screen.queryByText(warning)).not.toBeInTheDocument()
+    })
+
+    it('marks the connections that do not allow writes in the list', async () => {
+      stubOptions(options)
+      render(<DatabaseConnectionSelect aria-label="Database connection" requiresWrites value="" onChange={() => {}} />)
+      expect(await screen.findByRole('option', { name: 'Core DB (SQL Server), writes off' })).toBeInTheDocument()
+      expect(screen.getByRole('option', { name: 'Ledger (Oracle)' })).toBeInTheDocument()
+    })
+
+    it('does not change a saved key that is unknown', async () => {
+      stubOptions(options)
+      render(<DatabaseConnectionSelect aria-label="Database connection" requiresWrites value="old-db" onChange={() => {}} />)
+      await waitFor(() => expect(screen.getByRole('option', { name: 'Unknown connection (old-db)' })).toBeInTheDocument())
+      expect(screen.queryByText(warning)).not.toBeInTheDocument()
+    })
+  })
+
+  it('shows neither warning nor marker without the flag', async () => {
+    stubOptions([{ key: 'core-db', name: 'Core DB', provider: 'SqlServer', allowsWrites: false }])
+    render(<DatabaseConnectionSelect aria-label="Database connection" value="core-db" onChange={() => {}} />)
+    expect(await screen.findByRole('option', { name: 'Core DB (SQL Server)' })).toBeInTheDocument()
+    expect(screen.queryByText(/Writes are switched off/)).not.toBeInTheDocument()
+  })
+
   it('shows an error line and still keeps the saved key when the list cannot be loaded', async () => {
     stubOptions({ title: 'Forbidden' }, 403)
     render(<DatabaseConnectionSelect aria-label="Database connection" value="core-db" onChange={() => {}} />)

@@ -1,4 +1,7 @@
-import { Field, Input, Select } from '@/components/ui/form'
+import { useState } from 'react'
+
+import { Button } from '@/components/ui/button'
+import { Field, Input, Select, Switch } from '@/components/ui/form'
 import { ApiError } from '@/lib/api/client'
 import type { DatabaseConnectionDto } from '@/lib/api/generated'
 
@@ -34,9 +37,11 @@ export interface DbForm {
   encrypt: boolean
   trustServerCertificate: boolean
   timeoutSeconds: string
+  /** Workflows may run INSERT, UPDATE and DELETE on this connection (Write to database step). */
+  allowWrites: boolean
 }
 
-export const blankDb: DbForm = { provider: 'SqlServer', key: '', server: '', port: '', database: '', userName: '', password: '', clearPassword: false, encrypt: true, trustServerCertificate: false, timeoutSeconds: '15' }
+export const blankDb: DbForm = { provider: 'SqlServer', key: '', server: '', port: '', database: '', userName: '', password: '', clearPassword: false, encrypt: true, trustServerCertificate: false, timeoutSeconds: '15', allowWrites: false }
 
 const asProvider = (p: string): DbProvider => (DB_PROVIDERS.some((x) => x.id === p) ? (p as DbProvider) : 'SqlServer')
 
@@ -52,6 +57,7 @@ export const toDbForm = (c: DatabaseConnectionDto): DbForm => ({
   encrypt: c.encrypt,
   trustServerCertificate: c.trustServerCertificate,
   timeoutSeconds: String(c.timeoutSeconds),
+  allowWrites: c.allowWrites === true,
 })
 
 export type DbErrors = Record<string, string>
@@ -85,6 +91,7 @@ export function dbBody(form: DbForm, name: string) {
     timeoutSeconds: Number(form.timeoutSeconds),
     password: form.password === '' ? null : form.password,
     clearPassword: form.clearPassword,
+    allowWrites: form.allowWrites,
   }
 }
 
@@ -114,6 +121,7 @@ export function DbFields({
 }) {
   const defaultPort = DB_PROVIDERS.find((p) => p.id === form.provider)?.port ?? 0
   const oracle = form.provider === 'Oracle'
+  const [confirmingWrites, setConfirmingWrites] = useState(false)
   return (
     <>
       <Field label="Database type" htmlFor="db-provider" hint={existing ? 'The type cannot change after creation.' : 'Choose the engine. Use a read-only account on a non-production server.'}>
@@ -194,6 +202,34 @@ export function DbFields({
       <Field label="Connection key" htmlFor="db-key" error={errors.key} hint="A short name for this connection in workflows later. It cannot change.">
         <Input id="db-key" className="font-mono" value={form.key} disabled={!!existing} onChange={(e) => onChange({ key: e.target.value.toLowerCase() })} aria-invalid={!!errors.key} placeholder="lasernet" />
       </Field>
+      <div className="flex flex-col gap-1.5">
+        <Switch
+          checked={form.allowWrites}
+          onCheckedChange={(on) => {
+            if (on) {
+              setConfirmingWrites(true) // turning writes on asks first
+            } else {
+              setConfirmingWrites(false)
+              onChange({ allowWrites: false })
+            }
+          }}
+          label="Allow workflows to change data"
+        />
+        <p className="m-0 text-xs text-ink-3">Only switch this on for a login that can write just the tables your workflows need.</p>
+        {confirmingWrites && (
+          <div role="group" aria-label="Confirm writes" className="flex flex-col gap-2 rounded-md border border-warn/50 bg-warn-soft p-3 text-[13px] text-ink">
+            <p className="m-0">Workflows will be able to run INSERT, UPDATE and DELETE statements on this connection. Verso runs only the statement an author typed, with this login's permissions.</p>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant="primary" onClick={() => { setConfirmingWrites(false); onChange({ allowWrites: true }) }}>
+                Allow changes
+              </Button>
+              <Button type="button" size="sm" onClick={() => setConfirmingWrites(false)}>
+                Keep writes off
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
       <p className="m-0 text-xs text-ink-3">Use a read-only login: Verso checks that queries are a single SELECT, but the database login is the real protection.</p>
       {errors.form && <p role="alert" className="text-[13px] text-err">{errors.form}</p>}
     </>

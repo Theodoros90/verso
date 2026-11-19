@@ -55,12 +55,12 @@ function dbApi(initial: DatabaseConnectionDto[], fail?: () => Response | undefin
     const failure = fail?.()
     if (failure) return failure
     if (method === 'POST') {
-      const created = connection({ id: `d-${items.length + 1}`, key: String(body.key), name: String(body.name), server: String(body.server), hasPassword: !!body.password })
+      const created = connection({ id: `d-${items.length + 1}`, key: String(body.key), name: String(body.name), server: String(body.server), hasPassword: !!body.password, allowWrites: body.allowWrites === true })
       items.push(created)
       return json(created, 201)
     }
     const c = items.find((x) => url.includes(x.id))!
-    Object.assign(c, { name: body.name, server: body.server, hasPassword: body.clearPassword ? false : body.password ? true : c.hasPassword })
+    Object.assign(c, { name: body.name, server: body.server, hasPassword: body.clearPassword ? false : body.password ? true : c.hasPassword, allowWrites: typeof body.allowWrites === 'boolean' ? body.allowWrites : c.allowWrites })
     return json(c)
   }
   return { handler, bodies, calls }
@@ -167,6 +167,76 @@ describe('Database connections (real connections in the Connections tab)', () =>
     await userEvent.click(within(again).getByRole('button', { name: 'Save settings' }))
     await within(drawer).findByText('Settings saved for Reporting DB.')
     expect(api.bodies[1]).toMatchObject({ password: null, clearPassword: true })
+  })
+
+  describe('Allow workflows to change data', () => {
+    const switchName = 'Allow workflows to change data'
+    const confirmText = 'Workflows will be able to run INSERT, UPDATE and DELETE statements on this connection. Verso runs only the statement an author typed, with this login\'s permissions.'
+
+    it('is off for a new connection, with its helper text, and a new connection sends allowWrites false', async () => {
+      const api = dbApi([])
+      const drawer = await openConfiguration('Connections', api.handler)
+      const dialog = await chooseSql(drawer)
+
+      expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'false')
+      expect(within(dialog).getByText('Only switch this on for a login that can write just the tables your workflows need.')).toBeInTheDocument()
+      await userEvent.type(within(dialog).getByLabelText('Name'), 'Reporting DB')
+      await userEvent.type(within(dialog).getByLabelText('Server name'), 'sql.example.test')
+      await userEvent.type(within(dialog).getByLabelText('Login'), 'reader')
+      await userEvent.type(within(dialog).getByLabelText('Connection key'), 'reporting')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Create connection' }))
+      await within(drawer).findByText('Database connection “Reporting DB” created.')
+      expect(api.bodies[0]).toMatchObject({ allowWrites: false })
+    })
+
+    it('asks for confirmation when turned on; cancelling keeps it off', async () => {
+      const drawer = await openConfiguration('Connections', dbApi([]).handler)
+      const dialog = await chooseSql(drawer)
+
+      await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+      expect(within(dialog).getByText(confirmText)).toBeInTheDocument()
+      expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'false')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Keep writes off' }))
+
+      expect(within(dialog).queryByText(confirmText)).not.toBeInTheDocument()
+      expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'false')
+    })
+
+    it('confirming turns it on and the request carries allowWrites true', async () => {
+      const api = dbApi([])
+      const drawer = await openConfiguration('Connections', api.handler)
+      const dialog = await chooseSql(drawer)
+      await userEvent.type(within(dialog).getByLabelText('Name'), 'Reporting DB')
+      await userEvent.type(within(dialog).getByLabelText('Server name'), 'sql.example.test')
+      await userEvent.type(within(dialog).getByLabelText('Login'), 'writer')
+      await userEvent.type(within(dialog).getByLabelText('Connection key'), 'reporting')
+
+      await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Allow changes' }))
+      expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'true')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Create connection' }))
+
+      expect(await within(drawer).findByText('Writes on')).toBeInTheDocument()
+      expect(api.bodies[0]).toMatchObject({ allowWrites: true })
+    })
+
+    it('shows the saved state when editing, turning it off needs no confirmation, and the card shows "Writes on"', async () => {
+      const api = dbApi([connection({ allowWrites: true }), connection({ id: 'd-2', key: 'other', name: 'Other DB' })])
+      const drawer = await openConfiguration('Connections', api.handler)
+      const card = (await within(drawer).findByRole('heading', { name: 'Reporting DB' })).closest('li')!
+      expect(within(card).getByText('Writes on')).toBeInTheDocument()
+      expect(within(within(drawer).getByRole('heading', { name: 'Other DB' }).closest('li')!).queryByText('Writes on')).not.toBeInTheDocument()
+
+      await userEvent.click(within(drawer).getByRole('button', { name: 'Configure Reporting DB' }))
+      const dialog = screen.getByRole('dialog', { name: 'Reporting DB' })
+      expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'true')
+      await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+      expect(within(dialog).queryByText(confirmText)).not.toBeInTheDocument()
+      expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'false')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Save settings' }))
+      await within(drawer).findByText('Settings saved for Reporting DB.')
+      expect(api.bodies[0]).toMatchObject({ allowWrites: false })
+    })
   })
 
   it('Test connection asks the Worker to connect and reports success with the server version', async () => {
