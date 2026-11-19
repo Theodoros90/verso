@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using Verso.Application.Executions;
 using Verso.Application.Mail;
 
@@ -11,6 +10,7 @@ namespace Verso.Application.Connections;
 public sealed class DatabaseQueryService(IVersoDbContext db, ISecretProtector secrets, IEnumerable<IProviderQueryRunner> runners, DatabaseConnectionOptions options) : IDatabaseQuery
 {
     private readonly Dictionary<string, IProviderQueryRunner> _runners = runners.ToDictionary(r => r.Provider, StringComparer.Ordinal);
+    private readonly DatabaseConnectionResolver _resolver = new(db, secrets, options); // shared with the Write to database step
 
     public const int MaxRowsLimit = 100;
     public const int MaxTimeoutSeconds = 60;
@@ -37,35 +37,17 @@ public sealed class DatabaseQueryService(IVersoDbContext db, ISecretProtector se
             return DatabaseQueryResult.Failure("sql.bad_parameter", false);
         }
 
-        var connection = await db.DatabaseConnections.AsNoTracking().SingleOrDefaultAsync(c => c.Key == request.ConnectionKey, ct);
-        if (connection is null || !connection.IsActive)
+        var (settings, _, code) = await _resolver.ResolveAsync(request.ConnectionKey, requireWrites: false, ct);
+        if (settings is null)
         {
-            return DatabaseQueryResult.Failure("db.connection_unavailable", false);
+            return DatabaseQueryResult.Failure(code ?? "db.connection_unavailable", false);
         }
 
-        if (options.AllowedServers.Length > 0 && !options.AllowedServers.Contains(DatabaseServers.HostOf(connection.Server), StringComparer.OrdinalIgnoreCase))
-        {
-            return DatabaseQueryResult.Failure("db.server_not_allowed", false);
-        }
-
-        var password = "";
-        if (connection.PasswordProtected is not null)
-        {
-            password = secrets.Unprotect(connection.PasswordProtected, DatabaseConnectionContexts.For(connection.Key)) ?? "";
-            if (password.Length == 0)
-            {
-                return DatabaseQueryResult.Failure("db.password_unreadable", false);
-            }
-        }
-
-        if (!_runners.TryGetValue(connection.Provider, out var runner))
+        if (!_runners.TryGetValue(settings.Provider, out var runner))
         {
             return DatabaseQueryResult.Failure("db.provider_unavailable", false);
         }
 
-        var settings = new DatabaseConnectionSettings(
-            connection.Provider, connection.Server, connection.Port, connection.Database, connection.UserName, password, connection.Encrypt, connection.TrustServerCertificate,
-            TimeSpan.FromSeconds(connection.TimeoutSeconds));
         try
         {
             return await runner.RunAsync(settings, request, ct);
