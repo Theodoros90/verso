@@ -15,6 +15,7 @@ namespace Verso.Databases;
 internal static class WriteFailure
 {
     /// <summary>
+    /// "Known" relies on the executor rolling back in its finally block and on Pooling=false in the runners' connection strings (the rollback is also done by closing the connection): turning pooling on would break that assumption.
     /// The shared decision. <paramref name="known"/>: the server reported an error for the statement itself. Before sending, or for a known error, nothing changed
     /// (OutcomeUnknown false); anything else after sending is unknown. The code is the probe's wording, with the probe's catch-all turned into db.query_failed.
     /// </summary>
@@ -36,13 +37,13 @@ public sealed class PostgreSqlWriteRunner : IProviderWriteRunner
 
     /// <summary>
     /// SQLSTATE classes and codes where the server rejected the statement and the transaction is rolled back: 22 data exception, 23 integrity constraint, 42 syntax error or access rule
-    /// (includes 42501 insufficient privilege), 28 invalid authorization, 3D000 unknown database, 40001 serialization failure and 40P01 deadlock detected (PostgreSQL aborts the transaction;
+    /// (includes 42501 insufficient privilege), 28 invalid authorization, 3D000 unknown database, 25006 read_only_sql_transaction (rejected before any change), 40001 serialization failure and 40P01 deadlock detected (PostgreSQL aborts the transaction;
     /// PostgreSQL documentation, appendix A). Everything else (57014 query_canceled, 08 connection exception, 53 insufficient resources, 57P0x operator intervention, 58 system error,
     /// XX internal) is unknown: the server or the connection may have gone away while the statement or the commit was in flight.
     /// </summary>
     internal static bool IsKnownStatementError(string? sqlState) =>
         sqlState is { Length: 5 } && (sqlState.StartsWith("22", StringComparison.Ordinal) || sqlState.StartsWith("23", StringComparison.Ordinal) || sqlState.StartsWith("42", StringComparison.Ordinal)
-            || sqlState.StartsWith("28", StringComparison.Ordinal) || sqlState is "3D000" or "40001" or "40P01");
+            || sqlState.StartsWith("28", StringComparison.Ordinal) || sqlState is "3D000" or "40001" or "40P01" or "25006");
 
     public string Provider => DatabaseProviders.PostgreSql;
 
@@ -66,7 +67,9 @@ public sealed class MySqlWriteRunner : IProviderWriteRunner
     internal const string BeginStatement = "START TRANSACTION";
 
     /// <summary>
-    /// Server error numbers where the statement was rejected and is rolled back (MySQL error reference): 1062 duplicate entry, 1048 column cannot be null, 1054 unknown column,
+    /// ASSUMES a transactional engine (InnoDB): only then is a statement the server rejected rolled back with the transaction. On MyISAM / MEMORY tables a failed multi-row UPDATE or INSERT can leave
+    /// earlier rows changed while this reports a known failure. With a non-strict sql_mode the data errors 1264 / 1265 / 1366 are warnings, not errors, so those codes may never be raised.
+    /// Server error numbers where the statement was rejected (MySQL error reference): 1062 duplicate entry, 1048 column cannot be null, 1054 unknown column,
     /// 1146 table does not exist, 1064 syntax, 1136 column count mismatch, 1264 / 1265 / 1366 value out of range, truncated or incorrect, 1451 / 1452 foreign key,
     /// 1142 / 1143 / 1044 / 1045 privileges, 1213 deadlock (InnoDB rolls the transaction back). 1205 lock wait timeout is deliberately NOT here: the server only rolls back
     /// the statement and keeps the transaction (innodb_rollback_on_timeout is off by default), and MySqlConnector reports its own command timeout with the same number

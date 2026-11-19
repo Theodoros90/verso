@@ -143,7 +143,7 @@ public sealed class DatabaseWriteRunnerTests
     [Theory]
     [InlineData("22001")] [InlineData("22012")] [InlineData("23502")] [InlineData("23505")] [InlineData("23503")]
     [InlineData("42601")] [InlineData("42P01")] [InlineData("42703")] [InlineData("42501")]
-    [InlineData("28000")] [InlineData("28P01")] [InlineData("3D000")] [InlineData("40001")] [InlineData("40P01")]
+    [InlineData("28000")] [InlineData("28P01")] [InlineData("3D000")] [InlineData("40001")] [InlineData("40P01")] [InlineData("25006")]
     public void PostgreSql_KnownStatementErrors(string sqlState)
     {
         Assert.True(PostgreSqlWriteRunner.IsKnownStatementError(sqlState));
@@ -239,6 +239,21 @@ public sealed class DatabaseWriteRunnerTests
             Assert.Equal("db.unreachable", unreachable.Code);
             Assert.False(unreachable.OutcomeUnknown);
         }
+    }
+
+    [Fact]
+    public void KnownCodes_BeforeSending_GoThroughDescribe_AndAreNeverUnknown()
+    {
+        // The explicit "sent && known" branch: a known code before the statement was sent is not reported as the statement failing; the probe's wording applies.
+        var pg = PostgreSqlWriteRunner.Map("23505", new TimeoutException(), sent: false);
+        Assert.Equal("db.timeout", pg.Code);
+        Assert.False(pg.OutcomeUnknown);
+        var my = MySqlWriteRunner.Map(1062, new InvalidOperationException("x"), sent: false);
+        Assert.Equal("db.query_failed", my.Code);
+        Assert.False(my.OutcomeUnknown);
+        var or = OracleWriteRunner.Map(1, new InvalidOperationException("x"), sent: false);
+        Assert.Equal("db.query_failed", or.Code);
+        Assert.False(or.OutcomeUnknown);
     }
 
     [Fact]
