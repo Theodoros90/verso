@@ -49,6 +49,10 @@ public sealed class QueryDatabaseWiringTests
         Assert.IsType<DatabaseQueryService>(scope.ServiceProvider.GetRequiredService<IDatabaseQuery>());
         var providers = scope.ServiceProvider.GetServices<IProviderQueryRunner>().Select(r => r.Provider).Order(StringComparer.Ordinal).ToList();
         Assert.Equal(new[] { DatabaseProviders.MySql, DatabaseProviders.Oracle, DatabaseProviders.PostgreSql, DatabaseProviders.SqlServer }.Order(StringComparer.Ordinal), providers);
+
+        // Write to database step (Phase 2): the write service resolves in a scope; the SQL Server write runner is registered (the other providers arrive with Verso.Databases).
+        Assert.IsType<DatabaseWriteService>(scope.ServiceProvider.GetRequiredService<IDatabaseWrite>());
+        Assert.Contains(scope.ServiceProvider.GetServices<IProviderWriteRunner>(), r => r.Provider == DatabaseProviders.SqlServer);
     }
 
     [Fact]

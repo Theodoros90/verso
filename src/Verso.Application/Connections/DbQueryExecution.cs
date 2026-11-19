@@ -133,7 +133,8 @@ public static class DbQueryExecution
         }
     }
 
-    private static async Task RollbackAsync(DbConnection connection, DbTransaction? transaction, bool raw)
+    /// <summary>Rolls back (driver transaction, or a raw "ROLLBACK" when <paramref name="raw"/>); a failure is ignored. Shared with <see cref="DbWriteExecution"/>.</summary>
+    internal static async Task RollbackAsync(DbConnection connection, DbTransaction? transaction, bool raw)
     {
         // Always: undoes the data changes of the transaction, but not every side effect (sequences, linked servers), so the connection's login must itself be read-only.
         try
