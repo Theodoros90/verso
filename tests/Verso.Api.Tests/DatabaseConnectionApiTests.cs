@@ -1,11 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Verso.Application;
 using Verso.Application.Connections;
 using Verso.Application.Mail;
 using Verso.Infrastructure.Connections;
+using Verso.Infrastructure.Persistence;
 using Verso.Infrastructure.Security;
 
 namespace Verso.Api.Tests;
@@ -61,6 +63,132 @@ public sealed class DatabaseConnectionApiTests(MigratedDatabaseFixture fixture) 
 
     private async Task<JsonElement> GetTestAsync(Guid testId) =>
         await (await _client.GetAsync($"/api/v1/database-connections/tests/{testId}")).Content.ReadFromJsonAsync<JsonElement>();
+
+    private async Task<JsonElement> AuditEntriesAsync(Guid id, string action)
+    {
+        var page = await _client.GetFromJsonAsync<JsonElement>($"/api/v1/audit?entityType=DatabaseConnection&entityId={id}&pageSize=100");
+        return JsonSerializer.SerializeToElement(page.GetProperty("items").EnumerateArray().Where(e => e.GetProperty("action").GetString() == action).ToList());
+    }
+
+    private Task<HttpResponseMessage> PutWritesAsync(Guid id, string key, bool? allowWrites) =>
+        _client.PutAsJsonAsync($"/api/v1/database-connections/{id}", new
+        {
+            name = "DB " + key, server = ServerName, userName = Login, encrypt = true, trustServerCertificate = false, timeoutSeconds = 15, allowWrites,
+        });
+
+    [Fact]
+    public async Task New_connection_does_not_allow_writes()
+    {
+        var created = await CreateAsync(UniqueKey());
+
+        Assert.False(created.GetProperty("allowWrites").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Admin_can_switch_writes_on_and_off_and_it_is_audited()
+    {
+        var key = UniqueKey();
+        var id = (await CreateAsync(key)).GetProperty("id").GetGuid();
+
+        var on = await PutWritesAsync(id, key, true);
+        Assert.Equal(HttpStatusCode.OK, on.StatusCode);
+        Assert.True((await on.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("allowWrites").GetBoolean());
+        var same = await PutWritesAsync(id, key, true); // the same value again writes no audit
+        Assert.True((await same.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("allowWrites").GetBoolean());
+        var off = await PutWritesAsync(id, key, false);
+        Assert.False((await off.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("allowWrites").GetBoolean());
+
+        var changes = (await AuditEntriesAsync(id, "DatabaseConnectionWritesChanged")).EnumerateArray().ToList();
+        Assert.Equal(2, changes.Count);
+        var states = changes.Select(c => c.GetProperty("details").GetProperty("allowWrites").GetBoolean()).Order().ToList();
+        Assert.Equal([false, true], states);
+        Assert.All(changes, c => Assert.Equal(key, c.GetProperty("details").GetProperty("key").GetString()));
+        var updated = (await AuditEntriesAsync(id, "DatabaseConnectionUpdated")).GetRawText();
+        Assert.Contains("allowWrites", updated, StringComparison.Ordinal);
+        var all = await _client.GetStringAsync($"/api/v1/audit?entityType=DatabaseConnection&entityId={id}");
+        foreach (var value in new[] { Secret, ServerName, Login })
+        {
+            Assert.DoesNotContain(value, all, StringComparison.Ordinal);
+        }
+
+        using var other = fixture.Factory.CreateClientAs("dev.workflow-author");
+        Assert.Equal(HttpStatusCode.Forbidden, (await other.PutAsJsonAsync($"/api/v1/database-connections/{id}", new { name = "x", server = ServerName, userName = Login, allowWrites = true })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Update_without_the_field_keeps_it()
+    {
+        var key = UniqueKey();
+        var id = (await CreateAsync(key)).GetProperty("id").GetGuid();
+        await PutWritesAsync(id, key, true);
+
+        var kept = await _client.PutAsJsonAsync($"/api/v1/database-connections/{id}", Body(key, password: null, server: "sql9.private-host.example"));
+
+        Assert.Equal(HttpStatusCode.OK, kept.StatusCode);
+        Assert.True((await kept.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("allowWrites").GetBoolean());
+        Assert.Single((await AuditEntriesAsync(id, "DatabaseConnectionWritesChanged")).EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Create_with_allowWrites_true_is_audited()
+    {
+        var key = UniqueKey();
+        var response = await _client.PostAsJsonAsync("/api/v1/database-connections", new
+        {
+            key, name = "DB " + key, server = ServerName, userName = Login, allowWrites = true, password = Secret,
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(created.GetProperty("allowWrites").GetBoolean());
+        var change = Assert.Single((await AuditEntriesAsync(created.GetProperty("id").GetGuid(), "DatabaseConnectionWritesChanged")).EnumerateArray());
+        Assert.True(change.GetProperty("details").GetProperty("allowWrites").GetBoolean());
+        Assert.Equal(key, change.GetProperty("details").GetProperty("key").GetString());
+    }
+
+    [Fact]
+    public async Task Options_report_allowsWrites()
+    {
+        var on = "aaa-" + UniqueKey();
+        var off = "aab-" + UniqueKey();
+        var inactive = UniqueKey();
+        var onId = (await CreateAsync(on)).GetProperty("id").GetGuid();
+        await CreateAsync(off);
+        var inactiveId = (await CreateAsync(inactive)).GetProperty("id").GetGuid();
+        await PutWritesAsync(onId, on, true);
+        await _client.PostAsync($"/api/v1/database-connections/{inactiveId}/deactivate", null);
+
+        using var author = fixture.Factory.CreateClientAs("dev.workflow-author");
+        var text = await author.GetStringAsync("/api/v1/database-connection-options");
+
+        var options = JsonSerializer.Deserialize<JsonElement>(text).EnumerateArray().ToList();
+        Assert.DoesNotContain(options, o => o.GetProperty("key").GetString() == inactive);
+        var optionOn = options.Single(o => o.GetProperty("key").GetString() == on);
+        var optionOff = options.Single(o => o.GetProperty("key").GetString() == off);
+        Assert.True(optionOn.GetProperty("allowsWrites").GetBoolean());
+        Assert.False(optionOff.GetProperty("allowsWrites").GetBoolean());
+        Assert.Equal(["allowsWrites", "key", "name", "provider"], optionOn.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
+        foreach (var value in new[] { ServerName, Login, Secret, "userName", "server", "database", "port" })
+        {
+            Assert.DoesNotContain(value, text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task Existing_rows_default_to_off()
+    {
+        var key = UniqueKey();
+        using var scope = fixture.Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<VersoDbContext>();
+        var id = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"INSERT INTO [connections].[DatabaseConnections] ([Id], [Key], [Name], [Server], [Database], [UserName], [Encrypt], [TrustServerCertificate], [TimeoutSeconds], [IsActive], [CreatedAt], [CreatedBy], [UpdatedAt], [UpdatedBy]) VALUES ({id}, {key}, N'Old', N'old.example', N'', N'u', 1, 0, 15, 1, {now}, N'x', {now}, N'x')");
+
+        var row = await scope.ServiceProvider.GetRequiredService<IVersoDbContext>().DatabaseConnections.AsNoTracking().SingleAsync(c => c.Id == id);
+        Assert.False(row.AllowWrites);
+    }
 
     [Fact]
     public async Task Create_StoresTheConnection_AndNeverReturnsThePassword()
@@ -199,7 +327,7 @@ public sealed class DatabaseConnectionApiTests(MigratedDatabaseFixture fixture) 
         Assert.Contains(options, o => o.GetProperty("key").GetString() == active);
         Assert.DoesNotContain(options, o => o.GetProperty("key").GetString() == inactive);
         var option = options.Single(o => o.GetProperty("key").GetString() == active);
-        Assert.Equal(["key", "name", "provider"], option.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(["allowsWrites", "key", "name", "provider"], option.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
         Assert.Equal("SqlServer", option.GetProperty("provider").GetString());
         Assert.Equal("DB " + active, option.GetProperty("name").GetString());
         Assert.DoesNotContain(ServerName, text, StringComparison.Ordinal);

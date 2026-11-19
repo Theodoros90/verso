@@ -9,15 +9,15 @@ namespace Verso.Application.Connections;
 /// </summary>
 public sealed record SaveDatabaseConnectionRequest(
     string? Key, string? Provider, string? Name, string? Server, int? Port, string? Database, string? UserName, bool? Encrypt,
-    bool? TrustServerCertificate, int? TimeoutSeconds, string? Password, bool? ClearPassword);
+    bool? TrustServerCertificate, int? TimeoutSeconds, string? Password, bool? ClearPassword, bool? AllowWrites);
 
 /// <summary>A database connection as the Configuration screen sees it. No password: only whether one is stored.</summary>
 public sealed record DatabaseConnectionDto(
     Guid Id, string Key, string Provider, string Name, string Server, int Port, string Database, string UserName, bool Encrypt,
-    bool TrustServerCertificate, int TimeoutSeconds, bool IsActive, bool HasPassword, DateTimeOffset UpdatedAt, string UpdatedBy);
+    bool TrustServerCertificate, int TimeoutSeconds, bool IsActive, bool HasPassword, DateTimeOffset UpdatedAt, string UpdatedBy, bool AllowWrites);
 
-/// <summary>One choice in the Query database step's connection dropdown: key, name and database type only.</summary>
-public sealed record DatabaseConnectionOptionDto(string Key, string Name, string Provider);
+/// <summary>One choice in a database step's connection dropdown: key, name, database type and whether writes are allowed. Nothing else.</summary>
+public sealed record DatabaseConnectionOptionDto(string Key, string Name, string Provider, bool AllowsWrites);
 
 /// <summary>The state of a connection test. Never carries the server, the login or a password.</summary>
 public sealed record DatabaseConnectionTestDto(

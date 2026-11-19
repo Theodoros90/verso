@@ -4965,7 +4965,8 @@
           "isActive",
           "hasPassword",
           "updatedAt",
-          "updatedBy"
+          "updatedBy",
+          "allowWrites"
         ],
         "type": "object",
         "properties": {
@@ -5025,6 +5026,9 @@
           },
           "updatedBy": {
             "type": "string"
+          },
+          "allowWrites": {
+            "type": "boolean"
           }
         }
       },
@@ -5032,7 +5036,8 @@
         "required": [
           "key",
           "name",
-          "provider"
+          "provider",
+          "allowsWrites"
         ],
         "type": "object",
         "properties": {
@@ -5044,6 +5049,9 @@
           },
           "provider": {
             "type": "string"
+          },
+          "allowsWrites": {
+            "type": "boolean"
           }
         }
       },
@@ -7171,7 +7179,8 @@
           "trustServerCertificate",
           "timeoutSeconds",
           "password",
-          "clearPassword"
+          "clearPassword",
+          "allowWrites"
         ],
         "type": "object",
         "properties": {
@@ -7248,6 +7257,12 @@
             ]
           },
           "clearPassword": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "allowWrites": {
             "type": [
               "null",
               "boolean"

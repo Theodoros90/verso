@@ -24,6 +24,8 @@ public sealed class DatabaseConnection
     public bool TrustServerCertificate { get; private set; }
     public int TimeoutSeconds { get; private set; }
     public bool IsActive { get; private set; }
+    /// <summary>Whether a Write to database step may use this connection. Off by default; only an administrator changes it.</summary>
+    public bool AllowWrites { get; private set; }
     public string? PasswordProtected { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public string CreatedBy { get; private set; } = "";
@@ -71,6 +73,12 @@ public sealed class DatabaseConnection
     public void SetPassword(string? protectedPassword, string actor, DateTimeOffset now)
     {
         PasswordProtected = protectedPassword;
+        Touch(actor, now);
+    }
+
+    public void SetAllowWrites(bool allow, string actor, DateTimeOffset now)
+    {
+        AllowWrites = allow;
         Touch(actor, now);
     }
 

@@ -15,6 +15,7 @@ internal sealed class DatabaseConnectionConfiguration : IEntityTypeConfiguration
         builder.HasIndex(c => c.Key).IsUnique().HasDatabaseName("UX_DatabaseConnections_Key");
         builder.Property(c => c.Provider).HasMaxLength(16).IsRequired().HasDefaultValue("SqlServer");
         builder.Property(c => c.Port).HasDefaultValue(0);
+        builder.Property(c => c.AllowWrites).HasDefaultValue(false);
         builder.Property(c => c.Name).HasMaxLength(100).IsRequired();
         builder.Property(c => c.Server).HasMaxLength(255).IsRequired();
         builder.Property(c => c.Database).HasMaxLength(128).IsRequired();

@@ -141,12 +141,14 @@ export interface DatabaseConnectionDto {
   hasPassword: boolean
   updatedAt: string
   updatedBy: string
+  allowWrites: boolean
 }
 
 export interface DatabaseConnectionOptionDto {
   key: string
   name: string
   provider: string
+  allowsWrites: boolean
 }
 
 export interface DatabaseConnectionTestDto {
@@ -600,6 +602,7 @@ export interface SaveDatabaseConnectionRequest {
   timeoutSeconds: number | null
   password: string | null
   clearPassword: boolean | null
+  allowWrites: boolean | null
 }
 
 export interface SaveDraftRequest {

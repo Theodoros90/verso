@@ -22,6 +22,7 @@ const connection = (over: Partial<DatabaseConnectionDto> = {}): DatabaseConnecti
   hasPassword: true,
   updatedAt: '2026-11-16T10:00:00Z',
   updatedBy: 'dev.admin',
+  allowWrites: false,
   ...over,
 })
 

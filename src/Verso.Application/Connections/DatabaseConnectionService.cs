@@ -21,6 +21,7 @@ public sealed class DatabaseConnectionService(IVersoDbContext db, ICurrentUser u
         public const string Created = "DatabaseConnectionCreated";
         public const string Updated = "DatabaseConnectionUpdated";
         public const string PasswordChanged = "DatabaseConnectionPasswordChanged";
+        public const string WritesChanged = "DatabaseConnectionWritesChanged";
         public const string Deactivated = "DatabaseConnectionDeactivated";
         public const string Activated = "DatabaseConnectionActivated";
     }
@@ -39,7 +40,7 @@ public sealed class DatabaseConnectionService(IVersoDbContext db, ICurrentUser u
     /// <summary>What a workflow author needs to pick a connection in a Query database step: active connections, by name. Never the server, the login or the database.</summary>
     public async Task<IReadOnlyList<DatabaseConnectionOptionDto>> ListOptionsAsync(CancellationToken ct) =>
         await db.DatabaseConnections.AsNoTracking().Where(c => c.IsActive).OrderBy(c => c.Name)
-            .Select(c => new DatabaseConnectionOptionDto(c.Key, c.Name, c.Provider)).ToListAsync(ct);
+            .Select(c => new DatabaseConnectionOptionDto(c.Key, c.Name, c.Provider, c.AllowWrites)).ToListAsync(ct);
 
     public async Task<Result<DatabaseConnectionDto>> CreateAsync(SaveDatabaseConnectionRequest request, CancellationToken ct)
     {
@@ -64,8 +65,19 @@ public sealed class DatabaseConnectionService(IVersoDbContext db, ICurrentUser u
             connection.SetPassword(secrets.Protect(request.Password!, DatabaseConnectionContexts.For(key)), user.Id, now);
         }
 
+        var allowWrites = request.AllowWrites == true;
+        if (allowWrites)
+        {
+            connection.SetAllowWrites(true, user.Id, now);
+        }
+
         db.DatabaseConnections.Add(connection);
         Audit(Actions.Created, connection.Id, now, new { key, provider, name = f.Name, hasPassword });
+        if (allowWrites)
+        {
+            Audit(Actions.WritesChanged, connection.Id, now, new { key, allowWrites });
+        }
+
         if (hasPassword)
         {
             Audit(Actions.PasswordChanged, connection.Id, now, new { key, action = "set" });
@@ -120,10 +132,18 @@ public sealed class DatabaseConnectionService(IVersoDbContext db, ICurrentUser u
         Note("encrypt", connection.Encrypt != f.Encrypt);
         Note("trustServerCertificate", connection.TrustServerCertificate != f.Trust);
         Note("timeout", connection.TimeoutSeconds != f.Timeout);
+        var writesChanged = request.AllowWrites is { } wanted && wanted != connection.AllowWrites;
+        Note("allowWrites", writesChanged);
         if (changed.Count > 0)
         {
             connection.Update(f.Name, f.Server, f.Port, f.Database, f.UserName, f.Encrypt, f.Trust, f.Timeout, user.Id, now);
             Audit(Actions.Updated, id, now, new { key = connection.Key, changed });
+        }
+
+        if (writesChanged)
+        {
+            connection.SetAllowWrites(request.AllowWrites!.Value, user.Id, now);
+            Audit(Actions.WritesChanged, id, now, new { key = connection.Key, allowWrites = connection.AllowWrites });
         }
 
         if (request.ClearPassword == true && connection.PasswordProtected is not null)
@@ -261,7 +281,7 @@ public sealed class DatabaseConnectionService(IVersoDbContext db, ICurrentUser u
 
     private static DatabaseConnectionDto ToDto(DatabaseConnection c) => new(
         c.Id, c.Key, c.Provider, c.Name, c.Server, c.Port, c.Database, c.UserName, c.Encrypt, c.TrustServerCertificate, c.TimeoutSeconds, c.IsActive,
-        c.PasswordProtected is not null, c.UpdatedAt, c.UpdatedBy);
+        c.PasswordProtected is not null, c.UpdatedAt, c.UpdatedBy, c.AllowWrites);
 
     private void Audit(string action, Guid id, DateTimeOffset now, object details) =>
         db.AuditEntries.Add(AuditEntry.Record(
