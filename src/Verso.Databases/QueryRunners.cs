@@ -67,22 +67,26 @@ public sealed class OracleQueryRunner : IProviderQueryRunner
     }
 
     /// <summary>The request's values re-keyed to the synthetic names p1..pN (a missing exact name falls back to a case-insensitive match, as the service checks them).</summary>
-    internal static DatabaseQueryRequest Renamed(DatabaseQueryRequest request, string sql, IReadOnlyList<string> names)
+    internal static DatabaseQueryRequest Renamed(DatabaseQueryRequest request, string sql, IReadOnlyList<string> names) =>
+        request with { Sql = sql, Parameters = Rekey(request.Parameters, names) };
+
+    /// <summary>The values re-keyed to p1..pN by the original names (shared with the Oracle write runner). Throws <see cref="ArgumentException"/> when a name has no value.</summary>
+    internal static Dictionary<string, object?> Rekey(IReadOnlyDictionary<string, object?> parameters, IReadOnlyList<string> names)
     {
         var bound = new Dictionary<string, object?>(names.Count, StringComparer.Ordinal);
         for (var n = 0; n < names.Count; n++)
         {
-            var key = request.Parameters.Keys.FirstOrDefault(k => k.TrimStart('@') == names[n])
-                ?? request.Parameters.Keys.FirstOrDefault(k => string.Equals(k.TrimStart('@'), names[n], StringComparison.OrdinalIgnoreCase));
+            var key = parameters.Keys.FirstOrDefault(k => k.TrimStart('@') == names[n])
+                ?? parameters.Keys.FirstOrDefault(k => string.Equals(k.TrimStart('@'), names[n], StringComparison.OrdinalIgnoreCase));
             if (key is null)
             {
                 throw new ArgumentException("A parameter is missing.");
             }
 
-            bound["p" + (n + 1)] = request.Parameters[key];
+            bound["p" + (n + 1)] = parameters[key];
         }
 
-        return request with { Sql = sql, Parameters = bound };
+        return bound;
     }
 
     public Task<DatabaseQueryResult> RunAsync(DatabaseConnectionSettings settings, DatabaseQueryRequest request, CancellationToken ct)

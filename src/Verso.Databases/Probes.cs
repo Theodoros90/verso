@@ -40,7 +40,7 @@ public sealed class PostgreSqlProbe : IProviderProbe
 {
     public string Provider => DatabaseProviders.PostgreSql;
 
-    internal static NpgsqlConnectionStringBuilder Build(DatabaseConnectionSettings s, string applicationName = "Verso connection test")
+    internal static NpgsqlConnectionStringBuilder Build(DatabaseConnectionSettings s, string applicationName = "Verso connection test", bool readOnly = true)
     {
         var builder = new NpgsqlConnectionStringBuilder
         {
@@ -53,8 +53,12 @@ public sealed class PostgreSqlProbe : IProviderProbe
             CommandTimeout = Math.Max(1, (int)s.Timeout.TotalSeconds),
             Pooling = false,
             ApplicationName = applicationName,
-            Options = "-c default_transaction_read_only=on",
         };
+        if (readOnly)
+        {
+            builder.Options = "-c default_transaction_read_only=on"; // only the Write to database step's runner builds without it
+        }
+
         if (s.Database.Length > 0)
         {
             builder.Database = s.Database;

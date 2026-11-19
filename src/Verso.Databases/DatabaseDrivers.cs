@@ -14,6 +14,9 @@ public static class DatabaseDrivers
         services.AddSingleton<IProviderQueryRunner, PostgreSqlQueryRunner>();
         services.AddSingleton<IProviderQueryRunner, MySqlQueryRunner>();
         services.AddSingleton<IProviderQueryRunner, OracleQueryRunner>();
+        services.AddSingleton<IProviderWriteRunner, PostgreSqlWriteRunner>();
+        services.AddSingleton<IProviderWriteRunner, MySqlWriteRunner>();
+        services.AddSingleton<IProviderWriteRunner, OracleWriteRunner>();
         return services;
     }
 }
