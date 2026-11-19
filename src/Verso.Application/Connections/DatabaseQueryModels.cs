@@ -52,6 +52,8 @@ public static class DatabaseQueryMessages
         "sql.multiple_statements" => "Only one statement is allowed.",
         "sql.not_select" => "Only a SELECT query is allowed (a WITH ... SELECT is fine).",
         "sql.select_into" => "SELECT ... INTO is not allowed.",
+        "sql.not_write" => "Only an INSERT, UPDATE or DELETE statement is allowed.",
+        "sql.no_where" => "UPDATE and DELETE need a WHERE condition, so a statement can never change a whole table by accident.",
         "sql.unterminated" => "The query has an unclosed quote or comment.",
         "sql.bad_parameter" => "A parameter is missing or its name is not valid.",
         "sql.unsupported_syntax" => "This SQL syntax is not supported by the Query database step.",

@@ -6,9 +6,15 @@ namespace Verso.Application.Executions;
 /// <summary>The outcome of <see cref="SqlGuard.Check"/>: <c>Parameters</c> are the distinct <c>@name</c> placeholders in order of first use.</summary>
 public sealed record SqlCheck(bool Ok, string? Code, string? Message, IReadOnlyList<string> Parameters);
 
+/// <summary>The outcome of <see cref="SqlGuard.CheckWrite"/>: as <see cref="SqlCheck"/>, plus <c>Verb</c> (<c>INSERT</c>, <c>UPDATE</c> or <c>DELETE</c>, upper-case) when the statement is accepted.</summary>
+public sealed record SqlWriteCheck(bool Ok, string? Code, string? Message, IReadOnlyList<string> Parameters, string? Verb);
+
 /// <summary>
-/// First safety net for the Query database step: accepts exactly one statement that starts with SELECT or WITH and contains no INTO, write, DDL,
-/// transaction, session or procedure keyword. It tokenizes the text (comments, string literals and quoted identifiers are skipped), it does not search the raw text.
+/// First safety net for the Query database step (<see cref="SqlGuard.Check"/>, read mode): accepts exactly one statement that starts with SELECT or WITH and contains
+/// no INTO, write, DDL, transaction, session or procedure keyword. And for the Write to database step (<see cref="SqlGuard.CheckWrite"/>, write mode): exactly one
+/// INSERT, UPDATE or DELETE whose verb is its first word, with no other write, DDL, transaction, session or procedure keyword, INTO only right after INSERT, SET only
+/// as the SET clause of an UPDATE, and a top-level WHERE for UPDATE and DELETE. Both modes share one tokenizer (comments, string literals and quoted identifiers are
+/// skipped; the raw text is not searched), so the dialect rules below apply to both exactly.
 /// <para>
 /// One text is checked for four databases (SQL Server, PostgreSQL, MySQL / MariaDB, Oracle) that do not tokenize SQL the same way. Wherever they could disagree
 /// about where a comment, a string or a quoted name ends, the text is <b>refused</b> (<c>sql.unsupported_syntax</c>), because a quote that one database reads inside
@@ -19,7 +25,10 @@ public sealed record SqlCheck(bool Ok, string? Code, string? Message, IReadOnlyL
 /// <c>[...]</c> and backtick names with anything but letters, digits, spaces and <c>_ . , +</c> (other databases do not read them as names) or with a doubled closer;
 /// a number glued to a name; <c>@</c> right after a name; <c>:name</c>; <c>{</c> and <c>}</c>.
 /// </para>
-/// A safety net only: the connection's database login must itself be read-only.
+/// A safety net only, in both modes. For reading, the connection's database login must itself be read-only. For writing, the protection is the "Allow writes" switch
+/// an administrator sets on the connection and the login's own permissions (only the tables and columns the workflow may change); the guard does not understand the
+/// statement, it only refuses text that could hold a second statement or something other than one plain INSERT, UPDATE or DELETE, and a WHERE that it counts can still
+/// be <c>WHERE 1 = 1</c>.
 /// </summary>
 public static class SqlGuard
 {
@@ -51,9 +60,32 @@ public static class SqlGuard
     /// <summary>The bare words <see cref="Check"/> refuses (besides INTO), for tests and documentation.</summary>
     public static IReadOnlyCollection<string> ForbiddenWords => Forbidden;
 
+    private const string NotWrite = "sql.not_write";
+    private const string NotWriteMessage = "Only an INSERT, UPDATE or DELETE statement is allowed.";
+
+    /// <summary>Read mode, for the Query database step: one SELECT (or WITH ... SELECT) statement.</summary>
     public static SqlCheck Check(string? sql)
     {
-        if (string.IsNullOrWhiteSpace(sql)) return Fail("sql.empty", "Type a SELECT query.");
+        var r = Scan(sql, write: false);
+        return r.Code is null ? new SqlCheck(true, null, null, r.Parameters) : new SqlCheck(false, r.Code, r.Message, []);
+    }
+
+    /// <summary>
+    /// Write mode, for the Write to database step: one INSERT, UPDATE or DELETE statement. The same tokenizer as <see cref="Check"/> (every dialect refusal applies
+    /// unchanged), plus: the first word is the verb and may appear only there; every other forbidden word (including a second INSERT / UPDATE / DELETE, so SQL Server's
+    /// statement chaining without ';' is refused) gives <c>sql.not_write</c>; <c>INTO</c> only directly after INSERT; an UPDATE needs exactly one <c>SET</c>, at the
+    /// top level and before the WHERE, and no other statement may hold one; T-SQL <c>UPDATE STATISTICS</c> is refused; UPDATE and DELETE need a <c>WHERE</c> word at
+    /// the top level (outside parentheses), else <c>sql.no_where</c>.
+    /// </summary>
+    public static SqlWriteCheck CheckWrite(string? sql)
+    {
+        var r = Scan(sql, write: true);
+        return r.Code is null ? new SqlWriteCheck(true, null, null, r.Parameters, r.Verb) : new SqlWriteCheck(false, r.Code, r.Message, [], null);
+    }
+
+    private static ScanResult Scan(string? sql, bool write)
+    {
+        if (string.IsNullOrWhiteSpace(sql)) return Empty(write);
         if (sql.Length > MaxLength) return Fail("sql.too_long", $"The query is longer than {MaxLength} characters.");
         if (CheckCharacters(sql) is { } badCharacter) return badCharacter;
 
@@ -61,6 +93,12 @@ public static class SqlGuard
         string? first = null;
         var semicolon = false;
         var i = 0;
+        // write mode only: the statement verb, the number of tokens so far (comments and whitespace are not tokens), the parenthesis depth, a top-level WHERE, the SET clause
+        string? verb = null;
+        var tokens = 0;
+        var depth = 0;
+        var topLevelWhere = false;
+        var setSeen = false;
         while (i < sql.Length)
         {
             var c = sql[i];
@@ -95,6 +133,8 @@ public static class SqlGuard
             if (semicolon) return Fail("sql.multiple_statements", "Only one statement is allowed.");
 
             if (c == ';') { semicolon = true; i++; continue; }
+
+            tokens++;
 
             if (c is '\'' or '"')
             {
@@ -192,6 +232,39 @@ public static class SqlGuard
                 var word = sql[i..j];
                 if (Peek(sql, j) == '\'' && word.ToUpperInvariant() is not ("N" or "B" or "X" or "E"))
                     return Fail(Unsupported, "A text value right after a name (such as q'[...]' or _utf8'...') is not allowed; only N'...', B'...', X'...' and E'...' are.");
+                if (write)
+                {
+                    if (first is not { Length: > 0 })
+                    {
+                        // the leading verb: the only place an INSERT, UPDATE or DELETE may appear ("" = the text started with a value, not a word)
+                        if (first is not null || word.ToUpperInvariant() is not ("INSERT" or "UPDATE" or "DELETE")) return Fail(NotWrite, NotWriteMessage);
+                        first = word;
+                        verb = word.ToUpperInvariant();
+                        i = j;
+                        continue;
+                    }
+                    if (tokens == 2 && verb == "UPDATE" && word.Equals("STATISTICS", StringComparison.OrdinalIgnoreCase))
+                        return Fail(NotWrite, "UPDATE STATISTICS is not an UPDATE of rows and is not allowed (quote a table called statistics).");
+                    if (word.Equals("INTO", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // INSERT INTO t: the token right after the verb (comments between them are not tokens); every other INTO (SELECT ... INTO, OUTPUT ... INTO) is refused
+                        if (verb != "INSERT" || tokens != 2) return Fail("sql.select_into", "INTO is only allowed right after INSERT.");
+                        i = j;
+                        continue;
+                    }
+                    if (word.Equals("SET", StringComparison.OrdinalIgnoreCase) && verb == "UPDATE" && !setSeen && depth == 0 && !topLevelWhere)
+                    {
+                        // the SET clause of the UPDATE; any other SET (a second one, one after the WHERE, one in parentheses, one in an INSERT or DELETE) is a SET statement
+                        setSeen = true;
+                        i = j;
+                        continue;
+                    }
+                    if (word.Equals("WHERE", StringComparison.OrdinalIgnoreCase) && depth == 0) topLevelWhere = true;
+                    if (Forbidden.Contains(word))
+                        return Fail(NotWrite, $"Only one INSERT, UPDATE or DELETE statement is allowed: {word.ToUpperInvariant()} is a write, DDL, transaction, session or procedure keyword here (quote a column with that name).");
+                    i = j;
+                    continue;
+                }
                 if (first is null)
                 {
                     if (!word.Equals("SELECT", StringComparison.OrdinalIgnoreCase) && !word.Equals("WITH", StringComparison.OrdinalIgnoreCase))
@@ -206,15 +279,29 @@ public static class SqlGuard
             }
 
             // other punctuation and operators
+            if (c == '(') depth++;
+            else if (c == ')') depth--;
             first ??= "";
-            if (first.Length == 0) return Fail("sql.not_select", "The query must start with SELECT or WITH.");
+            if (first.Length == 0) return NotStart(write);
             i++;
         }
 
-        if (first is null) return Fail("sql.empty", "Type a SELECT query.");
-        if (first.Length == 0) return Fail("sql.not_select", "The query must start with SELECT or WITH.");
-        return new SqlCheck(true, null, null, parameters);
+        if (first is null) return Empty(write);
+        if (first.Length == 0) return NotStart(write);
+        if (verb == "UPDATE" && !setSeen)
+            return Fail(NotWrite, "An UPDATE needs a SET clause before its WHERE condition.");
+        if (verb is "UPDATE" or "DELETE" && !topLevelWhere)
+            return Fail("sql.no_where", "UPDATE and DELETE need a WHERE condition, so a statement can never change a whole table by accident.");
+        return new ScanResult(null, null, parameters, verb);
     }
+
+    private static ScanResult Empty(bool write) =>
+        write ? Fail("sql.empty", "Type an INSERT, UPDATE or DELETE statement.") : Fail("sql.empty", "Type a SELECT query.");
+
+    private static ScanResult NotStart(bool write) =>
+        write ? Fail(NotWrite, NotWriteMessage) : Fail("sql.not_select", "The query must start with SELECT or WITH.");
+
+    private sealed record ScanResult(string? Code, string? Message, IReadOnlyList<string> Parameters, string? Verb);
 
     /// <summary>
     /// Rewrites the <c>@name</c> placeholders to <paramref name="prefix"/> + name (Oracle wants <c>:name</c>), skipping comments, string literals and quoted names
@@ -304,7 +391,7 @@ public static class SqlGuard
     /// and non-ASCII letters, marks and digits that do not normalise (NFKC) to ASCII punctuation (a full-width quote or a modifier-letter apostrophe can become a quote
     /// when a driver converts the text to the database's character set). Where non-ASCII is allowed at all is decided by <see cref="Check"/>.
     /// </summary>
-    private static SqlCheck? CheckCharacters(string sql)
+    private static ScanResult? CheckCharacters(string sql)
     {
         for (var i = 0; i < sql.Length; i++)
         {
@@ -370,5 +457,5 @@ public static class SqlGuard
 
     private static bool IsSafeBracketChar(char c) => char.IsAsciiLetterOrDigit(c) || c is ' ' or '_' or '.' or ',' or '+';
 
-    private static SqlCheck Fail(string code, string message) => new(false, code, message, []);
+    private static ScanResult Fail(string code, string message) => new(code, message, [], null);
 }
