@@ -36,6 +36,9 @@ public sealed partial class ExecutionService(IVersoDbContext db, IExecutionJobs 
         public const string InputViewed = "ExecutionInputViewed";
         public const string ApprovalRequested = "ExecutionApprovalRequested";
         public const string ApprovalDecided = "ExecutionApprovalDecided";
+
+        /// <summary>A Write to database step committed its statement (by the Worker): <c>{ executionId, nodeId, iteration, connection, rowsAffected }</c>, never a value or the SQL.</summary>
+        public const string DatabaseWriteExecuted = "DatabaseWriteExecuted";
     }
 
     [GeneratedRegex(@"^[\x21-\x7E]{1,100}$")]

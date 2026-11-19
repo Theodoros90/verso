@@ -723,6 +723,7 @@ Append-only log, oldest first unless `newestFirst=true` (`sequence` is the autho
 | `ExecutionApprovalDecided` | `{ nodeId, decision, approver, iteration, hasComment }` |
 | `ExecutionCompleted` | `{ status, failureCode, attempt }`; actor `verso.worker`, `traceId` = the execution's correlation id |
 | `ExecutionInputViewed` | `{ inputHash }` (entity `Execution`; never the data) |
+| `DatabaseWriteExecuted` | `{ executionId, nodeId, iteration, connection, rowsAffected }` (entity `Execution`, by the Worker, saved with the step's success, `traceId` = the execution's correlation id): one per committed Write to database statement (per item inside a For each); never parameter values or the SQL; none for a failed write (ADR 0020) |
 | `DocumentDownloaded` | `{ executionId, fileName, sha256 }` (entity `Document`) |
 
 Rejected requests (validation, 401, 403, 409, 412, 428, 429) are not audited; they change nothing. `traceId` matches the `TraceId` in the API's structured logs.

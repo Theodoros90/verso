@@ -139,6 +139,52 @@ public sealed class WriteDatabaseExecutionTests(MigratedDatabaseFixture fixture)
         Assert.DoesNotContain("UPDATE", json, StringComparison.OrdinalIgnoreCase);
     }
 
+    private Task<List<(string ActorId, string EntityType, string? TraceId, string? Details)>> WriteAuditAsync(Guid id) =>
+        Kit.WithDbAsync(db => db.AuditEntries.Where(a => a.EntityId == id.ToString() && a.Action == "DatabaseWriteExecuted").OrderBy(a => a.OccurredAt)
+            .Select(a => new ValueTuple<string, string, string?, string?>(a.ActorId, a.EntityType, a.TraceId, a.Details)).ToListAsync());
+
+    [Fact]
+    public async Task A_successful_write_is_audited_with_its_row_count_only()
+    {
+        _write.RowsAffected = 1;
+
+        var (id, done) = await RunAsync(Write());
+
+        Assert.Equal("Succeeded", done.GetProperty("status").GetString());
+        var entry = Assert.Single(await WriteAuditAsync(id));
+        Assert.Equal("verso.worker", entry.ActorId);
+        Assert.Equal("Execution", entry.EntityType);
+        Assert.Equal(done.GetProperty("correlationId").GetString(), entry.TraceId);
+        using var details = JsonDocument.Parse(entry.Details!);
+        var root = details.RootElement;
+        Assert.Equal(["executionId", "nodeId", "iteration", "connection", "rowsAffected"], root.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(id, root.GetProperty("executionId").GetGuid());
+        Assert.Equal("write", root.GetProperty("nodeId").GetString());
+        Assert.Equal(0, root.GetProperty("iteration").GetInt32());
+        Assert.Equal("ledger-db", root.GetProperty("connection").GetString());
+        Assert.Equal(1, root.GetProperty("rowsAffected").GetInt32());
+        Assert.DoesNotContain(ParameterMarker, entry.Details!, StringComparison.Ordinal);
+        Assert.DoesNotContain(SqlMarker, entry.Details!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Writes_in_a_loop_are_audited_once_per_item_and_a_failed_write_is_not_audited()
+    {
+        var key = await Kit.PublishInvoiceWorkflowAsync(
+            writeConfig: Write(sql: "UPDATE " + SqlMarker + " SET seen = 1 WHERE line_text = @line", parameters: "line = line.description"), writeAt: "in-loop",
+            forEachConfig: new JsonObject { ["field"] = "lines", ["mode"] = "each", ["item"] = "line" });
+        var id = await Kit.SubmitNewAsync(key, Data());
+        _write.During = (call, _) => { if (call == 3) { _write.Failure = DatabaseWriteResult.Failure("db.timeout", outcomeUnknown: true); } };
+
+        await RunEngineAsync(id);
+
+        var done = await Kit.GetExecutionAsync(id);
+        Assert.Equal("Failed", done.GetProperty("status").GetString());
+        Assert.Equal(3, _write.CallCount);
+        var entries = await WriteAuditAsync(id);
+        Assert.Equal([1, 2], entries.Select(e => JsonDocument.Parse(e.Details!).RootElement.GetProperty("iteration").GetInt32())); // the third write failed: no entry
+    }
+
     [Fact]
     public async Task Missing_parameter_rejects_without_calling_the_database()
     {
@@ -619,6 +665,15 @@ public sealed class WriteDatabaseExecutionTests(MigratedDatabaseFixture fixture)
             });
 
             Assert.NotEmpty(rows);
+            if (id == written)
+            {
+                Assert.Contains("DatabaseWriteExecuted ", audit, StringComparison.Ordinal); // the run-time audit entry is among the texts checked
+            }
+            else
+            {
+                Assert.DoesNotContain("DatabaseWriteExecuted", audit, StringComparison.Ordinal); // no write succeeded in these runs
+            }
+
             foreach (var text in new[] { execution.GetRawText(), await events.Content.ReadAsStringAsync(), rows, audit })
             {
                 Assert.DoesNotContain(marker, text, StringComparison.Ordinal);

@@ -1086,6 +1086,12 @@ public sealed partial class ExecutionEngine(
             throw new StepException(written.Code!, written.Message ?? (written.OutcomeUnknown ? DatabaseQueryMessages.OutcomeUnknown : DatabaseQueryMessages.For(written.Code!)), retryable: false);
         }
 
+        // Audited when the write is known to have happened; the entry is saved with the step's success (the same SaveChanges in RunStepAsync). Counts and keys only.
+        var execution = run.Execution;
+        db.AuditEntries.Add(AuditEntry.Record(
+            ExecutionService.Actions.DatabaseWriteExecuted, ExecutionService.EntityType, execution.Id.ToString(), ActorId, ActorName, clock.GetUtcNow(),
+            JsonSerializer.Serialize(new { executionId = execution.Id, nodeId = node.Id, iteration = run.Iteration, connection, rowsAffected = written.RowsAffected }),
+            execution.CorrelationId));
         return new Outcome("written", new { rowsAffected = written.RowsAffected, durationMs = written.DurationMs, connection });
     }
 
