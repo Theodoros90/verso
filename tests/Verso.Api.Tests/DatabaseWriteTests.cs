@@ -22,10 +22,43 @@ public sealed class DatabaseWriteTests : IAsyncLifetime
     private const string Seeded = "1|Ada|a|1;2|Bo|b|1;3|Cy|c|1;4|Di|d|2";
     private const string Marker = "marker-value-7f3a91";
 
-    /// <summary>Inserts up to 50 million generated rows: far more than a 1 second timeout (or a 0.5 second cancel) lets finish.</summary>
-    private const string SlowInsert =
-        "INSERT INTO dbo.VersoWriteTest (id, holder, note, grp) SELECT TOP (50000000) 1000 + n, CONCAT(N'g', n), NULL, 9 " +
-        "FROM (SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS n FROM sys.all_objects a CROSS JOIN sys.all_objects b CROSS JOIN sys.all_objects c) s";
+    /// <summary>
+    /// An UPDATE of row 1, run while <see cref="RowLock"/> holds that row from a second connection: it reaches the server and waits on the lock, so a timeout or a
+    /// cancel lands after it was sent, and there is nothing to undo (deterministic and fast; a huge INSERT left a long rollback behind it).
+    /// </summary>
+    private const string BlockedUpdate = "UPDATE dbo.VersoWriteTest SET note = N'blocked' WHERE id = 1";
+
+    /// <summary>An open transaction on a second connection holding the exclusive lock of row 1 until disposed (rolled back: nothing changed).</summary>
+    private sealed class RowLock : IAsyncDisposable
+    {
+        private readonly SqlConnection _connection;
+        private readonly SqlTransaction _transaction;
+
+        private RowLock(SqlConnection connection, SqlTransaction transaction)
+        {
+            _connection = connection;
+            _transaction = transaction;
+        }
+
+        public static async Task<RowLock> TakeAsync(string connectionString)
+        {
+            var connection = new SqlConnection(connectionString);
+            await connection.OpenAsync();
+            var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "UPDATE dbo.VersoWriteTest SET note = note WHERE id = 1";
+            await command.ExecuteNonQueryAsync();
+            return new RowLock(connection, transaction);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _transaction.RollbackAsync();
+            await _transaction.DisposeAsync();
+            await _connection.DisposeAsync();
+        }
+    }
 
     private readonly TestDatabase _database = new("write");
     private readonly string _suffix = Guid.NewGuid().ToString("N")[..10];
@@ -201,9 +234,13 @@ public sealed class DatabaseWriteTests : IAsyncLifetime
     [Fact]
     public async Task Timeout_after_send_is_outcome_unknown()
     {
-        // The guard refuses WAITFOR, so the runner is called directly with a slow INSERT ... SELECT and a 1 second timeout.
-        var result = await new SqlServerWriteRunner().RunAsync(
-            Settings(), new DatabaseWriteRequest("k", SlowInsert, new Dictionary<string, object?>(), 1000, TimeSpan.FromSeconds(1)), CancellationToken.None);
+        // The guard refuses WAITFOR, so the statement waits on a row lock held by a second connection instead; the runner is called with a 1 second timeout.
+        DatabaseWriteResult result;
+        await using (await RowLock.TakeAsync(_database.ConnectionString))
+        {
+            result = await new SqlServerWriteRunner().RunAsync(
+                Settings(), new DatabaseWriteRequest("k", BlockedUpdate, new Dictionary<string, object?>(), 1, TimeSpan.FromSeconds(1)), CancellationToken.None);
+        }
 
         Assert.Equal("db.timeout", result.Code);
         Assert.True(result.OutcomeUnknown);
@@ -343,20 +380,25 @@ public sealed class DatabaseWriteTests : IAsyncLifetime
                 new DatabaseWriteRequest(key, "DELETE FROM dbo.VersoWriteTest WHERE id = 1", new Dictionary<string, object?>(), 1, TimeSpan.FromSeconds(5)), cancelled.Token));
         }
 
-        // A cancel while the statement runs: a cancellation (the engine's shutdown handling decides), after the rollback. The cancel is sent only once the server
-        // shows the INSERT running for the "Verso write" session, so it really lands during the statement (not while connecting).
-        using var cts = new CancellationTokenSource();
-        var run = new SqlServerWriteRunner().RunAsync(
-            Settings(), new DatabaseWriteRequest(key, SlowInsert, new Dictionary<string, object?>(), 1000, TimeSpan.FromSeconds(30)), cts.Token);
-        Assert.True(await WaitForRunningWriteAsync(TimeSpan.FromSeconds(15)), "the INSERT never showed as running");
-        await cts.CancelAsync();
+        // A cancel while the statement runs: a cancellation (the engine's shutdown handling decides), after the rollback. The statement waits on a row lock held
+        // by a second connection, and the cancel is sent only once the server shows the UPDATE of the "Verso write" session blocked on it, so it really lands
+        // during the statement (not while connecting), with nothing to undo.
+        await using (await RowLock.TakeAsync(_database.ConnectionString))
+        {
+            using var cts = new CancellationTokenSource();
+            var run = new SqlServerWriteRunner().RunAsync(
+                Settings(), new DatabaseWriteRequest(key, BlockedUpdate, new Dictionary<string, object?>(), 1, TimeSpan.FromSeconds(30)), cts.Token);
+            Assert.True(await WaitForBlockedWriteAsync(TimeSpan.FromSeconds(15)), "the UPDATE never showed as waiting on the lock");
+            await cts.CancelAsync();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+        }
+
         Assert.Equal(Seeded, await RowsAsync());
     }
 
-    /// <summary>Polls sys.dm_exec_requests (the test's own Windows login sees every session on LocalDB) until an INSERT of a "Verso write" session runs.</summary>
-    private async Task<bool> WaitForRunningWriteAsync(TimeSpan limit)
+    /// <summary>Polls sys.dm_exec_requests (the test's own Windows login sees every session on LocalDB) until an UPDATE of a "Verso write" session waits on a lock.</summary>
+    private async Task<bool> WaitForBlockedWriteAsync(TimeSpan limit)
     {
         var clock = System.Diagnostics.Stopwatch.StartNew();
         await using var connection = new SqlConnection(_database.ConnectionString);
@@ -364,7 +406,7 @@ public sealed class DatabaseWriteTests : IAsyncLifetime
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT COUNT(*) FROM sys.dm_exec_requests r JOIN sys.dm_exec_sessions s ON s.session_id = r.session_id
-            WHERE s.program_name = N'Verso write' AND r.command LIKE N'INSERT%'
+            WHERE s.program_name = N'Verso write' AND r.command = N'UPDATE' AND r.blocking_session_id <> 0
             """;
         while (clock.Elapsed < limit)
         {
