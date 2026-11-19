@@ -12,9 +12,13 @@ public sealed record SqlWriteCheck(bool Ok, string? Code, string? Message, IRead
 /// <summary>
 /// First safety net for the Query database step (<see cref="SqlGuard.Check"/>, read mode): accepts exactly one statement that starts with SELECT or WITH and contains
 /// no INTO, write, DDL, transaction, session or procedure keyword. And for the Write to database step (<see cref="SqlGuard.CheckWrite"/>, write mode): exactly one
-/// INSERT, UPDATE or DELETE whose verb is its first word, with no other write, DDL, transaction, session or procedure keyword, INTO only right after INSERT, SET only
-/// as the SET clause of an UPDATE, and a top-level WHERE for UPDATE and DELETE. Both modes share one tokenizer (comments, string literals and quoted identifiers are
-/// skipped; the raw text is not searched), so the dialect rules below apply to both exactly.
+/// INSERT, UPDATE or DELETE whose verb is its first word. Because SQL Server runs a second statement after a DML statement without any ';', write mode refuses at
+/// the top level (outside parentheses) everything that could start one: every other write, DDL, transaction, session or procedure keyword; the read-only T-SQL
+/// statement verbs (IF, PRINT, THROW, RETURN, GOTO, READTEXT, FETCH, BREAK, CONTINUE, GET, MOVE); a WITH that is not a table hint; any SELECT in an UPDATE or
+/// DELETE, and in an INSERT any SELECT but its source and one after each UNION / INTERSECT / EXCEPT / MINUS; a query in parentheses that does not follow an
+/// operator, a comma, a subquery keyword or a known function name; a ')' without its '('. It also refuses INTO except right after INSERT, SET except as the one SET
+/// clause of an UPDATE, UPDATE STATISTICS, and an UPDATE or DELETE without a top-level WHERE. Both modes share one tokenizer (comments, string literals and quoted
+/// identifiers are skipped; the raw text is not searched), so the dialect rules below apply to both exactly.
 /// <para>
 /// One text is checked for four databases (SQL Server, PostgreSQL, MySQL / MariaDB, Oracle) that do not tokenize SQL the same way. Wherever they could disagree
 /// about where a comment, a string or a quoted name ends, the text is <b>refused</b> (<c>sql.unsupported_syntax</c>), because a quote that one database reads inside
@@ -25,10 +29,9 @@ public sealed record SqlWriteCheck(bool Ok, string? Code, string? Message, IRead
 /// <c>[...]</c> and backtick names with anything but letters, digits, spaces and <c>_ . , +</c> (other databases do not read them as names) or with a doubled closer;
 /// a number glued to a name; <c>@</c> right after a name; <c>:name</c>; <c>{</c> and <c>}</c>.
 /// </para>
-/// A safety net only, in both modes. For reading, the connection's database login must itself be read-only. For writing, the protection is the "Allow writes" switch
-/// an administrator sets on the connection and the login's own permissions (only the tables and columns the workflow may change); the guard does not understand the
-/// statement, it only refuses text that could hold a second statement or something other than one plain INSERT, UPDATE or DELETE, and a WHERE that it counts can still
-/// be <c>WHERE 1 = 1</c>.
+/// A safety net only, in both modes: it does not parse SQL, it refuses text it cannot vouch for, and it can still miss a form a database accepts. For reading, the
+/// real protection is a read-only database login. For writing, it is the "Allow writes" switch an administrator sets on the connection and the login's own
+/// permissions (only the tables and columns the workflow may change); a WHERE the guard counts can still be <c>WHERE 1 = 1</c>.
 /// </summary>
 public static class SqlGuard
 {
@@ -57,6 +60,32 @@ public static class SqlGuard
         "DISCARD", "RESET", "REFRESH",
     };
 
+    // Write mode only, at the top level: T-SQL statement verbs that cannot change data (so read mode allows them) but start a second statement after the write without
+    // ';' (IF ... SELECT ... WHERE, RETURN, PRINT ...). END is not listed: CASE ... END is ordinary, and END CONVERSATION is caught by CONVERSATION.
+    private static readonly HashSet<string> ReadOnlyStatementVerbs = new(StringComparer.Ordinal)
+    {
+        "IF", "PRINT", "THROW", "RETURN", "GOTO", "READTEXT", "FETCH", "BREAK", "CONTINUE", "GET", "MOVE",
+    };
+
+    // Write mode only: the words after which a top-level "(SELECT" is a subquery and not a second statement. Keywords that expect an expression or a table next, and
+    // function names (SQL Server reads any name followed by '(' as a call; these are listed so that "COALESCE ((SELECT ...), 0)" passes). Not listed on purpose: words
+    // that end an expression (NULL, CURRENT_TIMESTAMP, USER, END, ASC ...) and plain names (columns, aliases, collations).
+    private static readonly HashSet<string> SubqueryOpeners = new(StringComparer.Ordinal)
+    {
+        "IN", "EXISTS", "ANY", "ALL", "SOME", "FROM", "JOIN", "APPLY", "UNION", "INTERSECT", "EXCEPT", "MINUS", "DISTINCT", "AND", "OR", "NOT", "CASE", "WHEN",
+        "THEN", "ELSE", "WHERE", "ON", "HAVING", "SELECT", "TOP", "VALUES", "LIKE", "BETWEEN",
+        "COALESCE", "ISNULL", "IFNULL", "NVL", "NULLIF", "IIF", "CAST", "TRY_CAST", "CONVERT", "TRY_CONVERT", "ABS", "ROUND", "FLOOR", "CEILING", "MAX", "MIN",
+        "SUM", "AVG", "COUNT", "CONCAT", "UPPER", "LOWER", "LEN", "LENGTH", "TRIM", "LTRIM", "RTRIM", "SUBSTRING", "REPLACE", "DATEADD", "DATEDIFF", "GREATEST", "LEAST",
+    };
+
+    private static bool OpensSubquery(char previous, string lastWord) =>
+        previous switch
+        {
+            'w' => SubqueryOpeners.Contains(lastWord),
+            '=' or '<' or '>' or '+' or '-' or '*' or '/' or '%' or ',' or '!' or '&' or '|' or '^' or '~' => true,
+            _ => false, // a value, a quoted name, ')', a label's ':', '.', or nothing before it
+        };
+
     /// <summary>The bare words <see cref="Check"/> refuses (besides INTO), for tests and documentation.</summary>
     public static IReadOnlyCollection<string> ForbiddenWords => Forbidden;
 
@@ -75,7 +104,8 @@ public static class SqlGuard
     /// unchanged), plus: the first word is the verb and may appear only there; every other forbidden word (including a second INSERT / UPDATE / DELETE, so SQL Server's
     /// statement chaining without ';' is refused) gives <c>sql.not_write</c>; <c>INTO</c> only directly after INSERT; an UPDATE needs exactly one <c>SET</c>, at the
     /// top level and before the WHERE, and no other statement may hold one; T-SQL <c>UPDATE STATISTICS</c> is refused; UPDATE and DELETE need a <c>WHERE</c> word at
-    /// the top level (outside parentheses), else <c>sql.no_where</c>.
+    /// the top level (outside parentheses), else <c>sql.no_where</c>. Whatever could start a second statement at the top level (see the class summary) is
+    /// <c>sql.not_write</c> too, with a message naming the reason.
     /// </summary>
     public static SqlWriteCheck CheckWrite(string? sql)
     {
@@ -99,6 +129,11 @@ public static class SqlGuard
         var depth = 0;
         var topLevelWhere = false;
         var setSeen = false;
+        var topLevelSelects = 0;  // top-level SELECTs of an INSERT (its source, then one after each UNION / INTERSECT / EXCEPT / MINUS)
+        var valuesSeen = false;   // a top-level VALUES / VALUE / DEFAULT: the INSERT has its rows, a top-level SELECT after it is a second statement
+        var setOperator = -2;     // the token number of the last top-level set operator (or of the ALL / DISTINCT right after it)
+        char previous = '\0', current = '\0';
+        var lastWord = "";        // the last word read, upper-case (the previous token's text when previous is 'w')
         while (i < sql.Length)
         {
             var c = sql[i];
@@ -135,6 +170,9 @@ public static class SqlGuard
             if (c == ';') { semicolon = true; i++; continue; }
 
             tokens++;
+            // the kind of this token and of the one before it: 'v' a value or quoted name, 'w' a word, otherwise the punctuation character itself
+            previous = current;
+            current = c is '\'' or '"' or '[' or '`' or '@' || char.IsAsciiDigit(c) ? 'v' : char.IsAsciiLetter(c) || c == '_' ? 'w' : c;
 
             if (c is '\'' or '"')
             {
@@ -234,6 +272,7 @@ public static class SqlGuard
                     return Fail(Unsupported, "A text value right after a name (such as q'[...]' or _utf8'...') is not allowed; only N'...', B'...', X'...' and E'...' are.");
                 if (write)
                 {
+                    lastWord = word.ToUpperInvariant();
                     if (first is not { Length: > 0 })
                     {
                         // the leading verb: the only place an INSERT, UPDATE or DELETE may appear ("" = the text started with a value, not a word)
@@ -259,7 +298,28 @@ public static class SqlGuard
                         i = j;
                         continue;
                     }
-                    if (word.Equals("WHERE", StringComparison.OrdinalIgnoreCase) && depth == 0) topLevelWhere = true;
+                    if (depth == 0)
+                    {
+                        // SQL Server starts a second statement without ';' at a SELECT, a CTE or a statement verb: at the top level of the write they are refused, so the
+                        // WHERE that the rule below counts is the write's own and nothing runs after the write.
+                        var upper = word.ToUpperInvariant();
+                        if (ReadOnlyStatementVerbs.Contains(upper))
+                            return Fail(NotWrite, $"Only one statement is allowed: {upper} would start a second statement on SQL Server (put it in parentheses or quote a column with that name).");
+                        if (upper == "WITH" && NextSignificant(sql, j) != '(')
+                            return Fail(NotWrite, "Only one statement is allowed: a WITH here starts a second statement; only table hints such as WITH (ROWLOCK) are allowed.");
+                        if (upper == "SELECT")
+                        {
+                            // UPDATE and DELETE use SELECT only inside parentheses; an INSERT takes one as its source, plus one after each set operator
+                            var source = verb == "INSERT" && !valuesSeen && (topLevelSelects == 0 || tokens == setOperator + 1);
+                            if (!source)
+                                return Fail(NotWrite, "Only one statement is allowed: this SELECT would run as a second statement on SQL Server (a subquery goes in parentheses).");
+                            topLevelSelects++;
+                        }
+                        else if (upper is "VALUES" or "VALUE" or "DEFAULT") valuesSeen = true;
+                        else if (upper is "UNION" or "INTERSECT" or "EXCEPT" or "MINUS") setOperator = tokens;
+                        else if (upper is "ALL" or "DISTINCT" && tokens == setOperator + 1) setOperator = tokens;
+                        else if (upper == "WHERE") topLevelWhere = true;
+                    }
                     if (Forbidden.Contains(word))
                         return Fail(NotWrite, $"Only one INSERT, UPDATE or DELETE statement is allowed: {word.ToUpperInvariant()} is a write, DDL, transaction, session or procedure keyword here (quote a column with that name).");
                     i = j;
@@ -279,8 +339,18 @@ public static class SqlGuard
             }
 
             // other punctuation and operators
-            if (c == '(') depth++;
-            else if (c == ')') depth--;
+            if (c == '(')
+            {
+                // SQL Server starts a second statement at "(SELECT" / "(WITH" (also behind more '(') right after a value, a ')', a label "name:" or a word that
+                // ends an expression (NULL, CURRENT_TIMESTAMP, USER, END, a collation name ...), all checked on LocalDB. So at the top level such a '(' must follow
+                // an operator, a comma, a subquery keyword or a known function name (OpensSubquery).
+                if (write && depth == 0 && !OpensSubquery(previous, lastWord) && StartsQuery(sql, i + 1))
+                    return Fail(NotWrite, "Only one statement is allowed: a query in parentheses here would run as a second statement on SQL Server.");
+                depth++;
+            }
+            else if (c == ')' && --depth < 0 && write)
+                // the depth would go negative: a later SELECT or statement verb would no longer look "top level", so a ')' without its '(' is refused in write mode
+                return Fail(NotWrite, "A closing parenthesis has no opening one.");
             first ??= "";
             if (first.Length == 0) return NotStart(write);
             i++;
@@ -449,6 +519,42 @@ public static class SqlGuard
     }
 
     private static char Peek(string s, int index) => index < s.Length ? s[index] : '\0';
+
+    /// <summary>True when the text from <paramref name="index"/> on, past whitespace, comments and more '(', starts with the word SELECT or WITH.</summary>
+    private static bool StartsQuery(string s, int index)
+    {
+        var i = SkipInsignificant(s, index, skipParentheses: true);
+        var j = i;
+        while (j < s.Length && IsNameChar(s[j])) j++;
+        var word = s.AsSpan(i, j - i);
+        return word.Equals("SELECT", StringComparison.OrdinalIgnoreCase) || word.Equals("WITH", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The next character from <paramref name="index"/> on that is not whitespace or inside a comment ('\0' at the end or in an unclosed comment).</summary>
+    private static char NextSignificant(string s, int index) => Peek(s, SkipInsignificant(s, index, skipParentheses: false));
+
+    private static int SkipInsignificant(string s, int index, bool skipParentheses)
+    {
+        var i = index;
+        while (i < s.Length)
+        {
+            if (s[i] is ' ' or '\t' or '\n' or '\r' || (skipParentheses && s[i] == '(')) { i++; continue; }
+            if (s[i] == '-' && Peek(s, i + 1) == '-')
+            {
+                while (i < s.Length && s[i] != '\n') i++;
+                continue;
+            }
+            if (s[i] == '/' && Peek(s, i + 1) == '*')
+            {
+                var end = s.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                if (end < 0) return s.Length; // unclosed: the scan refuses it anyway
+                i = end + 2;
+                continue;
+            }
+            return i;
+        }
+        return s.Length;
+    }
 
     // A name continues with letters, digits, _ and $ in all four databases ($ never first).
     private static bool IsNameChar(char c) => char.IsAsciiLetterOrDigit(c) || c is '_' or '$';

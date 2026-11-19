@@ -198,6 +198,129 @@ public sealed class SqlGuardWriteTests
         Assert.Equal("sql.not_write", r.Code);
     }
 
+    // ---- Review fix round 1: SQL Server runs a second statement after a DML statement without ';'. A trailing SELECT's WHERE must not satisfy the WHERE rule,
+    // and a trailing read must not run either. ----
+
+    [Theory]
+    // critical: the WHERE belongs to a second statement, the write changes the whole table
+    [InlineData("DELETE FROM t SELECT 1 WHERE 1 = 1")]
+    [InlineData("UPDATE t SET a = 1 SELECT 1 WHERE 1 = 1")]
+    [InlineData("DELETE FROM t SELECT 1 FROM u WHERE 1 = 1")]
+    [InlineData("UPDATE t SET a = 1 IF 1 = 1 SELECT 1 WHERE 1 = 1")]
+    [InlineData("DELETE t RETURN SELECT 1 WHERE 1 = 1")]
+    [InlineData("update t set a = 1 /* x */ select 1 where 1 = 1")]
+    [InlineData("UPDATE t SET a = 1 WHERE id = 1 SELECT 1")]
+    [InlineData("DELETE FROM t WHERE id IN (SELECT id FROM u) UNION SELECT 1")]
+    // important: a second, reading statement after an INSERT
+    [InlineData("INSERT INTO t VALUES (1) SELECT name FROM sys.sql_logins")]
+    [InlineData("INSERT INTO t VALUES (1) SELECT * FROM u WITH (TABLOCKX, HOLDLOCK)")]
+    [InlineData("INSERT INTO t VALUES (1) SELECT NEXT VALUE FOR s")]
+    [InlineData("INSERT INTO t VALUE (1) SELECT 1")]
+    [InlineData("INSERT INTO t DEFAULT VALUES SELECT 1")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u SELECT name FROM sys.sql_logins")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u WHERE 1 = 1 SELECT 1")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u UNION ALL SELECT b FROM v SELECT 1")]
+    // read-only T-SQL statement verbs that start a statement without ';'
+    [InlineData("INSERT INTO t VALUES (1) IF 1 = 1 PRINT 'x'")]
+    [InlineData("INSERT INTO t VALUES (1) PRINT 'x'")]
+    [InlineData("INSERT INTO t VALUES (1) THROW 50000, 'x', 1")]
+    [InlineData("DELETE FROM t WHERE id = 1 RETURN")]
+    [InlineData("DELETE FROM t WHERE id = 1 GOTO done")]
+    [InlineData("DELETE FROM t WHERE id = 1 READTEXT t.c @p 0 1")]
+    [InlineData("DELETE FROM t WHERE id = 1 FETCH NEXT FROM c")]
+    [InlineData("DELETE FROM t WHERE id = 1 BREAK")]
+    [InlineData("DELETE FROM t WHERE id = 1 CONTINUE")]
+    [InlineData("DELETE FROM t WHERE id = 1 GET CONVERSATION GROUP @g FROM q")]
+    [InlineData("DELETE FROM t WHERE id = 1 MOVE CONVERSATION @h TO @g")]
+    // a WITH that is not a table hint starts a statement with a CTE
+    [InlineData("DELETE FROM t WHERE id = 1 WITH x AS (SELECT 1 a) SELECT a FROM x")]
+    [InlineData("INSERT INTO t VALUES (1) WITH x AS (SELECT 1 a) SELECT a FROM x")]
+    [InlineData("UPDATE t SET a = 1 WHERE id = 1 WITH /* c */ x AS (SELECT 1) SELECT 1")]
+    // a query in parentheses right after a value, a ')' or a label is a second statement (checked on LocalDB: the DELETE ran, then the SELECT)
+    [InlineData("DELETE FROM t WHERE id = 1 (SELECT name FROM sys.sql_logins)")]
+    [InlineData("DELETE FROM t WHERE id = 1 ((SELECT 42))")]
+    [InlineData("DELETE FROM t WHERE id = 1 ( /* c */ ( SELECT 42))")]
+    [InlineData("DELETE FROM t WHERE id = 1 (SELECT 42) UNION (SELECT 43)")]
+    [InlineData("DELETE FROM t WHERE id = @@SPID (SELECT 42)")]
+    [InlineData("DELETE FROM t WHERE id = @id (SELECT 42)")]
+    [InlineData("DELETE FROM t WHERE id = 'x' (SELECT 42)")]
+    [InlineData("DELETE FROM t WHERE id = [x] (SELECT 42)")]
+    [InlineData("DELETE FROM t WHERE id IN (SELECT 1) (SELECT 42)")]
+    [InlineData("DELETE FROM t WHERE id = 1 lbl: (SELECT 42)")]
+    [InlineData("DELETE FROM t WHERE id = 1 lbl: WITH x AS (SELECT 1 a) SELECT a FROM x")]
+    [InlineData("INSERT INTO t VALUES (9, 9) (SELECT * FROM u WITH (TABLOCKX, HOLDLOCK))")]
+    [InlineData("INSERT INTO t SELECT 9, 9 (SELECT 42)")]
+    [InlineData("UPDATE t SET a = 1 WHERE id = 1 (WITH x AS (SELECT 1) SELECT 1)")]
+    // ... and right after a word that ends an expression (checked on LocalDB: each ran as a second statement)
+    [InlineData("DELETE FROM t WHERE id = 1 OR a IS NULL (SELECT 42)")]
+    [InlineData("DELETE FROM t WHERE id = 1 OR a IS NOT NULL ((SELECT 42))")]
+    [InlineData("DELETE FROM t WHERE id = 1 OR a = CURRENT_TIMESTAMP (SELECT 42)")]
+    [InlineData("DELETE FROM t WHERE id = 1 OR a = USER (SELECT 42)")]
+    [InlineData("DELETE FROM t WHERE c = '1' COLLATE Latin1_General_CI_AS (SELECT 42)")]
+    [InlineData("DELETE FROM t WHERE c = '1' COLLATE Latin1_General_CI_AS(SELECT 42)")]
+    [InlineData("UPDATE t SET a = CASE WHEN b = 1 THEN 1 ELSE 2 END WHERE id = 1 OR b = CASE WHEN c = 1 THEN 1 END (SELECT 42)")]
+    [InlineData("DELETE FROM t WHERE id = t.id (SELECT 42)")] // a syntax error on SQL Server, refused all the same: only known names count as calls
+    // a ')' without its '(' (a syntax error on SQL Server, refused so that the parenthesis depth stays meaningful)
+    [InlineData("DELETE FROM t WHERE id = 1) SELECT 1")]
+    public void Rejects_a_second_statement_after_the_write(string sql)
+    {
+        var r = SqlGuard.CheckWrite(sql);
+        Assert.False(r.Ok, sql);
+        Assert.Equal("sql.not_write", r.Code);
+        Assert.Null(r.Verb);
+    }
+
+    [Theory]
+    [InlineData("UPDATE t SET a = u.b FROM t JOIN u ON u.id = t.id WHERE u.x = @x")]
+    [InlineData("DELETE t FROM t JOIN u ON u.id = t.id WHERE u.x = @x")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u UNION ALL SELECT b FROM v")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u UNION SELECT b FROM v INTERSECT SELECT c FROM w EXCEPT SELECT d FROM x")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u MINUS SELECT b FROM v")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u UNION /* all of them */ ALL SELECT b FROM v")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u UNION DISTINCT SELECT b FROM v")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u UNION (SELECT b FROM v)")]
+    [InlineData("UPDATE t SET a = COALESCE((SELECT MAX(b) FROM u), 0) WHERE id = 1")]
+    [InlineData("UPDATE t SET a = COALESCE ( (SELECT MAX(b) FROM u), 0) WHERE id = 1")]
+    [InlineData("DELETE FROM t WHERE id IN ((SELECT id FROM u)) AND b = ANY (SELECT b FROM v)")]
+    [InlineData("INSERT INTO t (a) VALUES ((SELECT 1)), (2)")]
+    [InlineData("UPDATE t SET a = ISNULL((SELECT MAX(b) FROM u), 0) + -(SELECT 1) * (SELECT 2) WHERE (SELECT COUNT(*) FROM v) > 0 AND NOT EXISTS(SELECT 1 FROM w)")]
+    [InlineData("UPDATE t SET a = CASE (SELECT b FROM u) WHEN 1 THEN (SELECT 2) ELSE (SELECT 3) END WHERE id = 1")]
+    [InlineData("INSERT INTO t (a, b) SELECT (SELECT 1), CAST((SELECT 2) AS int) FROM u JOIN (SELECT 1 x) v ON (SELECT 1) = 1")]
+    [InlineData("DELETE FROM t WHERE a BETWEEN (SELECT 1) AND (SELECT 2) OR b > ALL (SELECT c FROM u) OR d = SOME (SELECT 1)")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u WHERE x = @x")]
+    [InlineData("INSERT INTO t (a) OUTPUT inserted.id VALUES (@a)")]
+    [InlineData("INSERT INTO t (a) VALUES (DEFAULT), (1)")]
+    [InlineData("UPDATE TOP (1) t SET a = 1 WHERE b = 2")]
+    [InlineData("UPDATE t SET a = CASE WHEN b = 1 THEN (SELECT MAX(c) FROM u WHERE u.id = t.id) ELSE 0 END, d = (SELECT 1) WHERE id = @id")]
+    [InlineData("UPDATE t, u SET t.a = u.b WHERE t.id = u.id")]
+    [InlineData("UPDATE t WITH (ROWLOCK) SET a = 1 WHERE id = 1")]
+    [InlineData("DELETE FROM t WITH (ROWLOCK) WHERE id = 1")]
+    [InlineData("INSERT INTO t WITH (TABLOCK) (a) SELECT a FROM u WITH (NOLOCK)")]
+    [InlineData("UPDATE t SET a = 1 WHERE id = 1 OPTION (RECOMPILE)")]
+    [InlineData("DELETE FROM t WHERE EXISTS (SELECT 1 FROM u WHERE u.id = t.id)")]
+    [InlineData("UPDATE t SET a = 1 WHERE id IN (SELECT id FROM u UNION SELECT id FROM v)")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM (SELECT a FROM u ORDER BY a OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY) s")]
+    [InlineData("INSERT INTO t (a) SELECT IIF(x IS NULL, 1, 2) FROM u")]
+    [InlineData("UPDATE t SET a = (SELECT IF(1, 2, 3)) WHERE id = 1")]
+    public void Accepts_legitimate_write_shapes(string sql)
+    {
+        var r = SqlGuard.CheckWrite(sql);
+        Assert.True(r.Ok, $"{sql}: {r.Message}");
+    }
+
+    [Theory]
+    // Conservative and documented: at the top level these words always count as a statement verb, so MySQL's IF() function and OFFSET ... FETCH must sit
+    // in parentheses (or use CASE), and a column named like one must be quoted.
+    [InlineData("UPDATE t SET a = IF(b, 1, 2) WHERE id = 1")]
+    [InlineData("INSERT INTO t (a) SELECT a FROM u ORDER BY a OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY")]
+    [InlineData("UPDATE t SET move = 1 WHERE id = 1")]
+    [InlineData("INSERT INTO t WITH x AS (SELECT 1 a) SELECT a FROM x")]
+    [InlineData("INSERT INTO t (id, a) (SELECT 9, 9)")]
+    public void Refuses_top_level_statement_words_even_where_a_database_would_accept_them(string sql)
+    {
+        Assert.Equal("sql.not_write", SqlGuard.CheckWrite(sql).Code);
+    }
+
     [Fact]
     public void A_table_called_statistics_must_be_quoted()
     {
@@ -237,27 +360,43 @@ public sealed class SqlGuardWriteTests
 
     // ---- Every Phase 1 dialect attack (SqlGuardTests.HostileQueries) is refused in write mode too, in every position a write statement offers. ----
 
-    public static TheoryData<string, string, string, string> HostileWrites
+    public static TheoryData<string, string, string, string?> HostileWrites
     {
         get
         {
-            string[] wrappers =
+            // {0} = the hostile text as it is (a SELECT, legal as the source of an INSERT or as a subquery), {1} = the same text without its leading "SELECT "
+            // (so it continues an expression of the write). In these positions the refusal comes from the hostile part itself: same code as in read mode.
+            string[] exact =
+            [
+                "INSERT INTO t {0}",
+                "INSERT INTO t SELECT 1 UNION ALL {0}",
+                "UPDATE t SET a = 1 WHERE id IN ({0})",
+                "DELETE FROM t WHERE id IN ({0})",
+                "INSERT INTO t VALUES ({1})",
+                "UPDATE t SET a = {1} WHERE id = 1",
+                "UPDATE t SET a = 1 WHERE id = {1}",
+                "DELETE FROM t WHERE id = {1}",
+            ];
+            // After a complete write a top-level SELECT is itself refused (a second statement on SQL Server), possibly before the hostile part is reached: any refusal.
+            string[] trailing =
             [
                 "INSERT INTO t VALUES (1) {0}",
                 "UPDATE t SET a = 1 WHERE id = 1 {0}",
                 "DELETE FROM t WHERE id = 1 {0}",
-                "INSERT INTO t {0}",
             ];
-            var data = new TheoryData<string, string, string, string>();
+            var data = new TheoryData<string, string, string, string?>();
             foreach (var row in SqlGuardTests.HostileQueries)
             {
                 var why = (string)row[0];
                 var sql = (string)row[1];
                 var code = (string)row[2];
+                var rest = sql.StartsWith("SELECT ", StringComparison.Ordinal) ? sql["SELECT ".Length..] : sql;
                 // In read mode a forbidden word gives sql.not_select; in write mode the same word gives sql.not_write. Every other code is identical.
                 var writeCode = code == "sql.not_select" ? "sql.not_write" : code;
-                foreach (var wrapper in wrappers)
-                    data.Add(why, wrapper, string.Format(System.Globalization.CultureInfo.InvariantCulture, wrapper, sql), writeCode);
+                foreach (var wrapper in exact)
+                    data.Add(why, wrapper, string.Format(System.Globalization.CultureInfo.InvariantCulture, wrapper, sql, rest), writeCode);
+                foreach (var wrapper in trailing)
+                    data.Add(why, wrapper, string.Format(System.Globalization.CultureInfo.InvariantCulture, wrapper, sql), null);
             }
             return data;
         }
@@ -265,11 +404,11 @@ public sealed class SqlGuardWriteTests
 
     [Theory]
     [MemberData(nameof(HostileWrites))]
-    public void Refuses_every_phase1_dialect_attack_in_write_mode(string why, string wrapper, string sql, string code)
+    public void Refuses_every_phase1_dialect_attack_in_write_mode(string why, string wrapper, string sql, string? code)
     {
         var check = SqlGuard.CheckWrite(sql);
         Assert.False(check.Ok, $"{why} in {wrapper}");
-        Assert.Equal(code, check.Code);
+        if (code is not null) Assert.Equal(code, check.Code);
         Assert.Empty(check.Parameters);
         Assert.Null(check.Verb);
     }
@@ -285,7 +424,7 @@ public sealed class SqlGuardWriteTests
     [InlineData("UPDATE t SET a = q'[']' WHERE id = 1 , ' ; DELETE FROM u; -- '")]
     [InlineData("UPDATE t--'\nSET a = 1 WHERE id = 1")]
     [InlineData("DELETE FROM t WHERE id = 1DELETE FROM u WHERE 1 = 1")]
-    [InlineData("DELETE FROM t WHERE id = 1")]
+    [InlineData("DELETE FROM t\u00A0WHERE id = 1")] // U+00A0 NO-BREAK SPACE between t and WHERE
     public void Refuses_dialect_attacks_inside_the_write_itself(string sql)
     {
         var check = SqlGuard.CheckWrite(sql);
