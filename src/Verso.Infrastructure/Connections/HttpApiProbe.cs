@@ -95,7 +95,7 @@ public sealed class HttpApiProbe(Func<HttpMessageHandler>? handlerFactory = null
         var url = ApiUrls.Combine(s.BaseUrl, s.TestPath);
         if (s.AuthType == ApiAuthTypes.ApiKeyQuery)
         {
-            url += (url.Contains('?', StringComparison.Ordinal) ? "&" : "?") + Uri.EscapeDataString(s.AuthName) + "=" + Uri.EscapeDataString(s.Secret);
+            url = ApiHttp.AppendQuery(url, s.AuthName, s.Secret);
         }
 
         return new Uri(url, UriKind.Absolute);

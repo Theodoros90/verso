@@ -125,6 +125,14 @@ public sealed class ApiHttpTests
         Assert.Empty(request.Headers);
     }
 
+    [Theory]
+    [InlineData("https://api.example.test/v1/x", "a", "b", "https://api.example.test/v1/x?a=b")]
+    [InlineData("https://api.example.test/v1/x?a=b", "c", "d", "https://api.example.test/v1/x?a=b&c=d")]
+    [InlineData("https://api.example.test/x", "a b&c", "x?y=1&z#f", "https://api.example.test/x?a%20b%26c=x%3Fy%3D1%26z%23f")]
+    [InlineData("https://api.example.test/x", "k", "../%2e/@evil.test", "https://api.example.test/x?k=..%2F%252e%2F%40evil.test")]
+    public void AppendQuery_EncodesNameAndValueAsOnePieceEach(string url, string name, string value, string expected) =>
+        Assert.Equal(expected, ApiHttp.AppendQuery(url, name, value));
+
     [Fact]
     public void CreateHandler_DoesNotFollowRedirectsOrKeepCookies()
     {

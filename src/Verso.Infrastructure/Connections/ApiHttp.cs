@@ -105,6 +105,10 @@ internal static class ApiHttp
         }
     }
 
+    /// <summary>Appends one query pair, name and value each URL-encoded as one piece (so a "&amp;", "=", "#" or "?" in either stays inside it).</summary>
+    internal static string AppendQuery(string url, string name, string value) =>
+        url + (url.Contains('?', StringComparison.Ordinal) ? "&" : "?") + Uri.EscapeDataString(name) + "=" + Uri.EscapeDataString(value);
+
     internal static string CodeForStatus(int status) => status switch
     {
         401 or 403 => "api.unauthorized",
