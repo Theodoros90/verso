@@ -322,7 +322,7 @@ public static partial class ApiPathTemplate
             issues.Add(new
             {
                 code = "fetch.value_invalid",
-                message = $"The path would be longer than {ApiUrls.MaxUrlLength} characters once {(names.Count == 0 ? "the values are" : string.Join(", ", names) + (names.Count == 1 ? " is" : " are"))} filled in (each value is percent-encoded, so non-ASCII characters take 6 to 9 characters each).",
+                message = $"The path would be longer than {ApiUrls.MaxUrlLength} characters once {(names.Count == 0 ? "the values are" : string.Join(", ", names) + (names.Count == 1 ? " is" : " are"))} filled in (each value is percent-encoded, so non-ASCII characters take 6 to 12 characters each).",
                 field = names.Count == 0 ? "path" : PieceRegex().Match(template).Groups[1].Value.Trim(),
             });
         }
