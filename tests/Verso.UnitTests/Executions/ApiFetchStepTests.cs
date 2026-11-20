@@ -238,4 +238,92 @@ public sealed class ApiFetchStepTests
             System.Globalization.CultureInfo.CurrentCulture = old;
         }
     }
+
+    // ResolveQuery: the run-time values of the query lines (Task 4). Same scalar rules and number formatting as the path pieces, but an empty text,
+    // "." and ".." are ordinary values here (the sender encodes them as one query value); the pairs keep the order of the lines and stay raw.
+
+    [Fact]
+    public void ResolveQuery_ReturnsRawPairs_InTheOrderOfTheLines()
+    {
+        var (items, _) = ApiFetchStep.ParseQuery("b = x.b\na = x.a\nempty = x.e\ndot = x.d\nslash = x.s");
+
+        var (pairs, issues) = ApiFetchStep.ResolveQuery(items, Data("""{ "x": { "a": "1&2=3", "b": "../admin", "e": "", "d": "..", "s": "a/b?c#d %2e" } }"""));
+
+        Assert.Empty(issues);
+        Assert.Equal(
+            [new("b", "../admin"), new("a", "1&2=3"), new("empty", ""), new("dot", ".."), new("slash", "a/b?c#d %2e")],
+            pairs);
+    }
+
+    [Fact]
+    public void ResolveQuery_NumbersAndBooleans_UseTheInvariantCulture_AsThePathDoes()
+    {
+        var old = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
+        try
+        {
+            var (items, _) = ApiFetchStep.ParseQuery("a = a\nb = b\nc = c\nd = d\ne = e\nf = f");
+            var (pairs, issues) = ApiFetchStep.ResolveQuery(items, Data("""{ "a": 42, "b": 1.5, "c": true, "d": false, "e": 123456789012345678901234567890, "f": -0.5 }"""));
+
+            Assert.Empty(issues);
+            Assert.Equal(["42", "1.5", "true", "false", "1.2345678901234568E+29", "-0.5"], pairs.Select(p => p.Value));
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = old;
+        }
+    }
+
+    [Fact]
+    public void ResolveQuery_AMissingOrNullValue_IsMissing_NamingTheParameterAndPath()
+    {
+        var (items, _) = ApiFetchStep.ParseQuery("first = c.v\nsecond = d");
+
+        var (pairs, issues) = ApiFetchStep.ResolveQuery(items, Data("""{ "c": { "v": null } }"""));
+
+        Assert.Empty(pairs);
+        Assert.Equal("fetch.value_missing,fetch.value_missing", Codes(issues));
+        var text = JsonSerializer.Serialize(issues);
+        Assert.Contains("first", text, StringComparison.Ordinal);
+        Assert.Contains("c.v", text, StringComparison.Ordinal);
+        Assert.Contains("\"d\"", text, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""{ "v": { "x": "SECRET-VALUE" } }""")]
+    [InlineData("""{ "v": ["SECRET-VALUE"] }""")]
+    [InlineData("""{ "v": "SECRET-VALUE\uD800" }""")] // a lone surrogate escape: GetString() would throw
+    [InlineData("""{ "v": "SECRET-VALUE\uDC00x" }""")]
+    public void ResolveQuery_AGroupAListOrALoneSurrogate_IsInvalid_WithoutTheContent(string json)
+    {
+        var (items, _) = ApiFetchStep.ParseQuery("q = v");
+
+        var (pairs, issues) = ApiFetchStep.ResolveQuery(items, Data(json));
+
+        Assert.Empty(pairs);
+        Assert.Equal("fetch.value_invalid", Codes(issues));
+        var text = JsonSerializer.Serialize(issues);
+        Assert.DoesNotContain("SECRET-VALUE", text, StringComparison.Ordinal);
+        Assert.Contains("\"v\"", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolveQuery_ReportsEveryProblem_AndAnEmojiPairIsAValue()
+    {
+        var (items, _) = ApiFetchStep.ParseQuery("ok = e\nbad = g\ngone = m");
+
+        var (pairs, issues) = ApiFetchStep.ResolveQuery(items, Data("""{ "e": "😀", "g": [1] }"""));
+
+        Assert.Equal("fetch.value_invalid,fetch.value_missing", Codes(issues));
+        Assert.Equal("😀", Assert.Single(pairs).Value);
+    }
+
+    [Fact]
+    public void ResolveQuery_NoLines_NoPairs()
+    {
+        var (pairs, issues) = ApiFetchStep.ResolveQuery([], Data("{}"));
+
+        Assert.Empty(pairs);
+        Assert.Empty(issues);
+    }
 }

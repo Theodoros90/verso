@@ -84,6 +84,66 @@ public static partial class ApiFetchStep
         return true;
     }
 
+    /// <summary>
+    /// The run-time values of the query lines, read from <paramref name="data"/> with the same dotted paths and scalar rules as the path pieces: text, numbers
+    /// (invariant culture, formatted as in the path) and true/false. The pairs are raw, in the order of the lines (the sender encodes them); an empty text,
+    /// "." or ".." is an ordinary value here. Issues (code, message, field), never a value: <c>fetch.value_missing</c> for a missing or null value,
+    /// <c>fetch.value_invalid</c> for a list, a group of fields, or text that can't be sent (a lone surrogate). Pairs hold only the lines without an issue.
+    /// </summary>
+    public static (IReadOnlyList<KeyValuePair<string, string>> Pairs, IReadOnlyList<object> Issues) ResolveQuery(IReadOnlyList<(string Name, string Path)> items, JsonElement data)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        var pairs = new List<KeyValuePair<string, string>>(items.Count);
+        var issues = new List<object>();
+        foreach (var (name, path) in items)
+        {
+            if (!DataPath.TryResolve(data, path, out var value))
+            {
+                issues.Add(new { code = "fetch.value_missing", message = $"Query value '{name}' has no value: '{Short(path)}' is missing or null in the data (an empty text is a value).", field = path });
+                continue;
+            }
+
+            var text = ScalarText(value);
+            if (text is null || !IsValidText(text))
+            {
+                var kind = value.ValueKind switch { JsonValueKind.Array => "a list", JsonValueKind.Object => "a group of fields", _ => "text that can't be sent" };
+                issues.Add(new { code = "fetch.value_invalid", message = $"Query value '{name}': '{Short(path)}' holds {kind}; only text, a number or true/false can be sent.", field = path });
+                continue;
+            }
+
+            pairs.Add(new KeyValuePair<string, string>(name, text));
+        }
+
+        return (pairs, issues);
+    }
+
+    /// <summary>
+    /// The text of a scalar data value as it is sent (path piece or query value): text as is, true/false, numbers in the invariant culture (whole numbers,
+    /// then exact decimals, then the round-trip form of a double). Null for a list, a group of fields, or text System.Text.Json can't read (a lone surrogate escape).
+    /// </summary>
+    internal static string? ScalarText(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.String => ReadString(value),
+        JsonValueKind.True => "true",
+        JsonValueKind.False => "false",
+        JsonValueKind.Number when value.TryGetInt64(out var whole) => whole.ToString(CultureInfo.InvariantCulture),
+        JsonValueKind.Number when value.TryGetDecimal(out var exact) => exact.ToString(CultureInfo.InvariantCulture),
+        JsonValueKind.Number => value.GetDouble().ToString("R", CultureInfo.InvariantCulture),
+        _ => null,
+    };
+
+    private static string? ReadString(JsonElement value)
+    {
+        try
+        {
+            return value.GetString();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
     private static string Short(string s) => s.Length > 40 ? s[..40] + "…" : s;
 
     [GeneratedRegex(@"^[A-Za-z0-9_.\-\[\]]{1,64}$", RegexOptions.CultureInvariant)]
@@ -213,16 +273,7 @@ public static partial class ApiPathTemplate
                 continue;
             }
 
-            var text = value.ValueKind switch
-            {
-                JsonValueKind.String => ReadString(value), // null (invalid) for text System.Text.Json can't read, such as a lone surrogate escape
-                JsonValueKind.True => "true",
-                JsonValueKind.False => "false",
-                JsonValueKind.Number when value.TryGetInt64(out var whole) => whole.ToString(CultureInfo.InvariantCulture),
-                JsonValueKind.Number when value.TryGetDecimal(out var exact) => exact.ToString(CultureInfo.InvariantCulture),
-                JsonValueKind.Number => value.GetDouble().ToString("R", CultureInfo.InvariantCulture),
-                _ => null,
-            };
+            var text = ApiFetchStep.ScalarText(value); // null (invalid) for a list, a group, or text System.Text.Json can't read, such as a lone surrogate escape
             if (text is null)
             {
                 issues.Add(new { code = "fetch.value_invalid", message = $"'{Short(dataPath)}' holds {value.ValueKind switch { JsonValueKind.Array => "a list", JsonValueKind.String => "text that can't be sent", _ => "a group of fields" }}; only text, a number or true/false can go in the path.", field = dataPath });
@@ -267,18 +318,6 @@ public static partial class ApiPathTemplate
 
     [GeneratedRegex(@"\{\{(.*?)\}\}", RegexOptions.CultureInvariant)]
     private static partial Regex PieceRegex();
-
-    private static string? ReadString(JsonElement value)
-    {
-        try
-        {
-            return value.GetString();
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
-    }
 
     private static bool IsStaticChar(char c) => StaticChars().IsMatch(c.ToString());
 
