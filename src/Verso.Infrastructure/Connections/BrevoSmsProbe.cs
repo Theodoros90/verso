@@ -9,7 +9,7 @@ using Verso.Application.Connections;
 namespace Verso.Infrastructure.Connections;
 
 /// <summary>
-/// Sends the one real SMS of "Test connection" through Brevo (ADR 0018): <c>POST {base}/transactionalSMS/sms</c> with the <c>api-key</c> header.
+/// Sends the one real SMS of "Test connection" through Brevo (ADR 0018): <c>POST {base}/transactionalSMS/sms</c> (<see cref="BrevoSms.SendPath"/>) with the <c>api-key</c> header.
 /// Same network rules as the HTTP API probe: HTTPS only, no redirects, only allowed addresses (checked when connecting), the configured timeout,
 /// no new package. The provider's answer is read (at most 64 KB) only for the message id, the number of parts, the credits left and, on a
 /// refusal, to tell a bad number from a missing balance; it is never stored, logged or shown. The test text is fixed and contains no data.
@@ -55,26 +55,11 @@ public sealed class BrevoSmsProbe(Func<HttpMessageHandler>? handlerFactory = nul
         }
     }
 
-    /// <summary>The send address: the base without a trailing slash plus <c>/transactionalSMS/sms</c>.</summary>
-    internal static Uri BuildUrl(SmsConnectionSettings s) => new(s.BaseUrl.TrimEnd('/') + "/transactionalSMS/sms", UriKind.Absolute);
+    /// <summary>The send address: the base without a trailing slash plus <see cref="BrevoSms.SendPath"/> (shared with the Send SMS step).</summary>
+    internal static Uri BuildUrl(SmsConnectionSettings s) => BrevoSms.BuildUrl(s);
 
-    internal static string BuildBody(SmsConnectionSettings s, string recipientDigits)
-    {
-        var fields = new Dictionary<string, object>
-        {
-            ["sender"] = s.Sender,
-            ["recipient"] = recipientDigits,
-            ["content"] = TestText,
-            ["type"] = s.MessageType,
-            ["unicodeEnabled"] = s.UnicodeEnabled,
-        };
-        if (s.OrganisationPrefix.Length > 0)
-        {
-            fields["organisationPrefix"] = s.OrganisationPrefix;
-        }
-
-        return JsonSerializer.Serialize(fields);
-    }
+    /// <summary>The fixed test text, no tag (shared body builder, same bytes as before it was shared).</summary>
+    internal static string BuildBody(SmsConnectionSettings s, string recipientDigits) => BrevoSms.BuildBody(s, recipientDigits, TestText, tag: null);
 
     internal static (string? MessageId, int? SmsCount, decimal? RemainingCredits) ParseSuccess(string body)
     {
@@ -116,18 +101,7 @@ public sealed class BrevoSmsProbe(Func<HttpMessageHandler>? handlerFactory = nul
     };
 
     /// <summary>A 400 from Brevo carries a code and a text; only used here to tell a bad number or an empty balance from other mistakes.</summary>
-    internal static string ClassifyBadRequest(string body)
-    {
-        var text = body.ToLowerInvariant();
-        if (text.Contains("credit", StringComparison.Ordinal))
-        {
-            return "sms.insufficient_credits";
-        }
-
-        return text.Contains("recipient", StringComparison.Ordinal) || text.Contains("phone", StringComparison.Ordinal) || text.Contains("number", StringComparison.Ordinal)
-            ? "sms.invalid_recipient"
-            : "sms.client_error";
-    }
+    internal static string ClassifyBadRequest(string body) => BrevoSms.ClassifyBadRequest(body);
 
     internal static string CodeForException(Exception ex)
     {
