@@ -24,9 +24,9 @@ public sealed class ApiFetchStepTests
     [InlineData("a = x\na = y", "'a' is listed more than once")]
     [InlineData("filter[a] = x\nfilter[b] = y", null)]
     [InlineData("has space = x", "has space")]
-    [InlineData("a = ", "'a'")]
-    [InlineData("a = x..y", "'a'")]
-    [InlineData("= x", "")]
+    [InlineData("a = ", "Query parameter 'a' needs a data path after the = sign.")]
+    [InlineData("a = x..y", "Query parameter 'a': 'x..y' isn't a valid data path")]
+    [InlineData("= x", "'' isn't a valid query parameter name.")]
     public void ParseQuery_ReportsAProblem_ForABadLine(string text, string? mentions)
     {
         var (_, problem) = ApiFetchStep.ParseQuery(text);
@@ -58,6 +58,8 @@ public sealed class ApiFetchStepTests
     [InlineData("/customers/{{ customer.number }}")]
     [InlineData("/a/{{x}}/{{y.z}}")]
     [InlineData("/files/a.b-c_d~e")]
+    [InlineData("/a//b")] // intentional: only a leading // is refused, as the service does
+    [InlineData("/a/%2{{v}}")] // a static % stays allowed (percent-encoded text is legal); Resolve re-checks the result
     public void Validate_Accepts(string template) => Assert.Null(ApiPathTemplate.Validate(template));
 
     [Theory]
@@ -109,15 +111,90 @@ public sealed class ApiFetchStepTests
     [InlineData(".")]
     [InlineData("..")]
     [InlineData("")]
-    public void Resolve_RefusesADotOrEmptyValue_AsInvalidData_NamingThePathButNotTheValue(string value)
+    public void Resolve_RefusesADotOrEmptyValue_AsInvalidData_NamingThePath(string value)
     {
         var (path, issues) = ApiPathTemplate.Resolve("/a/{{c.v}}", Data(JsonSerializer.Serialize(new { c = new { v = value } })));
 
         Assert.Null(path);
         Assert.Equal("fetch.value_invalid", Codes(issues));
-        var text = JsonSerializer.Serialize(issues);
-        Assert.Contains("c.v", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"..", text, StringComparison.Ordinal);
+        Assert.Contains("c.v", JsonSerializer.Serialize(issues), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Resolve_IssuesNeverEchoTheValue()
+    {
+        const string Sentinel = "SENTINEL-9f3a";
+        foreach (var json in new[]
+        {
+            $$"""{ "c": { "v": { "x": "{{Sentinel}}" } } }""",
+            $$"""{ "c": { "v": ["{{Sentinel}}"] } }""",
+            $$"""{ "c": { "v": "{{Sentinel}}\uD800" } }""",
+        })
+        {
+            var (_, issues) = ApiPathTemplate.Resolve("/a/{{c.v}}", Data(json));
+            Assert.NotEmpty(issues);
+            Assert.DoesNotContain(Sentinel, JsonSerializer.Serialize(issues), StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData("/a/%2{{v}}", "e")]
+    [InlineData("/.%2{{v}}", "e")]
+    [InlineData("/a/%2{{v}}", "E")]
+    [InlineData("/a/.{{v}}", ".")] // ".." made of a static dot and a value
+    [InlineData("/a/%2e{{v}}", "%2e")]
+    public void Resolve_RefusesAPathWhoseSegmentBecomesADotSegmentAfterSubstitution(string template, string value)
+    {
+        Assert.Null(ApiPathTemplate.Validate(template)); // design time cannot know
+        var (path, issues) = ApiPathTemplate.Resolve(template, Data(JsonSerializer.Serialize(new { v = value })));
+
+        // "/a/%2e" + "%252e" is not a dot segment after one unescape ("%2e" text), so that row is the control: it must stay allowed.
+        if (template == "/a/%2e{{v}}")
+        {
+            Assert.Empty(issues);
+            Assert.Equal("/a/%2e%252e", path);
+            return;
+        }
+
+        Assert.Null(path);
+        Assert.Equal("fetch.value_invalid", Codes(issues));
+        Assert.Contains("\"v\"", JsonSerializer.Serialize(issues), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Resolve_ALoneSurrogate_IsInvalid_ButAnEmojiPairIsEncoded()
+    {
+        var (path, issues) = ApiPathTemplate.Resolve("/a/{{v}}", Data("""{ "v": "x\uD800y" }"""));
+        Assert.Null(path);
+        Assert.Equal("fetch.value_invalid", Codes(issues));
+
+        (path, issues) = ApiPathTemplate.Resolve("/a/{{v}}", Data("""{ "v": "😀" }"""));
+        Assert.Empty(issues);
+        Assert.Equal("/a/%F0%9F%98%80", path);
+    }
+
+    [Fact]
+    public void IsValidText_RejectsALoneSurrogate_AndAcceptsPairsAndPlainText()
+    {
+        Assert.False(ApiFetchStep.IsValidText("a\uD800"));
+        Assert.False(ApiFetchStep.IsValidText("\uDC00a"));
+        Assert.True(ApiFetchStep.IsValidText("a😀"));
+        Assert.True(ApiFetchStep.IsValidText("Zürich"));
+        Assert.True(ApiFetchStep.IsValidText(""));
+    }
+
+    [Theory]
+    [InlineData("1e21", "1000000000000000000000")] // fits a decimal
+    [InlineData("-0.5", "-0.5")]
+    [InlineData("123456789012345678901234567890", "1.2345678901234568E+29")] // too big for a decimal: the double "R" branch
+    [InlineData("0.1e-5", "0.000001")]
+    [InlineData("1.7976931348623157e308", "1.7976931348623157E+308")]
+    public void Resolve_FormatsLargeNegativeAndScientificNumbers(string json, string expected)
+    {
+        var (path, issues) = ApiPathTemplate.Resolve("/n/{{v}}", Data($$"""{ "v": {{json}} }"""));
+
+        Assert.Empty(issues);
+        Assert.Equal("/n/" + Uri.EscapeDataString(expected), path);
     }
 
     [Fact]

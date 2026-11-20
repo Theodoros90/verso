@@ -63,6 +63,27 @@ public static partial class ApiFetchStep
         return (items, null);
     }
 
+    /// <summary>
+    /// False when <paramref name="text"/> holds a lone surrogate: URL-encoding would silently turn it into U+FFFD and send a different value than the data holds.
+    /// Used for path pieces and (by the engine) for query values.
+    /// </summary>
+    public static bool IsValidText(string text)
+    {
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+            {
+                i++;
+            }
+            else if (char.IsSurrogate(text[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static string Short(string s) => s.Length > 40 ? s[..40] + "…" : s;
 
     [GeneratedRegex(@"^[A-Za-z0-9_.\-\[\]]{1,64}$", RegexOptions.CultureInvariant)]
@@ -129,6 +150,7 @@ public static partial class ApiPathTemplate
                 return "The path can't contain ? or #; put query values in the Query setting.";
             }
 
+            // A static % stays allowed (percent-encoded text is legal in a path, and a piece may complete it); Resolve re-checks the finished segments for . and ..
             if (!IsStaticChar(c))
             {
                 return $"The path can't contain '{(char.IsControl(c) ? "a control character" : c.ToString())}'. Use letters, digits and - . _ ~ / (spaces and other characters belong in a value, not in the path).";
@@ -193,7 +215,7 @@ public static partial class ApiPathTemplate
 
             var text = value.ValueKind switch
             {
-                JsonValueKind.String => value.GetString(),
+                JsonValueKind.String => ReadString(value), // null (invalid) for text System.Text.Json can't read, such as a lone surrogate escape
                 JsonValueKind.True => "true",
                 JsonValueKind.False => "false",
                 JsonValueKind.Number when value.TryGetInt64(out var whole) => whole.ToString(CultureInfo.InvariantCulture),
@@ -203,20 +225,59 @@ public static partial class ApiPathTemplate
             };
             if (text is null)
             {
-                issues.Add(new { code = "fetch.value_invalid", message = $"'{Short(dataPath)}' holds {(value.ValueKind == JsonValueKind.Array ? "a list" : "a group of fields")}; only text, a number or true/false can go in the path.", field = dataPath });
+                issues.Add(new { code = "fetch.value_invalid", message = $"'{Short(dataPath)}' holds {value.ValueKind switch { JsonValueKind.Array => "a list", JsonValueKind.String => "text that can't be sent", _ => "a group of fields" }}; only text, a number or true/false can go in the path.", field = dataPath });
                 continue;
             }
 
-            if (text.Length == 0 || text is "." or "..")
+            if (text.Length == 0 || text is "." or ".." || !ApiFetchStep.IsValidText(text))
             {
-                issues.Add(new { code = "fetch.value_invalid", message = $"'{Short(dataPath)}' holds a value that can't be used in a path (empty text, . or ..).", field = dataPath });
+                issues.Add(new { code = "fetch.value_invalid", message = $"'{Short(dataPath)}' holds a value that can't be used in a path (empty text, . or .., or characters that can't be sent).", field = dataPath });
                 continue;
             }
 
             path.Append(Uri.EscapeDataString(text));
         }
 
-        return (issues.Count == 0 ? path.ToString() : null, issues);
+        if (issues.Count > 0)
+        {
+            return (null, issues);
+        }
+
+        // Same per-segment check as the service (one unescape): a static "%2" followed by a value "e" must not become a ".." segment. Pieces are encoded as one
+        // piece, so the resolved path has exactly as many segments as the template and they line up.
+        var resolved = path.ToString();
+        var templateSegments = template.Split('/');
+        var resolvedSegments = resolved.Split('/');
+        for (var s = 0; s < resolvedSegments.Length && s < templateSegments.Length; s++)
+        {
+            if (Uri.UnescapeDataString(resolvedSegments[s]) is "." or "..")
+            {
+                var names = PieceRegex().Matches(templateSegments[s]).Select(m => m.Groups[1].Value.Trim()).ToList();
+                issues.Add(new
+                {
+                    code = "fetch.value_invalid",
+                    message = $"The path would contain a . or .. segment once {(names.Count == 0 ? "the values are" : $"'{Short(names[0])}' is")} filled in.",
+                    field = names.Count == 0 ? "path" : names[0],
+                });
+            }
+        }
+
+        return (issues.Count == 0 ? resolved : null, issues);
+    }
+
+    [GeneratedRegex(@"\{\{(.*?)\}\}", RegexOptions.CultureInvariant)]
+    private static partial Regex PieceRegex();
+
+    private static string? ReadString(JsonElement value)
+    {
+        try
+        {
+            return value.GetString();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private static bool IsStaticChar(char c) => StaticChars().IsMatch(c.ToString());
