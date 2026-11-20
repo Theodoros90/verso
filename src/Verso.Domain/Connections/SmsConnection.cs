@@ -29,7 +29,7 @@ public sealed class SmsConnection
     public int TimeoutSeconds { get; private set; }
     /// <summary>Whether a Send SMS workflow step may use this connection; off by default, switched on by an administrator.</summary>
     public bool AllowSending { get; private set; }
-    /// <summary>The country dialling codes (digits, comma separated, no "+") a step may send to; empty means no restriction by country.</summary>
+    /// <summary>The country dialling codes (digits, comma separated, no "+") a step may send to; empty allows no country (a Send SMS step is then refused).</summary>
     public string AllowedCountryPrefixes { get; private set; } = "";
     public string Description { get; private set; } = "";
     public bool IsActive { get; private set; }

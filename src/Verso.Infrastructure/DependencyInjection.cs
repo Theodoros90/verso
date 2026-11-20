@@ -107,7 +107,7 @@ public static class DependencyInjection
         return services;
     }
 
-    /// <summary>Worker only: sends the one real SMS of "Test connection" through the SMS connections an administrator creates in Configuration (ADR 0018). Optional <c>SmsConnections:AllowedHosts</c> limits the hosts.</summary>
+    /// <summary>Worker only: sends the one real SMS of "Test connection" and of the Send SMS step through the SMS connections an administrator creates in Configuration (ADR 0018). Optional <c>SmsConnections:AllowedHosts</c> limits the hosts.</summary>
     public static IServiceCollection AddVersoSmsConnections(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddSingleton(new Application.Connections.SmsConnectionOptions
@@ -115,6 +115,9 @@ public static class DependencyInjection
             AllowedHosts = [.. configuration.GetSection(Application.Connections.SmsConnectionOptions.Section).GetSection(nameof(Application.Connections.SmsConnectionOptions.AllowedHosts)).GetChildren().Select(c => c.Value ?? "").Where(v => v.Length > 0)],
         });
         services.AddSingleton<Application.Connections.ISmsProbe>(new Connections.BrevoSmsProbe());
+        // The Send SMS step (one SMS per run step, never retried); the service is scoped because it reads the connection through the scoped db context.
+        services.AddSingleton<Application.Connections.ISmsSender>(new Connections.HttpSmsSender());
+        services.AddScoped<Application.Connections.ISmsSend, Application.Connections.SmsSendService>();
         return services;
     }
 

@@ -32,7 +32,15 @@ public sealed record SmsConnectionTestDto(
 
 /// <summary>What the Worker needs to send the test SMS, API key decrypted in memory only.</summary>
 public sealed record SmsConnectionSettings(
-    string BaseUrl, string Sender, string MessageType, bool UnicodeEnabled, string OrganisationPrefix, string ApiKey, TimeSpan Timeout);
+    string BaseUrl, string Sender, string MessageType, bool UnicodeEnabled, string OrganisationPrefix, string ApiKey, TimeSpan Timeout)
+{
+    /// <summary>Holds the API key: ToString shows only the type, the Unicode switch and the timeout.</summary>
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append(System.Globalization.CultureInfo.InvariantCulture, $"MessageType = {MessageType}, UnicodeEnabled = {UnicodeEnabled}, Timeout = {Timeout}, address, sender, prefix and API key redacted");
+        return true;
+    }
+}
 
 /// <summary>The outcome of one test SMS. Only the status, the time, the provider's message id, the number of parts and the credits left are kept.</summary>
 public sealed record SmsProbeResult(
@@ -82,6 +90,16 @@ public static class SmsProbeMessages
         "sms.secret_unreadable" => "The stored API key can't be read: the Worker's Secrets:MasterKey is missing or differs from the API's. Set it, or type the key again.",
         "sms.recipient_unreadable" => "The test number could not be read by the Worker (Secrets:MasterKey differs from the API's). Nothing was sent.",
         "sms.connection_unavailable" => "The connection no longer exists or is switched off.",
+        // The Send SMS step (Phase 4). A failure whose outcome is unknown always shows SmsSendMessages.OutcomeUnknown instead.
+        "sms.sending_not_allowed" => "Sending is switched off for this connection. An administrator can switch it on in Configuration, Connections.",
+        "sms.marketing_not_allowed" => "Marketing connections can't be used in workflows.",
+        "sms.country_not_allowed" => "The number's country is not one the administrator allowed for this connection.",
+        "sms.recipient_invalid" => "The number is not a valid international phone number.",
+        "sms.text_invalid" => "The message text is empty, too long or contains characters that can't be sent.",
+        "sms.text_needs_unicode" => "The text needs Unicode characters but this connection has Unicode switched off. An administrator can switch it on.",
+        "sms.tag_invalid" => "The message tag Verso built is not valid. Nothing was sent.",
+        "sms.bad_request" => "The connection's base address is not a valid https address. Nothing was sent.",
+        "sms.duplicate_request" or "sms.connection_lost" or "sms.unexpected_answer" => SmsSendMessages.OutcomeUnknown,
         _ => "The test could not be run.",
     };
 }
@@ -200,6 +218,73 @@ public static partial class SmsRules
         normalised = string.Join(',', list);
         return true;
     }
+
+    /// <summary>The longest text a Send SMS step may send, in UTF-16 characters (Brevo splits a long text into several messages).</summary>
+    public const int MaxTextLength = 480;
+
+    /// <summary>
+    /// The GSM 03.38 default alphabet (basic set) plus its extension table (form feed, ^ { } \ [ ~ ] | €, sent as two septets each). Any other character
+    /// makes the provider switch to Unicode (UCS-2). Line feed and carriage return are in the basic set.
+    /// </summary>
+    private const string GsmCharacters =
+        "@£$¥èéùìòÇ\nØø\rÅå" + // @ £ $ ¥ è é ù ì ò Ç LF Ø ø CR Å å
+        "Δ_ΦΓΛΩΠΨΣΘΞÆæßÉ" +   // Δ _ Φ Γ Λ Ω Π Ψ Σ Θ Ξ Æ æ ß É (0x1B is the escape)
+        " !\"#¤%&'()*+,-./0123456789:;<=>?" +                                                     // ¤ in place of the currency sign
+        "¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§" +                              // ¡ ... Ä Ö Ñ Ü §
+        "¿abcdefghijklmnopqrstuvwxyzäöñüà" +                              // ¿ ... ä ö ñ ü à
+        "\f^{}\\[~]|€";                                                                            // the extension table
+
+    private static readonly System.Buffers.SearchValues<char> Gsm = System.Buffers.SearchValues.Create(GsmCharacters);
+
+    /// <summary>True when <paramref name="text"/> has a character outside the GSM 7-bit basic set and its extension table (so it can only go as Unicode).</summary>
+    public static bool NeedsUnicode(string text) => text.AsSpan().IndexOfAnyExcept(Gsm) >= 0;
+
+    /// <summary>
+    /// The text rules of a message: not empty or only white space, at most <see cref="MaxTextLength"/> characters, no control characters except a line
+    /// feed (a carriage return is accepted only right before a line feed, and the pair becomes one line feed), no lone surrogate (a half of a UTF-16 pair,
+    /// which can't be encoded). <paramref name="normalised"/> is the text with CR LF turned into LF.
+    /// </summary>
+    public static bool TryNormaliseText(string? text, out string normalised)
+    {
+        normalised = "";
+        if (text is null)
+        {
+            return false;
+        }
+
+        var value = text.Replace("\r\n", "\n", StringComparison.Ordinal);
+        if (value.Length > MaxTextLength || string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (char.IsHighSurrogate(c))
+            {
+                if (i + 1 >= value.Length || !char.IsLowSurrogate(value[i + 1]))
+                {
+                    return false;
+                }
+
+                i++; // a complete pair
+            }
+            else if (char.IsLowSurrogate(c) || (char.IsControl(c) && c != '\n'))
+            {
+                return false;
+            }
+        }
+
+        normalised = value;
+        return true;
+    }
+
+    /// <summary>The tag Verso sends with a message: 1 to 24 ASCII letters, digits and dashes (Brevo documents a tag but not its limits).</summary>
+    public static bool IsValidTag(string? tag) => tag is not null && TagRegex().IsMatch(tag);
+
+    [GeneratedRegex(@"^[A-Za-z0-9-]{1,24}\z", RegexOptions.CultureInvariant)] // \z, not $: "$" would also match before a final line feed
+    private static partial Regex TagRegex();
 
     [GeneratedRegex("^([A-Za-z0-9]{1,11}|[0-9]{1,15})$", RegexOptions.CultureInvariant)]
     private static partial Regex SenderRegex();
