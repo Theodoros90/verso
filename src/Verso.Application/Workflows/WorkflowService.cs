@@ -378,6 +378,16 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
                     .Items.Select(i => i.Name).ToList(),
             })
             .ToList();
+        // Send SMS steps: the connection key and the number and text TEMPLATES (placeholders and fixed words); a data value never exists at design time.
+        var smsSends = parsed.Nodes.Where(n => n.Type == NodeCatalog.SendSms)
+            .Select(n => new
+            {
+                nodeId = n.Id,
+                connection = n.Config.TryGetProperty("connection", out var connection) && connection.ValueKind == JsonValueKind.String ? connection.GetString() : null,
+                to = n.Config.TryGetProperty("to", out var to) && to.ValueKind == JsonValueKind.String ? to.GetString() : null,
+                text = n.Config.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String ? text.GetString() : null,
+            })
+            .ToList();
         var details = new Dictionary<string, object?> { ["versionId"] = published.Id, ["versionNumber"] = published.VersionNumber, ["contentHash"] = published.ContentHash };
         if (databaseQueries.Count > 0)
         {
@@ -392,6 +402,11 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
         if (apiFetches.Count > 0)
         {
             details["apiFetches"] = apiFetches;
+        }
+
+        if (smsSends.Count > 0)
+        {
+            details["smsSends"] = smsSends;
         }
 
         Audit(Actions.Published, workflow.Id, now, details);

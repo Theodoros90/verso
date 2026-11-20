@@ -43,6 +43,7 @@ public static class NodeCatalog
     public const string QueryDatabase = "query-database";
     public const string WriteDatabase = "write-database";
     public const string FetchApi = "fetch-api";
+    public const string SendSms = "send-sms";
     public const string LookupEnrich = "lookup-enrich";
     public const string Deduplicate = "deduplicate";
     public const string IfElse = "if-else";
@@ -289,7 +290,9 @@ public static class NodeCatalog
         ["nightly"] = "Nightly batch",
     };
 
-    private const string PathPieceExample = "{{customer.number}}"; // kept out of the raw schema text, where {{ }} means interpolation
+    private const string PhonePieceExample = "{{customer.mobile}}";
+    private const string NamePieceExample = "{{customer.name}}";
+    private const string PathPieceExample = "{{customer.number}}";// kept out of the raw schema text, where {{ }} means interpolation
     private const string DataPathPattern =@"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$";
 
     private const string OptionalDataPathPattern = @"^([A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*)?$";
@@ -669,6 +672,22 @@ public static class NodeCatalog
               "required": ["connection", "sql"] }
             """,
             """{ "connection": "", "sql": "UPDATE customers SET status = @status WHERE id = @id", "parameters": "status = customer.status\nid = customer.id", "maxRows": 1, "timeoutSeconds": 15 }"""),
+
+        Node(SendSms, "Send SMS", "output",
+            "Sends ONE real SMS through an SMS connection an administrator switched on for workflows, to a number and text taken from the run's data, within the countries the administrator allowed. A sent message cannot be recalled. The step is never retried automatically and never repeated on resume.",
+            [In], [new PortDto("sent", "Sent", true), new PortDto("failed", "Failed", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "connection": { "type": "string", "title": "SMS connection", "minLength": 2, "maxLength": 64, "pattern": "{{Escape(Connections.DatabaseServers.KeyPattern)}}", "x-widget": "sms-connection", "x-requires-sending": true,
+                  "description": "Which SMS connection to send through. Only connections an administrator has switched sending on for can be used." },
+                "to": { "type": "string", "title": "Recipient's number", "minLength": 1, "maxLength": {{Executions.SmsTemplates.MaxToLength}}, "x-widget": "mono",
+                  "description": "The recipient's number in international format, usually a field such as {{PhonePieceExample}}. The number must start with a country the administrator allowed for the connection." },
+                "text": { "type": "string", "title": "Message", "minLength": 1, "maxLength": {{Connections.SmsRules.MaxTextLength}}, "x-widget": "multiline",
+                  "description": "The message. Fields are written as {{NamePieceExample}}. At most 480 characters (three messages). Plain text only." } },
+              "required": ["connection", "to", "text"] }
+            """,
+            """{ "connection": "", "to": "{{customer.mobile}}", "text": "Dear {{customer.name}}, your statement is ready." }"""),
 
         Node(IfElse, "If / else", "logic",
             "Sends the run down the Yes path when its conditions are met, otherwise the No path. The data is not changed.",

@@ -20,7 +20,7 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
         using var response = await _client.GetAsync(new Uri("/api/v1/node-types", UriKind.Relative));
         var types = (await ReadAsync(response)).EnumerateArray().ToList();
 
-        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "email-inbox", "database-query", "form-submission", "scheduled-trigger", "manual-trigger", "folder-input", "parse", "map-fields", "transform", "lookup-enrich", "deduplicate", "merge-data", "query-database", "fetch-api", "write-database", "if-else", "switch", "parallel-branches", "wait-branches", "wait-event", "for-each", "approval", "validate", "generate-pdf", "generate-docx", "generate-email", "combine-pdfs", "assemble-pack", "send-email", "print-queue", "upload-sftp", "deliver-api", "request-signature", "archive"], types.Select(t => t.GetProperty("type").GetString()));
+        Assert.Equal(["api-trigger", "erp-connector", "file-upload", "sftp-folder", "email-inbox", "database-query", "form-submission", "scheduled-trigger", "manual-trigger", "folder-input", "parse", "map-fields", "transform", "lookup-enrich", "deduplicate", "merge-data", "query-database", "fetch-api", "write-database", "send-sms", "if-else", "switch", "parallel-branches", "wait-branches", "wait-event", "for-each", "approval", "validate", "generate-pdf", "generate-docx", "generate-email", "combine-pdfs", "assemble-pack", "send-email", "print-queue", "upload-sftp", "deliver-api", "request-signature", "archive"], types.Select(t => t.GetProperty("type").GetString()));
         var validate = types.Single(t => t.GetProperty("type").GetString() == "validate");
         Assert.Equal("process", validate.GetProperty("category").GetString());
         Assert.Equal(["valid", "invalid"], validate.GetProperty("outputs").EnumerateArray().Select(p => p.GetProperty("id").GetString()));
@@ -174,6 +174,7 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
         Assert.Equal(Sql, write.GetProperty("sql").GetString());
         Assert.False(details.RootElement.TryGetProperty("databaseQueries", out _));
         Assert.False(details.RootElement.TryGetProperty("apiFetches", out _)); // no fetch step: the entry's shape is unchanged
+        Assert.False(details.RootElement.TryGetProperty("smsSends", out _));
         Assert.DoesNotContain("customer.id", entry.Details, StringComparison.Ordinal);
         Assert.DoesNotContain("customer.newStatus", entry.Details, StringComparison.Ordinal);
     }
@@ -215,6 +216,50 @@ public sealed class WorkflowApiTests(MigratedDatabaseFixture fixture)
         Assert.DoesNotContain("invoice.target", entry.Details, StringComparison.Ordinal);
         Assert.False(details.RootElement.TryGetProperty("databaseQueries", out _));
         Assert.False(details.RootElement.TryGetProperty("databaseWrites", out _));
+    }
+
+    [Fact]
+    public async Task Publish_AuditsTheConnectionAndTemplatesOfASendSmsStep_NeverAValue_AndOnlyOnPublish()
+    {
+        var id = await CreateWorkflowAsync();
+        var definition = JsonNode.Parse("""
+            { "nodes": [
+                { "id": "trigger", "type": "api-trigger", "title": "API trigger", "position": { "x": 0, "y": 80 }, "config": { "path": "/hooks/x", "auth": "none" } },
+                { "id": "s", "type": "send-sms", "title": "Tell customer", "position": { "x": 260, "y": 80 },
+                  "config": { "connection": "brevo-bank", "to": "{{customer.mobile}}", "text": "Dear {{customer.name}}, your statement is ready." } },
+                { "id": "archive", "type": "archive", "title": "Archive", "position": { "x": 520, "y": 80 }, "config": { "folderPattern": "x", "retention": "7y", "metadata": [] } } ],
+              "edges": [
+                { "id": "e1", "source": "trigger", "sourcePort": "out", "target": "s", "targetPort": "in" },
+                { "id": "e2", "source": "s", "sourcePort": "sent", "target": "archive", "targetPort": "in" } ] }
+            """)!;
+        var draft = await GetDraftAsync(id);
+        using (var save = await PutDraftAsync(id, draft.ETag, definition))
+        {
+            Assert.Equal(HttpStatusCode.OK, save.StatusCode);
+        }
+
+        using (var scope0 = fixture.Factory.Services.CreateScope())
+        {
+            var db0 = scope0.ServiceProvider.GetRequiredService<Verso.Application.IVersoDbContext>();
+            Assert.Empty(await db0.AuditEntries.AsNoTracking().Where(a => a.EntityId == id.ToString() && a.Action == "WorkflowPublished").ToListAsync()); // a draft save audits no send
+        }
+
+        using var published = await PublishAsync(id, (await GetDraftAsync(id)).ETag);
+        Assert.Equal(HttpStatusCode.OK, published.StatusCode);
+
+        using var scope = fixture.Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<Verso.Application.IVersoDbContext>();
+        var entry = Assert.Single(await db.AuditEntries.AsNoTracking().Where(a => a.EntityId == id.ToString() && a.Action == "WorkflowPublished").ToListAsync());
+        using var details = JsonDocument.Parse(entry.Details!);
+        var send = Assert.Single(details.RootElement.GetProperty("smsSends").EnumerateArray());
+        Assert.Equal(["connection", "nodeId", "text", "to"], send.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
+        Assert.Equal("s", send.GetProperty("nodeId").GetString());
+        Assert.Equal("brevo-bank", send.GetProperty("connection").GetString());
+        Assert.Equal("{{customer.mobile}}", send.GetProperty("to").GetString());
+        Assert.Equal("Dear {{customer.name}}, your statement is ready.", send.GetProperty("text").GetString());
+        Assert.False(details.RootElement.TryGetProperty("databaseQueries", out _));
+        Assert.False(details.RootElement.TryGetProperty("databaseWrites", out _));
+        Assert.False(details.RootElement.TryGetProperty("apiFetches", out _));
     }
 
     [Fact]

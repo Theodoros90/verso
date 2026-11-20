@@ -323,6 +323,7 @@ public static class GraphValidator
         (NodeCatalog.QueryDatabase, "failed") => "Data that can't make a valid query (for example a missing value for a parameter) will end the run as Rejected.",
         (NodeCatalog.WriteDatabase, "failed") => "Data that can't make a valid statement (for example a missing value for a parameter) will end the run as Rejected.",
         (NodeCatalog.FetchApi, "failed") => "Data that can't make a valid request (for example a missing value for the path or a query parameter) will end the run as Rejected.",
+        (NodeCatalog.SendSms, "failed") => "Data that can't make a valid message (a missing value, an invalid number or a country that isn't allowed) will end the run as Rejected.",
         (NodeCatalog.FetchApi, "not-found") => "A request that finds nothing (HTTP 404, an empty answer or a JSON null) ends the run here.",
         (NodeCatalog.QueryDatabase, "not-found") => "A query that finds no row ends the run here.",
         (NodeCatalog.CombinePdfs, "failed") => "A run with fewer than two PDFs to combine ends here as Rejected.",
@@ -501,6 +502,22 @@ public static class GraphValidator
                 if (Executions.ApiFetchStep.ParseQuery(fetchQuery).Problem is { } queryProblem)
                 {
                     yield return new(Error, "config.invalid", queryProblem, NodeId: node.Id, Field: "query");
+                }
+
+                break;
+
+            case NodeCatalog.SendSms:
+                // Connection key shape and the lengths are checked by the schema; whether the connection exists (or allows sending) is not checked here.
+                var smsTo = c.TryGetProperty("to", out var smsToElement) && smsToElement.ValueKind == JsonValueKind.String ? smsToElement.GetString()! : "";
+                if (smsTo.Trim().Length > 0 && smsTo.Length <= Executions.SmsTemplates.MaxToLength && Executions.SmsTemplates.ValidateTo(smsTo) is { } toProblem2)
+                {
+                    yield return new(Error, "config.invalid", toProblem2, NodeId: node.Id, Field: "to"); // a blank or too long number is reported once, by the schema check (it trims and checks the length)
+                }
+
+                var smsText = c.TryGetProperty("text", out var smsTextElement) && smsTextElement.ValueKind == JsonValueKind.String ? smsTextElement.GetString()! : "";
+                if (smsText.Trim().Length > 0 && smsText.Length <= Verso.Application.Connections.SmsRules.MaxTextLength && Executions.SmsTemplates.ValidateText(smsText) is { } textProblem)
+                {
+                    yield return new(Error, "config.invalid", textProblem, NodeId: node.Id, Field: "text");
                 }
 
                 break;
