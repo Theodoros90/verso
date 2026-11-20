@@ -43,7 +43,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null, JsonNode? combineConfig = null, JsonNode? sendConfig = null, JsonNode? printConfig = null, bool parallelBranches = false, bool joinBranches = false, Guid? templateCategoryId = null, bool archiveMatchInvoice = false, JsonNode? queryConfig = null, string queryAt = "after-validate", bool queryNotFoundToPdf = false, JsonNode? writeConfig = null, string writeAt = "after-validate")
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null, JsonNode? combineConfig = null, JsonNode? sendConfig = null, JsonNode? printConfig = null, bool parallelBranches = false, bool joinBranches = false, Guid? templateCategoryId = null, bool archiveMatchInvoice = false, JsonNode? queryConfig = null, string queryAt = "after-validate", bool queryNotFoundToPdf = false, JsonNode? writeConfig = null, string writeAt = "after-validate", JsonNode? fetchConfig = null, string fetchAt = "after-validate", bool fetchNotFoundToPdf = false, JsonNode? secondFetchConfig = null)
     {
         var templateId = await PublishInvoiceTemplateAsync(templateCategoryId);
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -308,6 +308,35 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
             edges.Add(JsonNode.Parse($$"""{ "id": "w1", "source": "write", "sourcePort": "written", "target": "{{target}}", "targetPort": "in" }"""));
         }
 
+        if (fetchConfig is not null)
+        {
+            // A Fetch from API step: by default validate (valid) → fetch (found) → whatever validate led to (the approval, the loop or pdf);
+            // "in-loop": loop (each) → fetch → pdf. With fetchNotFoundToPdf the 'not-found' output also goes to that next step. 'failed' is left open.
+            var nodes = definition["nodes"]!.AsArray();
+            var edges = definition["edges"]!.AsArray();
+            var fetch = JsonNode.Parse("""{ "id": "fetch", "type": "fetch-api", "title": "Fetch from API", "position": { "x": 400, "y": 800 }, "config": {} }""")!;
+            fetch["config"] = fetchConfig.DeepClone();
+            nodes.Add(fetch);
+            var before = edges.First(e => (string?)e!["id"] == (fetchAt == "in-loop" ? "e11" : "e2"))!;
+            var target = (string)before["target"]!;
+            before["target"] = "fetch";
+            edges.Add(JsonNode.Parse($$"""{ "id": "a1", "source": "fetch", "sourcePort": "found", "target": "{{target}}", "targetPort": "in" }"""));
+            if (fetchNotFoundToPdf)
+            {
+                edges.Add(JsonNode.Parse($$"""{ "id": "a2", "source": "fetch", "sourcePort": "not-found", "target": "{{target}}", "targetPort": "in" }"""));
+            }
+
+            if (secondFetchConfig is not null)
+            {
+                // … fetch (found) → fetch2 (found) → that next step: a second Fetch from API step that can use the first one's answer.
+                var second = JsonNode.Parse("""{ "id": "fetch2", "type": "fetch-api", "title": "Fetch again", "position": { "x": 400, "y": 920 }, "config": {} }""")!;
+                second["config"] = secondFetchConfig.DeepClone();
+                nodes.Add(second);
+                edges.First(e => (string?)e!["id"] == "a1")!["target"] = "fetch2";
+                edges.Add(JsonNode.Parse($$"""{ "id": "a3", "source": "fetch2", "sourcePort": "found", "target": "{{target}}", "targetPort": "in" }"""));
+            }
+        }
+
         using var draft = await client.GetAsync(new Uri($"/api/v1/workflows/{workflowId}/draft", UriKind.Relative));
         using var save = await SendAsync(HttpMethod.Put, $"/api/v1/workflows/{workflowId}/draft", draft.Headers.ETag!.ToString(), new JsonObject { ["definition"] = definition });
         Assert.Equal(HttpStatusCode.OK, save.StatusCode);
@@ -367,13 +396,13 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     }
 
     /// <summary>One job run of the execution, as the Worker's Hangfire job would do it.</summary>
-    public async Task RunEngineAsync(Guid executionId, IPdfPrinter printer, IDocumentStore store, RecordingExecutionJobs jobs, IDocxWriter? docx = null, IPdfCombiner? combiner = null, IEmailSender? email = null, IPrintSpooler? spooler = null, IDatabaseQuery? query = null, IDatabaseWrite? write = null, bool captureLogs = false, CancellationToken ct = default)
+    public async Task RunEngineAsync(Guid executionId, IPdfPrinter printer, IDocumentStore store, RecordingExecutionJobs jobs, IDocxWriter? docx = null, IPdfCombiner? combiner = null, IEmailSender? email = null, IPrintSpooler? spooler = null, IDatabaseQuery? query = null, IDatabaseWrite? write = null, IApiFetch? apiFetch = null, bool captureLogs = false, CancellationToken ct = default)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VersoDbContext>();
         // captureLogs: the engine logs through the host's logger, so the test host's capture (factory.Logs) sees every line.
         var logger = captureLogs ? scope.ServiceProvider.GetRequiredService<ILogger<ExecutionEngine>>() : NullLogger<ExecutionEngine>.Instance;
-        await new ExecutionEngine(db, printer, docx ?? new FakeDocxWriter(), combiner ?? new FakePdfCombiner(), email ?? new FakeEmailSender(), spooler ?? new FakePrintSpooler(), query ?? new FakeDatabaseQuery(), write ?? new FakeDatabaseWrite(), store, jobs, TimeProvider.System, logger).RunAsync(executionId, ct);
+        await new ExecutionEngine(db, printer, docx ?? new FakeDocxWriter(), combiner ?? new FakePdfCombiner(), email ?? new FakeEmailSender(), spooler ?? new FakePrintSpooler(), query ?? new FakeDatabaseQuery(), write ?? new FakeDatabaseWrite(), apiFetch ?? new FakeApiFetch(), store, jobs, TimeProvider.System, logger).RunAsync(executionId, ct);
     }
 
     public async Task<T> WithDbAsync<T>(Func<VersoDbContext, Task<T>> action)

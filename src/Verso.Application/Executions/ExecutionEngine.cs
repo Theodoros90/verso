@@ -33,7 +33,7 @@ public sealed class StepException(string code, string message, bool retryable) :
 /// Hangfire's own retry is off for this job); data problems end the run as Rejected.
 /// </summary>
 public sealed partial class ExecutionEngine(
-    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IPdfCombiner combiner, IEmailSender email, IPrintSpooler spooler, IDatabaseQuery query, IDatabaseWrite write, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
+    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IPdfCombiner combiner, IEmailSender email, IPrintSpooler spooler, IDatabaseQuery query, IDatabaseWrite write, IApiFetch apiFetch, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
 {
     /// <summary>Attempts per step (plan §6.3), within one execution attempt.</summary>
     public const int MaxStepAttempts = 3;
@@ -298,9 +298,9 @@ public sealed partial class ExecutionEngine(
             {
                 await RestoreAsync(run, node, step, shutdown);
             }
-            catch (StepException ex) when (node.Type == NodeCatalog.QueryDatabase)
+            catch (StepException ex) when (node.Type is NodeCatalog.QueryDatabase or NodeCatalog.FetchApi)
             {
-                // A query read again on resume can fail for reasons outside the run (the database is down, the row is gone). The step stays Succeeded
+                // A query read again (or an API fetched again) on resume can fail for reasons outside the run (the database is down, the row is gone). The step stays Succeeded
                 // (it did succeed); the run fails technically, so an operator retry resumes here and reads again.
                 await FailRestoreAsync(run, node, step, ex);
                 return null;
@@ -376,7 +376,7 @@ public sealed partial class ExecutionEngine(
     private static bool Rejects(string nodeType, string? port) => (nodeType, port) is
         (NodeCatalog.Validate, "invalid") or (NodeCatalog.ParseContent, "failed") or (NodeCatalog.MapFields, "failed")
         or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail or NodeCatalog.CombinePdfs or NodeCatalog.SendEmail, "failed")
-        or (NodeCatalog.QueryDatabase, "failed") or (NodeCatalog.WriteDatabase, "failed")
+        or (NodeCatalog.QueryDatabase, "failed") or (NodeCatalog.WriteDatabase, "failed") or (NodeCatalog.FetchApi, "failed")
         or (NodeCatalog.ApprovalStep, Approval.Rejected);
 
     private sealed record Outcome(string? Port, object? Result, Func<Task>? AfterSave = null);
@@ -504,6 +504,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.SendEmail => SendEmailAsync(run, node, ct),
         NodeCatalog.QueryDatabase => QueryDatabaseAsync(run, node, ct),
         NodeCatalog.WriteDatabase => WriteDatabaseAsync(run, node, ct),
+        NodeCatalog.FetchApi => FetchApiAsync(run, node, ct),
         NodeCatalog.PrintQueue => PrintQueueAsync(run, node, ct),
         NodeCatalog.UploadSftp => Task.FromResult(UploadSftp(node)),
         NodeCatalog.DeliverApi => Task.FromResult(DeliverApi(node)),
@@ -1027,11 +1028,7 @@ public sealed partial class ExecutionEngine(
     /// <summary>The data with the rows stored under the result name at the top level: one row an object, several a list. A field of that name is replaced.</summary>
     private static JsonElement WithQueryResult(Workflows.WorkflowNode node, JsonElement data, DatabaseQueryResult read)
     {
-        if (data.ValueKind != JsonValueKind.Object)
-        {
-            throw new StepException("query.data_not_object", "The run's data isn't a record (a JSON object), so the result can't be added to it.", retryable: false);
-        }
-
+        EnsureRecord(data, "query.data_not_object");
         JsonNode? rows;
         try
         {
@@ -1044,10 +1041,142 @@ public sealed partial class ExecutionEngine(
             throw new StepException("query.value_unsupported", "A column has a type that can't be added to the data. Convert it in the query, for example with CAST(... AS varchar).", retryable: false);
         }
 
-        // The same rebuild as the Map, Transform and Merge steps: parse to a mutable tree, change it, and read it back as an element that owns its memory.
+        return WithResult(data, QuerySetting(node, "resultName"), rows, "query.data_not_object");
+    }
+
+    /// <summary>A step result can only be added to a record: data whose root is not a JSON object fails the step (not retryable) with <paramref name="code"/>.</summary>
+    private static void EnsureRecord(JsonElement data, string code)
+    {
+        if (data.ValueKind != JsonValueKind.Object)
+        {
+            throw new StepException(code, "The run's data isn't a record (a JSON object), so the result can't be added to it.", retryable: false);
+        }
+    }
+
+    /// <summary>
+    /// The data with <paramref name="value"/> stored under <paramref name="resultName"/> at the top level (a field of that name is replaced). Shared by Query
+    /// database and Fetch from API so both merge identically. The same rebuild as the Map, Transform and Merge steps: parse to a mutable tree, change it, and
+    /// read it back as an element that owns its memory.
+    /// </summary>
+    private static JsonElement WithResult(JsonElement data, string resultName, JsonNode? value, string notRecordCode)
+    {
+        EnsureRecord(data, notRecordCode);
         var root = (JsonObject)JsonNode.Parse(data.GetRawText())!;
-        root[QuerySetting(node, "resultName")] = rows;
+        root[resultName] = value;
         return JsonSerializer.Deserialize<JsonElement>(root.ToJsonString());
+    }
+
+    /// <summary>
+    /// Fetch from API: sends one GET to the named API connection, its path and query values filled from the run data, and merges the JSON answer into the data
+    /// under the result name at the top level, exactly as Query database merges its rows (a field of that name is replaced). A value the data can't give
+    /// (missing or null, a list or a group, text that can't be sent, a path piece that would be empty, . or ..) is the data's fault: port 'failed' (the run ends
+    /// Rejected unless handled) and the API is not called. A failure of the call is technical: retried when it may pass (timeouts, unreachable, 5xx, 429),
+    /// otherwise the run fails. HTTP 404, an empty answer or a JSON null leave by 'not-found' with the data unchanged. The result holds the HTTP status, the
+    /// duration, the answer's size and the connection key; never the path, a query value, the answer or a secret.
+    /// </summary>
+    private async Task<Outcome> FetchApiAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    {
+        var (request, issues) = FetchRequest(node, run.Data);
+        if (request is null)
+        {
+            return new Outcome("failed", new { issues });
+        }
+
+        var fetched = await RunFetchAsync(request, ct);
+        if (!HasAnswer(fetched))
+        {
+            return new Outcome("not-found", FetchResult(fetched, request.ConnectionKey));
+        }
+
+        run.Data = WithFetchResult(node, run.Data, fetched);
+        return new Outcome("found", FetchResult(fetched, request.ConnectionKey));
+    }
+
+    /// <summary>The step result: the HTTP status, counts and the connection key only (the API returns step results to every reader of the execution).</summary>
+    private static object FetchResult(ApiFetchResult fetched, string connection) =>
+        new { status = fetched.HttpStatus, durationMs = fetched.DurationMs, responseBytes = fetched.ResponseBytes, connection };
+
+    /// <summary>A JSON null answer counts as no answer: merging it would only blank the field (a 404, an empty answer and null all mean "nothing found").</summary>
+    private static bool HasAnswer(ApiFetchResult fetched) => fetched.Found && fetched.Body!.Value.ValueKind != JsonValueKind.Null;
+
+    /// <summary>
+    /// The request for the step, its path and query values filled from <paramref name="data"/> (<see cref="ApiPathTemplate.Resolve"/> and
+    /// <see cref="ApiFetchStep.ResolveQuery"/>). Null with the issues (path ones first) when the data can't give a value; issues name paths, never a value.
+    /// </summary>
+    private static (ApiFetchRequest? Request, List<object> Issues) FetchRequest(Workflows.WorkflowNode node, JsonElement data)
+    {
+        // Both are checked when the workflow was published, so only a definition changed outside Verso gets here: the author's mistake, not the data's.
+        var template = QuerySetting(node, "path");
+        if (ApiPathTemplate.Validate(template) is { } pathProblem)
+        {
+            throw new StepException("fetch.bad_path", pathProblem, retryable: false);
+        }
+
+        var (lines, queryProblem) = ApiFetchStep.ParseQuery(QuerySetting(node, "query"));
+        if (queryProblem is not null)
+        {
+            throw new StepException("fetch.bad_query", queryProblem, retryable: false);
+        }
+
+        var (path, pathIssues) = ApiPathTemplate.Resolve(template, data);
+        var (pairs, queryIssues) = ApiFetchStep.ResolveQuery(lines, data);
+        var issues = pathIssues.Concat(queryIssues).ToList();
+        if (issues.Count > 0 || path is null)
+        {
+            return (null, issues);
+        }
+
+        // The service clamps the limits again (1 KB..256 KB, 1..60 s); clamped here too so the request says what will happen.
+        var maxBytes = Math.Clamp(QueryNumber(node, "maxResponseKB", 64), 1, 256) * 1024;
+        var timeout = TimeSpan.FromSeconds(Math.Clamp(QueryNumber(node, "timeoutSeconds", 15), 1, 60));
+        return (new ApiFetchRequest(QuerySetting(node, "connection"), path, pairs, maxBytes, timeout), issues);
+    }
+
+    /// <summary>
+    /// Sends the request. A failure becomes a <see cref="StepException"/> with the service's code, Verso's own message and its retryability (only timeouts,
+    /// unreachable, 5xx and 429 are retryable). An exception escaping the service itself (it reports failures as results, and already maps a sender's surprise
+    /// to a retryable api.unreachable) is unexpected and its text could carry the address or a secret: it is not kept, and the failure is final, as for the
+    /// database steps (an unknown failure is not retried blindly). A cancellation is left to RunStepAsync.
+    /// </summary>
+    private async Task<ApiFetchResult> RunFetchAsync(ApiFetchRequest request, CancellationToken ct)
+    {
+        ApiFetchResult fetched;
+        try
+        {
+            fetched = await apiFetch.RunAsync(request, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new StepException("api.unreachable", ApiFetchMessages.For("api.unreachable"), retryable: false);
+        }
+
+        if (!fetched.Ok)
+        {
+            throw new StepException(fetched.Code!, fetched.Message ?? ApiFetchMessages.For(fetched.Code!), fetched.Retryable);
+        }
+
+        return fetched;
+    }
+
+    /// <summary>The data with the answer merged under the result name (see <see cref="WithResult"/>). An answer nested so deep that one more level can't be kept fails the step.</summary>
+    private static JsonElement WithFetchResult(Workflows.WorkflowNode node, JsonElement data, ApiFetchResult fetched)
+    {
+        EnsureRecord(data, "fetch.data_not_object");
+        try
+        {
+            return WithResult(data, QuerySetting(node, "resultName"), JsonNode.Parse(fetched.Body!.Value.GetRawText()), "fetch.data_not_object");
+        }
+        catch (JsonException)
+        {
+            // The sender accepts answers up to 64 levels deep; under the result name the data would be one level deeper than JSON readers accept.
+            throw new StepException("fetch.answer_too_deep", "The API's answer is nested too deeply to be added to the data. Ask the API for less, or a flatter answer.", retryable: false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            // JSON allows a "\uD800" escape (a lone surrogate) and the sender accepts it, but it is not text .NET can read back: the answer can't be kept. Final
+            // (the same answer would fail again); the exception's text is not kept.
+            throw new StepException("fetch.answer_unsupported", "The API's answer contains text that can't be added to the data (an incomplete Unicode character).", retryable: false);
+        }
     }
 
     /// <summary>
@@ -1360,6 +1489,42 @@ public sealed partial class ExecutionEngine(
 
             run.Data = WithQueryResult(node, run.Data, read);
         }
+        else if (node.Type == NodeCatalog.FetchApi && step.OutputPort == "found")
+        {
+            // The answer is never stored (it is third-party data that may hold customer data, and step results are history every reader sees), so a resumed
+            // run (after an Approval, a retry or a Worker restart) fetches it again with the same path and query. An API is NOT deterministic: its answer may
+            // have changed meanwhile, so the later steps can see other data than the first pass did. If the answer is gone or the call fails now, the run can't
+            // continue as it was: fetch.restore, retryable as the failure was (an operator retry resumes here). 'not-found' and 'failed' left the data unchanged.
+            var (request, issues) = FetchRequest(node, run.Data);
+            if (request is null || issues.Count > 0)
+            {
+                throw new StepException("fetch.restore", $"Step '{node.Title}' found an answer before, but its path or query values can't be filled again.", retryable: false);
+            }
+
+            ApiFetchResult fetched;
+            try
+            {
+                fetched = await RunFetchAsync(request, ct);
+            }
+            catch (StepException ex)
+            {
+                throw new StepException("fetch.restore", $"Step '{node.Title}' found an answer before, but fetching it again failed: {ex.Message}", ex.Retryable);
+            }
+
+            if (!HasAnswer(fetched))
+            {
+                throw new StepException("fetch.restore", $"Step '{node.Title}' found an answer before, but fetching it again found none: the API changed while the run waited.", retryable: false);
+            }
+
+            try
+            {
+                run.Data = WithFetchResult(node, run.Data, fetched);
+            }
+            catch (StepException ex)
+            {
+                throw new StepException("fetch.restore", $"Step '{node.Title}' found an answer before, but the new answer can't be added to the data: {ex.Message}", retryable: false);
+            }
+        }
 
         // A Write to database step that succeeded is deliberately NOT handled here: it changed nothing in the run's data, and running it again would repeat
         // the write. Its row count stays in the step record; the database is never called on resume (WriteDatabaseExecutionTests).
@@ -1427,6 +1592,10 @@ public sealed partial class ExecutionEngine(
                 break;
             case (NodeCatalog.WriteDatabase, "failed"):
                 execution.Reject("data.write_invalid", $"The data can't make a valid statement in step '{last.Title}' (see its issues).", now);
+                Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
+                break;
+            case (NodeCatalog.FetchApi, "failed"):
+                execution.Reject("data.fetch_invalid", $"The data can't make a valid request in step '{last.Title}' (see its issues).", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;
             case (NodeCatalog.CombinePdfs, "failed"):

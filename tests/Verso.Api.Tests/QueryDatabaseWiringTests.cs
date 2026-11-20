@@ -35,6 +35,7 @@ public sealed class QueryDatabaseWiringTests
         services.AddVersoWorkerUseCases();
         services.AddVersoDatabaseConnections(configuration);
         services.AddVersoDatabaseDrivers();
+        services.AddVersoApiConnections(configuration);
         services.AddSingleton<IPdfPrinter, FakePdfPrinter>();
         services.AddSingleton<IDocxWriter, FakeDocxWriter>();
         services.AddSingleton<IPdfCombiner, FakePdfCombiner>();
@@ -76,6 +77,26 @@ public sealed class QueryDatabaseWiringTests
         Assert.Contains(nameof(IDatabaseWrite), ex.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Worker_DI_resolves_the_engine_with_IApiFetch()
+    {
+        // Fetch from API step (Phase 3): the engine needs IApiFetch. With the Worker's registrations (AddVersoApiConnections) it resolves the real, scoped
+        // ApiFetchService (ValidateScopes); without IApiFetch it does not, so the engine really asks for it. Resolving sends nothing.
+        using (var provider = WorkerServices().BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true }))
+        using (var scope = provider.CreateScope())
+        {
+            Assert.NotNull(scope.ServiceProvider.GetRequiredService<ExecutionEngine>());
+            Assert.IsType<ApiFetchService>(scope.ServiceProvider.GetRequiredService<IApiFetch>());
+        }
+
+        var withoutFetch = WorkerServices();
+        withoutFetch.RemoveAll<IApiFetch>();
+        using var broken = withoutFetch.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var brokenScope = broken.CreateScope();
+        var ex = Assert.Throws<InvalidOperationException>(() => brokenScope.ServiceProvider.GetRequiredService<ExecutionEngine>());
+        Assert.Contains(nameof(IApiFetch), ex.Message, StringComparison.Ordinal);
+    }
+
     /// <summary>The Worker's registrations (src/Verso.Worker/Program.cs) relevant to the engine, with fakes for what needs Chromium, files or Hangfire. Nothing connects.</summary>
     private static ServiceCollection WorkerServices()
     {
@@ -89,6 +110,7 @@ public sealed class QueryDatabaseWiringTests
         services.AddVersoWorkerUseCases();
         services.AddVersoDatabaseConnections(configuration);
         services.AddVersoDatabaseDrivers();
+        services.AddVersoApiConnections(configuration);
         services.AddSingleton<IPdfPrinter, FakePdfPrinter>();
         services.AddSingleton<IDocxWriter, FakeDocxWriter>();
         services.AddSingleton<IPdfCombiner, FakePdfCombiner>();
