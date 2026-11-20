@@ -196,6 +196,17 @@ The Write to database step ([ADR 0020](adr/0020-write-database-step.md)) runs on
 
 **Use a dedicated connection for each purpose** (for example one for the audit table, another for a status table) with its own narrow login, and switch "Allow writes" on **only** for those. A connection used by Query database steps for reading should keep writes off and keep its read-only login (section 7). Any author who can edit a workflow can use any connection whose switch is on, so a login that can write must never be one that can write more than the flows need. The Worker's `DatabaseConnections:AllowedServers` applies to writes too. Only SQL Server has been verified against a live server; try the other types on a non-production database first. How to handle a run that failed with an unknown outcome: [runbook C2](runbook.md#c2-failures).
 
+## 9. Calling APIs from workflows
+
+The Fetch from API step ([ADR 0021](adr/0021-fetch-api-step.md)) makes the **Worker** send one `GET` to an API connection an administrator created (Configuration, Connections, authentication HTTP API, [ADR 0017](adr/0017-api-connections.md)). To set it up on a server:
+
+- **Egress.** The Worker server (not the API server) must be able to reach each API host over **https** (firewall, proxy; the system proxy is used when configured). The Worker refuses loopback, link-local (including `169.254.169.254`), unspecified and multicast addresses, and never follows a redirect.
+- **Set `ApiConnections:AllowedHosts` in production**, in the Worker's configuration, for example `"ApiConnections": { "AllowedHosts": [ "api.frankfurter.dev", "api.bank.example" ] }`. Include the **OAuth token host** for connections that use OAuth client credentials. With the list empty any https host is allowed.
+- **Use read-only or least-privilege API keys**, one connection per purpose. Any author who can edit a workflow can use any active connection, with its key, on any path of its host.
+- **Prefer a header to "API key in the address".** A key in the address travels in the URL, which the remote server and proxies may log.
+- **Limits.** One call has one time limit (1 to 60 seconds, default 15, covering the token request, the call and the reading of the answer) and a largest answer (1 to 256 KB, default 64). The answer must be JSON (`application/json` or `+json`).
+- Nothing in Verso has been verified against a live third-party API: try a non-production API first (the sample [fetch-api-exchange-rate.md](samples/fetch-api-exchange-rate.md) uses the public Frankfurter service). What a failure code means: [runbook C2](runbook.md#c2-failures).
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
