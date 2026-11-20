@@ -61,6 +61,7 @@ describe('ApiConnectionSelect', () => {
     const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))))
     vi.stubGlobal('fetch', fetchMock)
     const { unmount } = render(<ApiConnectionSelect aria-label="API connection" value="" onChange={() => {}} />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     const signal = fetchMock.mock.calls[0]?.[1]?.signal as AbortSignal
     expect(signal.aborted).toBe(false)
     unmount()
