@@ -386,6 +386,24 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { connection: '', sql: 'UPDATE customers SET status = @status WHERE id = @id', parameters: 'status = customer.status\nid = customer.id', maxRows: 1 },
   },
   {
+    type: 'fetch-api', label: 'Fetch from API', category: 'process', description: 'Reads data from an HTTP API connection.',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'found', label: 'Found', required: true }, { id: 'not-found', label: 'Not found', required: false }, { id: 'failed', label: 'Failed', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        connection: { type: 'string', title: 'API connection', 'x-widget': 'api-connection' },
+        path: { type: 'string', title: 'Path', description: 'Use {{customer.number}} to put a value from the run data into the path.', 'x-widget': 'mono' },
+        query: { type: 'string', title: 'Query (one per line)', 'x-widget': 'multiline' },
+        resultName: { type: 'string', title: 'Result name', 'x-widget': 'mono' },
+        maxResponseKB: { type: 'integer', title: 'Largest answer (KB)' },
+        timeoutSeconds: { type: 'integer', title: 'Time limit (seconds)' },
+      },
+      required: ['connection', 'path', 'resultName'],
+    },
+    defaults: { connection: '', path: '/v1/customers/{{customer.number}}', query: '', resultName: 'api', maxResponseKB: 64, timeoutSeconds: 15 },
+  },
+  {
     type: 'deliver-api', label: 'Deliver via API', category: 'output', description: 'Posts the document to another system (simulated).',
     inputs: [{ id: 'in', label: 'In', required: true }],
     outputs: [{ id: 'delivered', label: 'Delivered', required: true }, { id: 'failed', label: 'Failed', required: false }],
@@ -433,6 +451,7 @@ function mockApi(opts: { issues?: WorkflowIssueDto[]; publish?: 'ok' | 'invalid'
       if (url === '/api/health') return json({ status: 'Healthy', totalDurationMs: 1, checks: [] })
       if (url === '/api/v1/node-types') return json(nodeTypes)
       if (url === '/api/v1/database-connection-options') return json([{ key: 'core-db', name: 'Core DB', provider: 'SqlServer', allowsWrites: false }, { key: 'ledger', name: 'Ledger', provider: 'Oracle', allowsWrites: true }])
+      if (url === '/api/v1/api-connection-options') return json([{ key: 'rates', name: 'Exchange rates', host: 'rates.example.test' }])
       if (url === `/api/v1/workflows/${WF}`) return json({ id: WF, key: 'invoice-standard', name: 'Invoice standard', description: null, createdAt: '', createdBy: '', latestPublishedVersion: null, draftVersionId: 'v1', isActive: active })
       if (url === `/api/v1/workflows/${WF}/deactivate` && method === 'POST') {
         active = false
@@ -782,6 +801,26 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     expect(screen.queryByRole('option', { name: /writes off/ })).not.toBeInTheDocument()
     await user.selectOptions(querySelect, 'core-db')
     expect(screen.queryByText(/Writes are switched off for this connection/)).not.toBeInTheDocument()
+  })
+
+  it('adds a Fetch from API step with a connection choice, its path help, a summary and its three outputs', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Fetch from API' }))
+
+    expect(await screen.findByRole('heading', { name: 'Fetch from API', level: 3 })).toBeInTheDocument()
+    for (const port of ['Found', 'Not found', 'Failed']) expect(screen.getByLabelText(`Fetch from API: output ${port}`)).toBeInTheDocument()
+    expect(screen.getByText('fetch: (no connection) /v1/customers/{{customer.number}}')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /Path/ })).toHaveClass('font-mono')
+    expect(screen.getByText(/Use \{\{customer\.number\}\} to put a value/)).toBeInTheDocument()
+    const select = await screen.findByRole('combobox', { name: /API connection/ })
+    expect(await screen.findByRole('option', { name: 'Exchange rates (rates.example.test)' })).toBeInTheDocument()
+    await user.selectOptions(select, 'rates')
+    expect(await screen.findByText('fetch: rates /v1/customers/{{customer.number}}')).toBeInTheDocument()
+    expect(calls.filter((c) => c.url === '/api/v1/api-connection-options')).toHaveLength(1)
   })
 
   it('adds a Deduplicate step with its defaults and saves them', async () => {

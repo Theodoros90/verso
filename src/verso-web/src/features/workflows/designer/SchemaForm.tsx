@@ -9,6 +9,7 @@ import { parseRetention, retentionUnits } from '@/lib/retention'
 import { cn } from '@/lib/utils'
 
 import { jsonObjectProblem } from '../model/payloadSchema'
+import { ApiConnectionSelect } from './ApiConnectionSelect'
 import { DatabaseConnectionSelect } from './DatabaseConnectionSelect'
 
 /** The JSON Schema subset the node catalog uses (see ConfigSchemaValidator on the server), plus designer hints. */
@@ -23,7 +24,7 @@ export interface FieldSchema {
   'x-enumLabels'?: string[]
   /** On a database connection field: the step changes data, so the connection must allow writes. */
   'x-requires-writes'?: boolean
-  'x-widget'?: 'multiline' | 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches' | 'retention' | 'email-relay' | 'database-connection' | 'sql'
+  'x-widget'?: 'multiline' | 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches' | 'retention' | 'email-relay' | 'database-connection' | 'api-connection' | 'sql'
   maxItems?: number
   maxLength?: number
   minimum?: number
@@ -284,6 +285,10 @@ function StringInput({
 
   if (field['x-widget'] === 'database-connection') {
     return <DatabaseConnectionSelect {...common} requiresWrites={field['x-requires-writes'] === true} value={value} onChange={(v) => onChange(v, path)} />
+  }
+
+  if (field['x-widget'] === 'api-connection') {
+    return <ApiConnectionSelect {...common} value={value} onChange={(v) => onChange(v, path)} />
   }
 
   if (field['x-widget'] === 'sql') {

@@ -1,6 +1,6 @@
 /** API connection endpoints (docs/api.md#api-connections, ADR 0017). Administrators only. The secret is write-only: no response has it. */
 import { request } from './client'
-import type { ApiConnectionDto, ApiConnectionTestDto, SaveApiConnectionRequest } from './generated'
+import type { ApiConnectionDto, ApiConnectionOptionDto, ApiConnectionTestDto, SaveApiConnectionRequest } from './generated'
 
 const base = '/api/v1/api-connections'
 
@@ -9,6 +9,9 @@ export type ApiConnectionInput = Partial<SaveApiConnectionRequest>
 export const apiConnectionsApi = {
   list: (includeInactive = true, signal?: AbortSignal) =>
     request<ApiConnectionDto[]>(`${base}?includeInactive=${includeInactive}`, { signal }).then((r) => r.body),
+
+  /** Key, name and host of the active connections, for the Fetch from API step (workflow authors and administrators). */
+  listOptions: (signal?: AbortSignal) => request<ApiConnectionOptionDto[]>('/api/v1/api-connection-options', { signal }).then((r) => r.body),
 
   create: (body: ApiConnectionInput) => request<ApiConnectionDto>(base, { method: 'POST', body }).then((r) => r.body),
 

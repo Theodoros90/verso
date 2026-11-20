@@ -1,5 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { Archive, ArrowLeftRight, CalendarClock, Circle, Clock, CopyCheck, Database, DatabaseZap, ClipboardList, FileCode, Files, FilePenLine, Folders, FileSignature, FileText, LayoutTemplate, FolderInput, FolderSync, GitBranch, GitFork, GitMerge, Inbox, Merge, Mail, MousePointerClick, PencilLine, Printer, Repeat, Send, Server, Shuffle, ShieldCheck, Search, Split, TableProperties, Upload, UserCheck, Webhook, type LucideIcon } from 'lucide-react'
+import { Archive, ArrowLeftRight, CalendarClock, Circle, CloudDownload, Clock, CopyCheck, Database, DatabaseZap, ClipboardList, FileCode, Files, FilePenLine, Folders, FileSignature, FileText, LayoutTemplate, FolderInput, FolderSync, GitBranch, GitFork, GitMerge, Inbox, Merge, Mail, MousePointerClick, PencilLine, Printer, Repeat, Send, Server, Shuffle, ShieldCheck, Search, Split, TableProperties, Upload, UserCheck, Webhook, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NodeTypeDto, WorkflowIssueDto } from '@/lib/api/generated'
@@ -33,6 +33,7 @@ export const NODE_ICONS: Record<string, LucideIcon> = {
   'database-query': DatabaseZap,
   'query-database': TableProperties,
   'write-database': PencilLine,
+  'fetch-api': CloudDownload,
   'form-submission': ClipboardList,
   'scheduled-trigger': CalendarClock,
   'manual-trigger': MousePointerClick,
@@ -72,6 +73,14 @@ export function portLabel(node: DefNode, portId: string, fallback: string): stri
     if (typeof custom === 'string' && custom.trim()) return custom.trim()
   }
   return fallback
+}
+
+/** The one-line summary of a Fetch from API step: its connection and path (a long path is shortened). */
+function fetchSummary(config: Record<string, unknown>): string {
+  const connection = typeof config.connection === 'string' && config.connection ? config.connection : '(no connection)'
+  const path = typeof config.path === 'string' ? config.path.trim() : ''
+  if (!path) return `fetch: ${connection}`
+  return `fetch: ${connection} ${path.length > 40 ? `${path.slice(0, 39)}…` : path}`
 }
 
 export type NodeStatus = 'configured' | 'warning' | 'error'
@@ -138,6 +147,9 @@ export function NodeCard({ data, selected }: NodeProps<VersoFlowNode>) {
         <div className="truncate px-2.5 pb-1.5 font-mono text-[11px] text-ink-3">
           query: {typeof node.config.connection === 'string' && node.config.connection ? node.config.connection : '(no connection)'} → {typeof node.config.resultName === 'string' && node.config.resultName ? node.config.resultName : '?'}
         </div>
+      )}
+      {node.type === 'fetch-api' && (
+        <div className="truncate px-2.5 pb-1.5 font-mono text-[11px] text-ink-3">{fetchSummary(node.config)}</div>
       )}
       {node.type === 'write-database' && (
         <div className="flex items-center gap-1.5 px-2.5 pb-1.5">
