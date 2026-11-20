@@ -42,6 +42,7 @@ public static class NodeCatalog
     public const string MergeData = "merge-data";
     public const string QueryDatabase = "query-database";
     public const string WriteDatabase = "write-database";
+    public const string FetchApi = "fetch-api";
     public const string LookupEnrich = "lookup-enrich";
     public const string Deduplicate = "deduplicate";
     public const string IfElse = "if-else";
@@ -288,6 +289,7 @@ public static class NodeCatalog
         ["nightly"] = "Nightly batch",
     };
 
+    private const string PathPieceExample = "{{customer.number}}"; // kept out of the raw schema text, where {{ }} means interpolation
     private const string DataPathPattern =@"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$";
 
     private const string OptionalDataPathPattern = @"^([A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*)?$";
@@ -627,6 +629,27 @@ public static class NodeCatalog
               "required": ["connection", "sql", "resultName"] }
             """,
             """{ "connection": "", "sql": "SELECT name, status FROM customers WHERE id = @id", "parameters": "id = customer.id", "resultName": "db", "maxRows": 1, "timeoutSeconds": 15 }"""),
+
+        Node(FetchApi, "Fetch from API", "process",
+            "Reads JSON from an API with one GET request, through an API connection an administrator created. The answer is merged into the run's data under the result name. It never changes anything on the other side by design (a badly designed API could still).",
+            [In], [new PortDto("found", "Found", true), new PortDto("not-found", "Not found", false), new PortDto("failed", "Failed", false)],
+            $$"""
+            { "type": "object",
+              "properties": {
+                "connection": { "type": "string", "title": "API connection", "minLength": 2, "maxLength": 64, "pattern": "{{Escape(Connections.DatabaseServers.KeyPattern)}}", "x-widget": "api-connection",
+                  "description": "Which API connection to read from. Connections are created once in Configuration, Connections (authentication HTTP API)." },
+                "path": { "type": "string", "title": "Path", "minLength": 1, "maxLength": {{Executions.ApiPathTemplate.MaxLength}}, "x-widget": "mono",
+                  "description": "The path after the connection's base address, starting with /, such as /v1/latest. Put run data in with {{PathPieceExample}}, as in /customers/{{PathPieceExample}}/rate; values are URL-encoded." },
+                "query": { "type": "string", "title": "Query values (one per line)", "maxLength": 2000, "x-widget": "multiline",
+                  "description": "One line per query value, as name = data.path, such as base = invoice.currency. Up to {{Executions.ApiFetchStep.MaxQueryValues}}. Names and values are URL-encoded." },
+                "resultName": { "type": "string", "title": "Result name", "minLength": 1, "maxLength": 30, "pattern": "{{Escape(Executions.DatabaseQueryStep.ResultNamePattern)}}", "x-widget": "mono",
+                  "description": "The field of the data the answer is stored in, such as api." },
+                "maxResponseKB": { "type": "integer", "title": "Largest answer (KB)", "minimum": 1, "maximum": 256,
+                  "description": "A larger answer fails the step." },
+                "timeoutSeconds": { "type": "integer", "title": "Time limit (seconds)", "minimum": 1, "maximum": 60 } },
+              "required": ["connection", "path", "resultName"] }
+            """,
+            """{ "connection": "", "path": "/v1/latest", "query": "base = invoice.currency", "resultName": "api", "maxResponseKB": 64, "timeoutSeconds": 15 }"""),
 
         Node(WriteDatabase, "Write to database", "output",
             "Changes data in a database with one INSERT, UPDATE or DELETE. The connection must have writes switched on by an administrator. The step is never retried automatically and never repeated on resume. A failed run may have partly happened (earlier writes stay, and a write whose outcome is unknown may have been applied): check the database before running it again.",

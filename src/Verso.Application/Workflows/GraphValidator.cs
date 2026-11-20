@@ -322,6 +322,8 @@ public static class GraphValidator
         (NodeCatalog.SendEmail, "failed") => "Data that can't make a complete email will end the run as Rejected.",
         (NodeCatalog.QueryDatabase, "failed") => "Data that can't make a valid query (for example a missing value for a parameter) will end the run as Rejected.",
         (NodeCatalog.WriteDatabase, "failed") => "Data that can't make a valid statement (for example a missing value for a parameter) will end the run as Rejected.",
+        (NodeCatalog.FetchApi, "failed") => "Data that can't make a valid request (for example a missing value for the path or a query parameter) will end the run as Rejected.",
+        (NodeCatalog.FetchApi, "not-found") => "A request that finds nothing (HTTP 404 or an empty answer) ends the run here.",
         (NodeCatalog.QueryDatabase, "not-found") => "A query that finds no row ends the run here.",
         (NodeCatalog.CombinePdfs, "failed") => "A run with fewer than two PDFs to combine ends here as Rejected.",
         _ => $"'{port.Label}' isn't connected; the run ends there.",
@@ -478,6 +480,27 @@ public static class GraphValidator
                 foreach (var issue in SqlStatementRules(node, sqlCheck.Ok, sqlCheck.Message, sqlCheck.Parameters, "query"))
                 {
                     yield return issue;
+                }
+
+                break;
+
+            case NodeCatalog.FetchApi:
+                // Connection key shape, resultName pattern and the limits are checked by the schema; whether the connection exists is not checked here.
+                if (c.TryGetProperty("resultName", out var fetchResult) && fetchResult.ValueKind == JsonValueKind.String && fetchResult.GetString() == "iteration")
+                {
+                    yield return new(Error, "config.invalid", "'iteration' is reserved for For each loops; choose another result name.", NodeId: node.Id, Field: "resultName");
+                }
+
+                var fetchPath = c.TryGetProperty("path", out var fetchPathElement) && fetchPathElement.ValueKind == JsonValueKind.String ? fetchPathElement.GetString()! : "";
+                if (fetchPath.Trim().Length > 0 && Executions.ApiPathTemplate.Validate(fetchPath) is { } pathProblem)
+                {
+                    yield return new(Error, "config.invalid", pathProblem, NodeId: node.Id, Field: "path"); // a blank path is reported once, by the schema check (it trims)
+                }
+
+                var fetchQuery = c.TryGetProperty("query", out var fetchQueryElement) && fetchQueryElement.ValueKind == JsonValueKind.String ? fetchQueryElement.GetString() : null;
+                if (Executions.ApiFetchStep.ParseQuery(fetchQuery).Problem is { } queryProblem)
+                {
+                    yield return new(Error, "config.invalid", queryProblem, NodeId: node.Id, Field: "query");
                 }
 
                 break;

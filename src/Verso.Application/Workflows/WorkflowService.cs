@@ -367,6 +367,17 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
                 sql = n.Config.TryGetProperty("sql", out var sql) && sql.ValueKind == JsonValueKind.String ? sql.GetString() : null,
             })
             .ToList();
+        // Fetch from API steps: the connection key, the path template and the query parameter NAMES; the data paths that supply values are left out.
+        var apiFetches = parsed.Nodes.Where(n => n.Type == NodeCatalog.FetchApi)
+            .Select(n => new
+            {
+                nodeId = n.Id,
+                connection = n.Config.TryGetProperty("connection", out var connection) && connection.ValueKind == JsonValueKind.String ? connection.GetString() : null,
+                path = n.Config.TryGetProperty("path", out var path) && path.ValueKind == JsonValueKind.String ? path.GetString() : null,
+                queryNames = Executions.ApiFetchStep.ParseQuery(n.Config.TryGetProperty("query", out var query) && query.ValueKind == JsonValueKind.String ? query.GetString() : null)
+                    .Items.Select(i => i.Name).ToList(),
+            })
+            .ToList();
         var details = new Dictionary<string, object?> { ["versionId"] = published.Id, ["versionNumber"] = published.VersionNumber, ["contentHash"] = published.ContentHash };
         if (databaseQueries.Count > 0)
         {
@@ -376,6 +387,11 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
         if (databaseWrites.Count > 0)
         {
             details["databaseWrites"] = databaseWrites;
+        }
+
+        if (apiFetches.Count > 0)
+        {
+            details["apiFetches"] = apiFetches;
         }
 
         Audit(Actions.Published, workflow.Id, now, details);

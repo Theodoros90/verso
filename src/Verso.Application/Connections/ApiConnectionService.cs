@@ -37,6 +37,11 @@ public sealed partial class ApiConnectionService(IVersoDbContext db, ICurrentUse
         return (await query.OrderBy(c => c.Key).ToListAsync(ct)).Select(ToDto).ToList();
     }
 
+    /// <summary>What a workflow author needs to pick a connection in a Fetch from API step: active connections, by name, with the host only (never the path, authentication or secret).</summary>
+    public async Task<IReadOnlyList<ApiConnectionOptionDto>> ListOptionsAsync(CancellationToken ct) =>
+        (await db.ApiConnections.AsNoTracking().Where(c => c.IsActive).OrderBy(c => c.Name).Select(c => new { c.Key, c.Name, c.BaseUrl }).ToListAsync(ct))
+        .Select(c => new ApiConnectionOptionDto(c.Key, c.Name, ApiUrls.HostOf(c.BaseUrl) ?? "")).ToList();
+
     public async Task<Result<ApiConnectionDto>> CreateAsync(SaveApiConnectionRequest request, CancellationToken ct)
     {
         var errors = Validate(request, creating: true, out var f);

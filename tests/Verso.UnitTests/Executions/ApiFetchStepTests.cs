@@ -1,0 +1,164 @@
+using System.Text.Json;
+using Verso.Application.Executions;
+
+namespace Verso.UnitTests.Executions;
+
+/// <summary>The Fetch from API step's query lines and path template (design time and the run-time resolving).</summary>
+public sealed class ApiFetchStepTests
+{
+    private static JsonElement Data(string json) => JsonDocument.Parse(json).RootElement.Clone();
+
+    private static string Codes(IReadOnlyList<object> issues) => string.Join(",", issues.Select(i => (string)i.GetType().GetProperty("code")!.GetValue(i)!));
+
+    [Fact]
+    public void ParseQuery_ReadsOneMappingPerLine_IgnoringBlankLines()
+    {
+        var (items, problem) = ApiFetchStep.ParseQuery("base = invoice.currency\n\n  symbols=a.b  \r\n");
+
+        Assert.Null(problem);
+        Assert.Equal([("base", "invoice.currency"), ("symbols", "a.b")], items);
+    }
+
+    [Theory]
+    [InlineData("base invoice.currency", "base invoice.currency")]
+    [InlineData("a = x\na = y", "'a' is listed more than once")]
+    [InlineData("filter[a] = x\nfilter[b] = y", null)]
+    [InlineData("has space = x", "has space")]
+    [InlineData("a = ", "'a'")]
+    [InlineData("a = x..y", "'a'")]
+    [InlineData("= x", "")]
+    public void ParseQuery_ReportsAProblem_ForABadLine(string text, string? mentions)
+    {
+        var (_, problem) = ApiFetchStep.ParseQuery(text);
+
+        if (mentions is null)
+        {
+            Assert.Null(problem);
+            return;
+        }
+
+        Assert.NotNull(problem);
+        Assert.Contains(mentions, problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseQuery_NamesAreCaseSensitive_AndTheLinesAreLimited()
+    {
+        Assert.Null(ApiFetchStep.ParseQuery("a = x\nA = y").Problem);
+        Assert.Null(ApiFetchStep.ParseQuery("").Problem);
+        Assert.Null(ApiFetchStep.ParseQuery(null).Problem);
+        Assert.Null(ApiFetchStep.ParseQuery(string.Join('\n', Enumerable.Range(1, 20).Select(i => $"p{i} = a.b"))).Problem);
+        Assert.NotNull(ApiFetchStep.ParseQuery(string.Join('\n', Enumerable.Range(1, 21).Select(i => $"p{i} = a.b"))).Problem);
+        Assert.NotNull(ApiFetchStep.ParseQuery(new string('n', 65) + " = a").Problem);
+    }
+
+    [Theory]
+    [InlineData("/v1/latest")]
+    [InlineData("/customers/{{customer.number}}/rate")]
+    [InlineData("/customers/{{ customer.number }}")]
+    [InlineData("/a/{{x}}/{{y.z}}")]
+    [InlineData("/files/a.b-c_d~e")]
+    public void Validate_Accepts(string template) => Assert.Null(ApiPathTemplate.Validate(template));
+
+    [Theory]
+    [InlineData("//x")]
+    [InlineData("x")]
+    [InlineData("")]
+    [InlineData("/a b")]
+    [InlineData("/a?b=1")]
+    [InlineData("/a#b")]
+    [InlineData("/a\\b")]
+    [InlineData("/a/../b")]
+    [InlineData("/./a")]
+    [InlineData("/a/%2e%2e/b")]
+    [InlineData("/a/%2E/b")]
+    [InlineData("/a/..")]
+    [InlineData("/a/{{b")]
+    [InlineData("/a/b}}")]
+    [InlineData("/a/{b}")]
+    [InlineData("/a/{{ 1bad }}")]
+    [InlineData("/a/{{a..b}}")]
+    [InlineData("/a/{{}}")]
+    [InlineData("/ä")]
+    public void Validate_Refuses(string template) => Assert.NotNull(ApiPathTemplate.Validate(template));
+
+    [Fact]
+    public void Validate_RefusesALongPath()
+    {
+        Assert.Null(ApiPathTemplate.Validate("/" + new string('a', 499)));
+        Assert.NotNull(ApiPathTemplate.Validate("/" + new string('a', 500)));
+    }
+
+    [Theory]
+    [InlineData("../x", "..%2Fx")]
+    [InlineData("a/b", "a%2Fb")]
+    [InlineData("x?y=1", "x%3Fy%3D1")]
+    [InlineData("%2e", "%252e")]
+    [InlineData("a#b", "a%23b")]
+    [InlineData("a b", "a%20b")]
+    [InlineData("Zürich", "Z%C3%BCrich")]
+    public void Resolve_EncodesAValueIntoOneSegment(string value, string encoded)
+    {
+        var (path, issues) = ApiPathTemplate.Resolve("/customers/{{c.v}}/rate", Data(JsonSerializer.Serialize(new { c = new { v = value } })));
+
+        Assert.Empty(issues);
+        Assert.Equal($"/customers/{encoded}/rate", path);
+    }
+
+    [Theory]
+    [InlineData(".")]
+    [InlineData("..")]
+    [InlineData("")]
+    public void Resolve_RefusesADotOrEmptyValue_AsInvalidData_NamingThePathButNotTheValue(string value)
+    {
+        var (path, issues) = ApiPathTemplate.Resolve("/a/{{c.v}}", Data(JsonSerializer.Serialize(new { c = new { v = value } })));
+
+        Assert.Null(path);
+        Assert.Equal("fetch.value_invalid", Codes(issues));
+        var text = JsonSerializer.Serialize(issues);
+        Assert.Contains("c.v", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"..", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Resolve_AMissingOrNullValue_IsReported_NamingThePath()
+    {
+        var (path, issues) = ApiPathTemplate.Resolve("/a/{{c.v}}/{{d}}", Data("""{ "c": { "v": null } }"""));
+
+        Assert.Null(path);
+        Assert.Equal("fetch.value_missing,fetch.value_missing", Codes(issues));
+        var text = JsonSerializer.Serialize(issues);
+        Assert.Contains("c.v", text, StringComparison.Ordinal);
+        Assert.Contains("\"d\"", text, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""{ "c": { "v": { "x": "SECRET-VALUE" } } }""")]
+    [InlineData("""{ "c": { "v": ["SECRET-VALUE"] } }""")]
+    public void Resolve_AGroupOrList_IsInvalid_WithoutTheContent(string json)
+    {
+        var (path, issues) = ApiPathTemplate.Resolve("/a/{{c.v}}", Data(json));
+
+        Assert.Null(path);
+        Assert.Equal("fetch.value_invalid", Codes(issues));
+        Assert.DoesNotContain("SECRET-VALUE", JsonSerializer.Serialize(issues), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Resolve_NumbersAndBooleans_AreAllowed_WithTheInvariantCulture()
+    {
+        var old = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
+        try
+        {
+            var (path, issues) = ApiPathTemplate.Resolve("/n/{{a}}/{{b}}/{{c}}/{{d}}", Data("""{ "a": 42, "b": 1.5, "c": true, "d": false }"""));
+
+            Assert.Empty(issues);
+            Assert.Equal("/n/42/1.5/true/false", path);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = old;
+        }
+    }
+}

@@ -15,6 +15,9 @@ public sealed record ApiConnectionDto(
     Guid Id, string Key, string Name, string BaseUrl, string TestPath, string AuthType, string AuthName, string TokenUrl, string Scope,
     int TimeoutSeconds, bool IsActive, bool HasSecret, DateTimeOffset UpdatedAt, string UpdatedBy);
 
+/// <summary>What a workflow author needs to pick an API connection in a Fetch from API step: key, name and the host. Never the address path, the authentication or a secret.</summary>
+public sealed record ApiConnectionOptionDto(string Key, string Name, string Host);
+
 /// <summary>The state of an API connection test. Never carries the response body, headers, the URL or a secret.</summary>
 public sealed record ApiConnectionTestDto(
     Guid Id, string ConnectionKey, string Status, string? Code, string? Message, int? HttpStatus, int? ElapsedMs, string? ContentType,
