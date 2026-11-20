@@ -4,7 +4,7 @@ using Verso.Application.Connections;
 
 namespace Verso.Api.Connections;
 
-/// <summary>SMS connection API, <c>/api/v1/sms-connections</c> (ADR 0018). Administrators only. The API key is write-only: no response carries it.</summary>
+/// <summary>SMS connection API, <c>/api/v1/sms-connections</c> (ADR 0018). Administrators only, except the options list for workflow authors. The API key is write-only: no response carries it.</summary>
 public static class SmsConnectionEndpoints
 {
     public static IEndpointRouteBuilder MapSmsConnectionEndpoints(this IEndpointRouteBuilder app)
@@ -65,6 +65,13 @@ public static class SmsConnectionEndpoints
             .WithName("GetSmsConnectionTest")
             .Produces<SmsConnectionTestDto>()
             .ProducesProblem(StatusCodes.Status404NotFound);
+
+        // Workflow authors pick a connection by name in the Send SMS step: key, name, type and whether sending is on, for people who may edit workflows.
+        app.MapGet("/api/v1/sms-connection-options", async (SmsConnectionService service, CancellationToken ct) => Results.Ok(await service.ListOptionsAsync(ct)))
+            .WithTags("SMS connections")
+            .RequireAuthorization(Policies.WorkflowAuthoring)
+            .WithName("ListSmsConnectionOptions")
+            .Produces<IReadOnlyList<SmsConnectionOptionDto>>();
 
         return app;
     }

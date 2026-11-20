@@ -80,6 +80,7 @@ public sealed class RoleMatrixTests(MigratedDatabaseFixture fixture)
         { "POST", "/api/v1/api-connections/{id:guid}/activate", $"/api/v1/api-connections/{Id}/activate", "X" },
         { "POST", "/api/v1/api-connections/{id:guid}/tests", $"/api/v1/api-connections/{Id}/tests", "X" },
         { "GET", "/api/v1/api-connections/tests/{testId:guid}", $"/api/v1/api-connections/tests/{Id}", "X" },
+        { "GET", "/api/v1/sms-connection-options", "/api/v1/sms-connection-options", "WX" },
         { "GET", "/api/v1/sms-connections/", "/api/v1/sms-connections", "X" },
         { "POST", "/api/v1/sms-connections/", "/api/v1/sms-connections", "X" },
         { "PUT", "/api/v1/sms-connections/{id:guid}", $"/api/v1/sms-connections/{Id}", "X" },

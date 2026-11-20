@@ -4,11 +4,13 @@ using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Text;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Verso.Application;
 using Verso.Application.Connections;
 using Verso.Application.Mail;
 using Verso.Infrastructure.Connections;
+using Verso.Infrastructure.Persistence;
 using Verso.Infrastructure.Security;
 
 namespace Verso.Api.Tests;
@@ -228,6 +230,200 @@ public sealed class SmsConnectionApiTests(MigratedDatabaseFixture fixture) : IDi
             using var other = fixture.Factory.CreateClientAs(user);
             Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync("/api/v1/sms-connections")).StatusCode);
         }
+    }
+
+    private async Task<List<JsonElement>> AuditEntriesAsync(Guid id, string action)
+    {
+        var page = await _client.GetFromJsonAsync<JsonElement>($"/api/v1/audit?entityType=SmsConnection&entityId={id}&pageSize=100");
+        return page.GetProperty("items").EnumerateArray().Where(e => e.GetProperty("action").GetString() == action).ToList();
+    }
+
+    private Task<HttpResponseMessage> PutSendingAsync(Guid id, string key, bool? allowSending, string? prefixes = null) =>
+        _client.PutAsJsonAsync($"/api/v1/sms-connections/{id}", new
+        {
+            name = "SMS " + key, baseUrl = $"https://{Host}/v3", sender = "TestSender", messageType = "transactional", unicodeEnabled = true,
+            organisationPrefix = "TestOrg", timeoutSeconds = 15, description = "for tests", allowSending, allowedCountryPrefixes = prefixes,
+        });
+
+    [Fact]
+    public async Task New_connection_does_not_allow_sending_and_has_no_prefixes()
+    {
+        var created = await CreateAsync(UniqueKey());
+
+        Assert.False(created.GetProperty("allowSending").GetBoolean());
+        Assert.Equal("", created.GetProperty("allowedCountryPrefixes").GetString());
+    }
+
+    [Fact]
+    public async Task Admin_sets_the_switch_and_prefixes_and_it_is_audited()
+    {
+        var key = UniqueKey();
+        var id = (await CreateAsync(key)).GetProperty("id").GetGuid();
+
+        var on = await PutSendingAsync(id, key, true, "357, 30");
+        Assert.Equal(HttpStatusCode.OK, on.StatusCode);
+        var dto = await on.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(dto.GetProperty("allowSending").GetBoolean());
+        Assert.Equal("357,30", dto.GetProperty("allowedCountryPrefixes").GetString());
+        await PutSendingAsync(id, key, true, "357, 30"); // unchanged: no new entries
+        var off = await PutSendingAsync(id, key, false, "357,30");
+        Assert.False((await off.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("allowSending").GetBoolean());
+
+        var changes = await AuditEntriesAsync(id, "SmsConnectionSendingChanged");
+        Assert.Equal(2, changes.Count);
+        Assert.Equal([false, true], changes.Select(c => c.GetProperty("details").GetProperty("allowSending").GetBoolean()).Order().ToList());
+        Assert.All(changes, c =>
+        {
+            Assert.Equal(key, c.GetProperty("details").GetProperty("key").GetString());
+            Assert.Equal(["allowSending", "key"], c.GetProperty("details").EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
+            Assert.DoesNotContain("357", c.GetRawText(), StringComparison.Ordinal);
+        });
+        var updated = string.Join(' ', (await AuditEntriesAsync(id, "SmsConnectionUpdated")).Select(e => e.GetRawText()));
+        Assert.Contains("allowSending", updated, StringComparison.Ordinal);
+        Assert.Contains("allowedCountryPrefixes", updated, StringComparison.Ordinal);
+        var all = await _client.GetStringAsync($"/api/v1/audit?entityType=SmsConnection&entityId={id}");
+        foreach (var value in new[] { ApiKey, FakeDigits, "357,30" })
+        {
+            Assert.DoesNotContain(value, all, StringComparison.Ordinal);
+        }
+
+        using var other = fixture.Factory.CreateClientAs("dev.workflow-author");
+        Assert.Equal(HttpStatusCode.Forbidden, (await other.PutAsJsonAsync($"/api/v1/sms-connections/{id}", new { name = "x", sender = "Verso", allowSending = true })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Update_without_the_fields_keeps_them()
+    {
+        var key = UniqueKey();
+        var id = (await CreateAsync(key)).GetProperty("id").GetGuid();
+        await PutSendingAsync(id, key, true, "357");
+
+        var kept = await _client.PutAsJsonAsync($"/api/v1/sms-connections/{id}", Body(key, secret: null, sender: "NewSender"));
+
+        Assert.Equal(HttpStatusCode.OK, kept.StatusCode);
+        var dto = await kept.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(dto.GetProperty("allowSending").GetBoolean());
+        Assert.Equal("357", dto.GetProperty("allowedCountryPrefixes").GetString());
+        Assert.Single(await AuditEntriesAsync(id, "SmsConnectionSendingChanged"));
+    }
+
+    [Fact]
+    public async Task Create_with_allowSending_true_is_audited()
+    {
+        var key = UniqueKey();
+        var response = await _client.PostAsJsonAsync("/api/v1/sms-connections", new
+        {
+            key, name = "SMS " + key, sender = "Verso", allowSending = true, allowedCountryPrefixes = "+357", secret = ApiKey,
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(created.GetProperty("allowSending").GetBoolean());
+        Assert.Equal("357", created.GetProperty("allowedCountryPrefixes").GetString());
+        var change = Assert.Single(await AuditEntriesAsync(created.GetProperty("id").GetGuid(), "SmsConnectionSendingChanged"));
+        Assert.True(change.GetProperty("details").GetProperty("allowSending").GetBoolean());
+        Assert.Equal(key, change.GetProperty("details").GetProperty("key").GetString());
+    }
+
+    [Theory]
+    [InlineData("35x")]
+    [InlineData("0357")]
+    [InlineData("35712")]
+    [InlineData("1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21")]
+    public async Task Invalid_prefixes_are_refused_on_the_field(string prefixes)
+    {
+        var key = UniqueKey();
+        var id = (await CreateAsync(key)).GetProperty("id").GetGuid();
+
+        var response = await PutSendingAsync(id, key, null, prefixes);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("\"allowedCountryPrefixes\"", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        var create = await _client.PostAsJsonAsync("/api/v1/sms-connections", new { key = UniqueKey(), name = "X", sender = "Verso", secret = ApiKey, allowedCountryPrefixes = prefixes });
+        Assert.Equal(HttpStatusCode.BadRequest, create.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("+357", "357")]
+    [InlineData("00357", "357")]
+    [InlineData("357, 30", "357,30")]
+    [InlineData("357;30 49", "357,30,49")]
+    [InlineData("", "")]
+    public async Task Prefixes_are_normalised_when_stored(string typed, string stored)
+    {
+        var key = UniqueKey();
+        var id = (await CreateAsync(key)).GetProperty("id").GetGuid();
+
+        var response = await PutSendingAsync(id, key, null, typed);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(stored, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("allowedCountryPrefixes").GetString());
+    }
+
+    [Fact]
+    public async Task Options_report_exactly_key_name_type_allowsSending()
+    {
+        var on = "aaa-" + UniqueKey();
+        var off = "aab-" + UniqueKey();
+        var inactive = UniqueKey();
+        var onId = (await CreateAsync(on)).GetProperty("id").GetGuid();
+        await CreateAsync(off);
+        var inactiveId = (await CreateAsync(inactive)).GetProperty("id").GetGuid();
+        await PutSendingAsync(onId, on, true, "357");
+        await _client.PostAsync($"/api/v1/sms-connections/{inactiveId}/deactivate", null);
+
+        using var author = fixture.Factory.CreateClientAs("dev.workflow-author");
+        var text = await author.GetStringAsync("/api/v1/sms-connection-options");
+
+        var options = JsonSerializer.Deserialize<JsonElement>(text).EnumerateArray().ToList();
+        Assert.DoesNotContain(options, o => o.GetProperty("key").GetString() == inactive);
+        var optionOn = options.Single(o => o.GetProperty("key").GetString() == on);
+        var optionOff = options.Single(o => o.GetProperty("key").GetString() == off);
+        Assert.True(optionOn.GetProperty("allowsSending").GetBoolean());
+        Assert.False(optionOff.GetProperty("allowsSending").GetBoolean());
+        Assert.Equal(["allowsSending", "key", "messageType", "name"], optionOn.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
+        Assert.Equal("transactional", optionOn.GetProperty("messageType").GetString());
+        var names = options.Select(o => o.GetProperty("name").GetString()!).ToList();
+        Assert.Equal(names.OrderBy(n => n, StringComparer.Ordinal).ToList(), names);
+        foreach (var value in new[] { Host, "TestSender", "TestOrg", ApiKey, "sender", "prefix", "baseUrl", "secret", "357" })
+        {
+            Assert.DoesNotContain(value, text, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public async Task Options_are_for_workflow_authors_and_administrators_only()
+    {
+        using var anonymous = fixture.Factory.CreateClientAs(null);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/v1/sms-connection-options")).StatusCode);
+        foreach (var user in new[] { "dev.viewer", "dev.template-author", "dev.auditor", "dev.operator" })
+        {
+            using var other = fixture.Factory.CreateClientAs(user);
+            Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync("/api/v1/sms-connection-options")).StatusCode);
+        }
+
+        foreach (var user in new[] { "dev.workflow-author", "dev.admin" })
+        {
+            using var allowed = fixture.Factory.CreateClientAs(user);
+            Assert.Equal(HttpStatusCode.OK, (await allowed.GetAsync("/api/v1/sms-connection-options")).StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task Existing_rows_default_to_off()
+    {
+        var key = UniqueKey();
+        using var scope = fixture.Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<VersoDbContext>();
+        var id = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"INSERT INTO [connections].[SmsConnections] ([Id], [Key], [Name], [Provider], [BaseUrl], [Sender], [MessageType], [UnicodeEnabled], [OrganisationPrefix], [TimeoutSeconds], [Description], [IsActive], [CreatedAt], [CreatedBy], [UpdatedAt], [UpdatedBy]) VALUES ({id}, {key}, N'Old', N'brevo', N'https://old.example/v3', N'Verso', N'transactional', 1, N'', 15, N'', 1, {now}, N'x', {now}, N'x')");
+
+        var row = await scope.ServiceProvider.GetRequiredService<IVersoDbContext>().SmsConnections.AsNoTracking().SingleAsync(c => c.Id == id);
+        Assert.False(row.AllowSending);
+        Assert.Equal("", row.AllowedCountryPrefixes);
     }
 
     private sealed class NoMasterKey : ISecretProtector

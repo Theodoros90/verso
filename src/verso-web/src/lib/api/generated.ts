@@ -645,6 +645,8 @@ export interface SaveSmsConnectionRequest {
   timeoutSeconds: number | null
   description: string | null
   secret: string | null
+  allowSending?: boolean | null
+  allowedCountryPrefixes?: string | null
 }
 
 export interface SaveWorkflowDraftRequest {
@@ -671,6 +673,15 @@ export interface SmsConnectionDto {
   hasSecret: boolean
   updatedAt: string
   updatedBy: string
+  allowSending: boolean
+  allowedCountryPrefixes: string
+}
+
+export interface SmsConnectionOptionDto {
+  key: string
+  name: string
+  messageType: string
+  allowsSending: boolean
 }
 
 export interface SmsConnectionTestDto {

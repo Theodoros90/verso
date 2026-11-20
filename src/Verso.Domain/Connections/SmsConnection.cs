@@ -27,6 +27,10 @@ public sealed class SmsConnection
     /// <summary>Optional text the provider puts in front of the message; empty when none.</summary>
     public string OrganisationPrefix { get; private set; } = "";
     public int TimeoutSeconds { get; private set; }
+    /// <summary>Whether a Send SMS workflow step may use this connection; off by default, switched on by an administrator.</summary>
+    public bool AllowSending { get; private set; }
+    /// <summary>The country dialling codes (digits, comma separated, no "+") a step may send to; empty means no restriction by country.</summary>
+    public string AllowedCountryPrefixes { get; private set; } = "";
     public string Description { get; private set; } = "";
     public bool IsActive { get; private set; }
     public string? SecretProtected { get; private set; }
@@ -69,6 +73,13 @@ public sealed class SmsConnection
         OrganisationPrefix = organisationPrefix.Trim();
         TimeoutSeconds = timeoutSeconds;
         Description = description.Trim();
+        Touch(actor, now);
+    }
+
+    public void SetSending(bool allow, string prefixes, string actor, DateTimeOffset now)
+    {
+        AllowSending = allow;
+        AllowedCountryPrefixes = prefixes;
         Touch(actor, now);
     }
 

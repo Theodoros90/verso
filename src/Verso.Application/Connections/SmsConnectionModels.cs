@@ -10,12 +10,17 @@ namespace Verso.Application.Connections;
 /// </summary>
 public sealed record SaveSmsConnectionRequest(
     string? Key, string? Name, string? Provider, string? BaseUrl, string? Sender, string? MessageType, bool? UnicodeEnabled,
-    string? OrganisationPrefix, int? TimeoutSeconds, string? Description, string? Secret);
+    string? OrganisationPrefix, int? TimeoutSeconds, string? Description, string? Secret,
+    bool? AllowSending = null, string? AllowedCountryPrefixes = null);
 
 /// <summary>An SMS connection as the Configuration screen sees it. No API key: only whether one is stored.</summary>
 public sealed record SmsConnectionDto(
     Guid Id, string Key, string Name, string Provider, string BaseUrl, string Sender, string MessageType, bool UnicodeEnabled,
-    string OrganisationPrefix, int TimeoutSeconds, string Description, bool IsActive, bool HasSecret, DateTimeOffset UpdatedAt, string UpdatedBy);
+    string OrganisationPrefix, int TimeoutSeconds, string Description, bool IsActive, bool HasSecret, DateTimeOffset UpdatedAt, string UpdatedBy,
+    bool AllowSending, string AllowedCountryPrefixes);
+
+/// <summary>What a workflow author sees of an active SMS connection: key, name, type and whether sending is switched on. Nothing else.</summary>
+public sealed record SmsConnectionOptionDto(string Key, string Name, string MessageType, bool AllowsSending);
 
 /// <summary>The recipient of the one real test SMS, in international format. Never stored in clear, never audited.</summary>
 public sealed record RequestSmsConnectionTest(string? Recipient);
@@ -102,6 +107,8 @@ public static partial class SmsRules
     public const string DefaultBaseUrl = "https://api.brevo.com/v3";
     public const int MaxDescriptionLength = 500;
     public const int MaxPrefixLength = 100;
+    public const int MaxCountryPrefixes = 20;
+    public const int MaxCountryPrefixesLength = 200;
 
     public static readonly IReadOnlyList<string> MessageTypes = [SmsConnection.Marketing, SmsConnection.Transactional];
 
@@ -150,6 +157,47 @@ public static partial class SmsRules
         }
 
         digits = value;
+        return true;
+    }
+
+    /// <summary>
+    /// Reads the country dialling codes an administrator allows: separated by comma, space or semicolon, a leading "+" or "00" ignored, each 1 to 4
+    /// digits not starting with 0, repeats dropped, at most 20. <paramref name="normalised"/> is the codes joined with commas in the order typed.
+    /// Empty input is an empty list, not a problem.
+    /// </summary>
+    public static bool TryNormalisePrefixes(string? input, out string normalised, out string? problem)
+    {
+        normalised = "";
+        problem = null;
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return true;
+        }
+
+        var list = new List<string>();
+        foreach (var token in input.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var digits = token.StartsWith('+') ? token[1..] : token.StartsWith("00", StringComparison.Ordinal) ? token[2..] : token;
+            if (digits.Length is < 1 or > 4 || digits[0] == '0' || !digits.All(char.IsAsciiDigit))
+            {
+                var shown = token.Length > 10 ? token[..10] : token;
+                problem = $"Each country prefix must be 1 to 4 digits and not start with 0, such as 357 or +49 (not \"{shown}\").";
+                return false;
+            }
+
+            if (!list.Contains(digits, StringComparer.Ordinal))
+            {
+                list.Add(digits);
+            }
+        }
+
+        if (list.Count > MaxCountryPrefixes)
+        {
+            problem = $"Enter at most {MaxCountryPrefixes} country prefixes.";
+            return false;
+        }
+
+        normalised = string.Join(',', list);
         return true;
     }
 

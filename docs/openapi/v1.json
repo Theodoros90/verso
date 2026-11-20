@@ -149,6 +149,29 @@
         }
       }
     },
+    "/api/v1/sms-connection-options": {
+      "get": {
+        "tags": [
+          "SMS connections"
+        ],
+        "operationId": "ListSmsConnectionOptions",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SmsConnectionOptionDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/templates/{id}/draft/preview/pdf": {
       "post": {
         "tags": [
@@ -7547,6 +7570,18 @@
               "null",
               "string"
             ]
+          },
+          "allowSending": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "allowedCountryPrefixes": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -7599,7 +7634,9 @@
           "isActive",
           "hasSecret",
           "updatedAt",
-          "updatedBy"
+          "updatedBy",
+          "allowSending",
+          "allowedCountryPrefixes"
         ],
         "type": "object",
         "properties": {
@@ -7654,6 +7691,35 @@
           },
           "updatedBy": {
             "type": "string"
+          },
+          "allowSending": {
+            "type": "boolean"
+          },
+          "allowedCountryPrefixes": {
+            "type": "string"
+          }
+        }
+      },
+      "SmsConnectionOptionDto": {
+        "required": [
+          "key",
+          "name",
+          "messageType",
+          "allowsSending"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "messageType": {
+            "type": "string"
+          },
+          "allowsSending": {
+            "type": "boolean"
           }
         }
       },
@@ -8408,6 +8474,9 @@
       "name": "API connections"
     },
     {
+      "name": "SMS connections"
+    },
+    {
       "name": "Templates"
     },
     {
@@ -8421,9 +8490,6 @@
     },
     {
       "name": "Document categories"
-    },
-    {
-      "name": "SMS connections"
     },
     {
       "name": "Previews"

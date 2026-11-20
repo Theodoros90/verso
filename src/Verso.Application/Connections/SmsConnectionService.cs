@@ -23,6 +23,7 @@ public sealed class SmsConnectionService(IVersoDbContext db, ICurrentUser user, 
         public const string SecretChanged = "SmsConnectionSecretChanged";
         public const string Deactivated = "SmsConnectionDeactivated";
         public const string Activated = "SmsConnectionActivated";
+        public const string SendingChanged = "SmsConnectionSendingChanged";
     }
 
     public async Task<IReadOnlyList<SmsConnectionDto>> ListAsync(bool includeInactive, CancellationToken ct)
@@ -35,6 +36,10 @@ public sealed class SmsConnectionService(IVersoDbContext db, ICurrentUser user, 
 
         return (await query.OrderBy(c => c.Key).ToListAsync(ct)).Select(ToDto).ToList();
     }
+
+    public async Task<IReadOnlyList<SmsConnectionOptionDto>> ListOptionsAsync(CancellationToken ct) =>
+        await db.SmsConnections.AsNoTracking().Where(c => c.IsActive).OrderBy(c => c.Name)
+            .Select(c => new SmsConnectionOptionDto(c.Key, c.Name, c.MessageType, c.AllowSending)).ToListAsync(ct);
 
     public async Task<Result<SmsConnectionDto>> CreateAsync(SaveSmsConnectionRequest request, CancellationToken ct)
     {
@@ -53,10 +58,19 @@ public sealed class SmsConnectionService(IVersoDbContext db, ICurrentUser user, 
         var now = clock.GetUtcNow();
         var connection = SmsConnection.Create(key, f!.Name, f.BaseUrl, f.Sender, f.MessageType, f.Unicode, f.Prefix, f.Timeout, f.Description, user.Id, now);
         connection.SetSecret(secrets.Protect(request.Secret!, SmsConnectionContexts.For(key)), user.Id, now);
+        var allowSending = request.AllowSending == true;
+        if (allowSending || f.CountryPrefixes.Length > 0)
+        {
+            connection.SetSending(allowSending, f.CountryPrefixes, user.Id, now);
+        }
 
         db.SmsConnections.Add(connection);
         Audit(Actions.Created, connection.Id, now, new { key, name = f.Name, messageType = f.MessageType });
         Audit(Actions.SecretChanged, connection.Id, now, new { key, action = "set" });
+        if (allowSending)
+        {
+            Audit(Actions.SendingChanged, connection.Id, now, new { key, allowSending });
+        }
 
         try
         {
@@ -107,10 +121,20 @@ public sealed class SmsConnectionService(IVersoDbContext db, ICurrentUser user, 
         Note("organisationPrefix", connection.OrganisationPrefix != f.Prefix);
         Note("timeout", connection.TimeoutSeconds != f.Timeout);
         Note("description", connection.Description != f.Description);
+        var sendingChanged = request.AllowSending is { } wanted && wanted != connection.AllowSending;
+        var newPrefixes = request.AllowedCountryPrefixes is null ? connection.AllowedCountryPrefixes : f.CountryPrefixes;
+        Note("allowSending", sendingChanged);
+        Note("allowedCountryPrefixes", connection.AllowedCountryPrefixes != newPrefixes);
         if (changed.Count > 0)
         {
             connection.Update(f.Name, f.BaseUrl, f.Sender, f.MessageType, f.Unicode, f.Prefix, f.Timeout, f.Description, user.Id, now);
+            connection.SetSending(sendingChanged ? request.AllowSending!.Value : connection.AllowSending, newPrefixes, user.Id, now);
             Audit(Actions.Updated, id, now, new { key = connection.Key, changed });
+        }
+
+        if (sendingChanged)
+        {
+            Audit(Actions.SendingChanged, id, now, new { key = connection.Key, allowSending = connection.AllowSending });
         }
 
         if (!string.IsNullOrEmpty(request.Secret))
@@ -153,7 +177,7 @@ public sealed class SmsConnectionService(IVersoDbContext db, ICurrentUser user, 
         return ToDto(connection);
     }
 
-    private sealed record Fields(string Name, string BaseUrl, string Sender, string MessageType, bool Unicode, string Prefix, int Timeout, string Description);
+    private sealed record Fields(string Name, string BaseUrl, string Sender, string MessageType, bool Unicode, string Prefix, int Timeout, string Description, string CountryPrefixes);
 
     private Dictionary<string, string[]>? Validate(SaveSmsConnectionRequest r, bool creating, out Fields? fields)
     {
@@ -214,6 +238,15 @@ public sealed class SmsConnectionService(IVersoDbContext db, ICurrentUser user, 
             Fail("timeoutSeconds", "The timeout must be 1–120 seconds.");
         }
 
+        if (!SmsRules.TryNormalisePrefixes(r.AllowedCountryPrefixes, out var countryPrefixes, out var prefixProblem))
+        {
+            Fail("allowedCountryPrefixes", prefixProblem!);
+        }
+        else if (countryPrefixes.Length > SmsRules.MaxCountryPrefixesLength)
+        {
+            Fail("allowedCountryPrefixes", $"The country prefixes can be at most {SmsRules.MaxCountryPrefixesLength} characters.");
+        }
+
         if (string.IsNullOrEmpty(r.Secret))
         {
             if (creating)
@@ -235,13 +268,13 @@ public sealed class SmsConnectionService(IVersoDbContext db, ICurrentUser user, 
             return errors;
         }
 
-        fields = new Fields(name, baseUrl, sender, messageType, r.UnicodeEnabled ?? true, prefix, timeout, description);
+        fields = new Fields(name, baseUrl, sender, messageType, r.UnicodeEnabled ?? true, prefix, timeout, description, countryPrefixes);
         return null;
     }
 
     private static SmsConnectionDto ToDto(SmsConnection c) => new(
         c.Id, c.Key, c.Name, c.Provider, c.BaseUrl, c.Sender, c.MessageType, c.UnicodeEnabled, c.OrganisationPrefix, c.TimeoutSeconds,
-        c.Description, c.IsActive, c.SecretProtected is not null, c.UpdatedAt, c.UpdatedBy);
+        c.Description, c.IsActive, c.SecretProtected is not null, c.UpdatedAt, c.UpdatedBy, c.AllowSending, c.AllowedCountryPrefixes);
 
     private void Audit(string action, Guid id, DateTimeOffset now, object details) =>
         db.AuditEntries.Add(AuditEntry.Record(

@@ -98,6 +98,8 @@ internal sealed class SmsConnectionConfiguration : IEntityTypeConfiguration<SmsC
         builder.Property(c => c.MessageType).HasMaxLength(16).IsRequired();
         builder.Property(c => c.OrganisationPrefix).HasMaxLength(100).IsRequired();
         builder.Property(c => c.Description).HasMaxLength(500).IsRequired();
+        builder.Property(c => c.AllowSending).HasDefaultValue(false);
+        builder.Property(c => c.AllowedCountryPrefixes).HasMaxLength(200).IsRequired().HasDefaultValue("");
         builder.Property(c => c.SecretProtected).HasMaxLength(4000); // AES-GCM text, never the API key
         builder.Property(c => c.CreatedBy).HasMaxLength(200).IsRequired();
         builder.Property(c => c.UpdatedBy).HasMaxLength(200).IsRequired();

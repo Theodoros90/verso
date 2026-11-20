@@ -24,6 +24,8 @@ const connection = (over: Partial<SmsConnectionDto> = {}): SmsConnectionDto => (
   hasSecret: true,
   updatedAt: '2026-11-17T10:00:00Z',
   updatedBy: 'dev.admin',
+  allowSending: false,
+  allowedCountryPrefixes: '',
   ...over,
 })
 
