@@ -12,7 +12,7 @@ namespace Verso.Application.Connections;
 /// to the sender. Every check before the sender is a known failure (nothing sent). Failures are results with a code, never exceptions (except
 /// cancellation); no message carries the number, the text, the provider's answer or the key. Nothing is ever retried.
 /// </summary>
-public sealed class SmsSendService(IVersoDbContext db, ISecretProtector secrets, ISmsSender sender, SmsConnectionOptions options) : ISmsSend
+internal sealed class SmsSendService(IVersoDbContext db, ISecretProtector secrets, ISmsSender sender, SmsConnectionOptions options) : ISmsSend
 {
     public const int MaxTimeoutSeconds = 60;
 
@@ -103,7 +103,10 @@ public sealed class SmsSendService(IVersoDbContext db, ISecretProtector secrets,
         SmsSendResult Known(string code) => SmsSendResult.Failure(code, outcomeUnknown: false, clock.ElapsedMilliseconds);
     }
 
-    /// <summary>A prefix matches when the normalised digits START with it. An empty list allows no country.</summary>
+    /// <summary>
+    /// A prefix matches when the normalised digits START with it. An empty list allows no country. Only stored entries the save rules would accept
+    /// count (1 to 4 ASCII digits, not starting with 0); anything else in the stored text ("+357", "0357", "35700", "35a") is ignored, never widened.
+    /// </summary>
     internal static bool CountryAllowed(string? allowedPrefixes, string digits)
     {
         if (string.IsNullOrWhiteSpace(allowedPrefixes))
@@ -113,7 +116,7 @@ public sealed class SmsSendService(IVersoDbContext db, ISecretProtector secrets,
 
         foreach (var prefix in allowedPrefixes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            if (prefix.All(char.IsAsciiDigit) && digits.StartsWith(prefix, StringComparison.Ordinal))
+            if (prefix.Length is >= 1 and <= 4 && prefix[0] != '0' && prefix.All(char.IsAsciiDigit) && digits.StartsWith(prefix, StringComparison.Ordinal))
             {
                 return true;
             }

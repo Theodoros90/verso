@@ -41,8 +41,12 @@ public interface ISmsSend
     Task<SmsSendResult> RunAsync(SmsSendRequest request, CancellationToken ct);
 }
 
-/// <summary>Sends the one SMS with <c>HttpClient</c> (Infrastructure, Worker only): https only, no redirects, no blocked addresses, one deadline.</summary>
-public interface ISmsSender
+/// <summary>
+/// Sends the one SMS with <c>HttpClient</c> (Infrastructure, Worker only): https only, no redirects, no blocked addresses, one deadline.
+/// Internal on purpose: it does NOT check the "Allow sending" switch, the message type, the allowed countries or the hosts. Only
+/// <see cref="SmsSendService"/> may call it; everything else goes through <see cref="ISmsSend"/>.
+/// </summary>
+internal interface ISmsSender
 {
     Task<SmsSendResult> SendAsync(SmsConnectionSettings settings, SmsSendRequest request, CancellationToken ct);
 }

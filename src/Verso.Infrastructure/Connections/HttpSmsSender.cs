@@ -18,9 +18,12 @@ namespace Verso.Infrastructure.Connections;
 /// ever retried.
 /// </para>
 /// </summary>
-public sealed class HttpSmsSender(Func<HttpMessageHandler>? handlerFactory = null) : ISmsSender
+internal sealed class HttpSmsSender(Func<HttpMessageHandler>? handlerFactory = null) : ISmsSender
 {
     private const int MaxAnswerBytes = 64 * 1024;
+
+    /// <summary>The longest provider message id kept; a longer one is dropped (null).</summary>
+    public const int MaxMessageIdLength = 100;
 
     public async Task<SmsSendResult> SendAsync(SmsConnectionSettings settings, SmsSendRequest request, CancellationToken ct)
     {
@@ -75,9 +78,10 @@ public sealed class HttpSmsSender(Func<HttpMessageHandler>? handlerFactory = nul
             var status = (int)response.StatusCode;
             if (status is >= 200 and < 300)
             {
-                // Brevo accepted the message. Whatever happens while reading the answer, it was sent: an unreadable answer only loses the id and parts.
-                var answer = await TryReadAsync(response, token, ct);
-                var (messageId, parts) = ParseSuccess(answer.Body);
+                // Brevo accepted the message. Whatever happens while reading the answer it was sent, even if the caller cancels now (Worker
+                // shutdown, run cancelled): "sent" must never be lost or turned into an exception. An unreadable answer only loses the id and parts.
+                var accepted = await ReadAcceptedAsync(response, token);
+                var (messageId, parts) = ParseSuccess(accepted);
                 return SmsSendResult.Success(messageId, parts, clock.ElapsedMilliseconds);
             }
 
@@ -119,27 +123,35 @@ public sealed class HttpSmsSender(Func<HttpMessageHandler>? handlerFactory = nul
     /// <summary>
     /// What an exception from <c>SendAsync</c> means. KNOWN only when the request can't have left this machine:
     /// <list type="bullet">
-    /// <item><see cref="BlockedAddressException"/> anywhere in the chain: our connect guard refused the address before any socket was opened.</item>
-    /// <item><see cref="AuthenticationException"/> anywhere in the chain: the TLS handshake failed, and the HTTP request is only written after it.</item>
+    /// <item><see cref="BlockedAddressException"/> anywhere in the chain: only our connect guard throws it, before any socket is opened.</item>
     /// <item><see cref="HttpRequestException.HttpRequestError"/> <see cref="HttpRequestError.NameResolutionError"/> (no address),
     /// <see cref="HttpRequestError.ConnectionError"/> (the TCP connection could not be opened), <see cref="HttpRequestError.SecureConnectionError"/>
-    /// (TLS could not be established) and <see cref="HttpRequestError.ProxyTunnelError"/> (the proxy tunnel was refused): all raised while connecting,
+    /// (the TLS handshake failed) and <see cref="HttpRequestError.ProxyTunnelError"/> (the proxy tunnel was refused): all raised while connecting,
     /// before a byte of the request is written. Each send uses a new handler, so there is no pooled connection whose failure could come later.</item>
+    /// <item>An <see cref="AuthenticationException"/> with no <see cref="HttpRequestException"/> around it (thrown straight from the connect phase).</item>
     /// </list>
-    /// Everything else may have happened after the request was written (connection reset, <see cref="HttpRequestError.ResponseEnded"/>,
-    /// <see cref="HttpRequestError.InvalidResponse"/>, <see cref="HttpRequestError.HttpProtocolError"/>, <see cref="HttpRequestError.Unknown"/>, an
-    /// <see cref="IOException"/>, a <see cref="TimeoutException"/>, anything unexpected): UNKNOWN.
+    /// An <see cref="AuthenticationException"/> inside an <see cref="HttpRequestException"/> of any other kind is NOT known: a TLS failure after the
+    /// handshake (for example while the answer is read) may come after the request was written. Everything else may have happened after the request
+    /// was written (connection reset, <see cref="HttpRequestError.ResponseEnded"/>, <see cref="HttpRequestError.InvalidResponse"/>,
+    /// <see cref="HttpRequestError.HttpProtocolError"/>, <see cref="HttpRequestError.Unknown"/>, an <see cref="IOException"/>, a
+    /// <see cref="TimeoutException"/>, anything unexpected): UNKNOWN.
     /// </summary>
     internal static SmsSendResult ForSendException(Exception ex, Stopwatch clock)
     {
+        var wrapped = false;
+        var authentication = false;
         for (var e = ex; e is not null; e = e.InnerException)
         {
             switch (e)
             {
                 case BlockedAddressException:
                     return Known("sms.blocked_address", clock);
+                case HttpRequestException:
+                    wrapped = true;
+                    break;
                 case AuthenticationException:
-                    return Known("sms.certificate_untrusted", clock);
+                    authentication = true;
+                    break;
             }
         }
 
@@ -152,6 +164,11 @@ public sealed class HttpSmsSender(Func<HttpMessageHandler>? handlerFactory = nul
                 case HttpRequestError.SecureConnectionError:
                     return Known("sms.certificate_untrusted", clock);
             }
+        }
+
+        if (authentication && !wrapped)
+        {
+            return Known("sms.certificate_untrusted", clock);
         }
 
         for (var e = ex; e is not null; e = e.InnerException)
@@ -187,6 +204,25 @@ public sealed class HttpSmsSender(Func<HttpMessageHandler>? handlerFactory = nul
         }
     }
 
+    /// <summary>The body of a 2xx, best effort: ANY failure (the deadline, a broken connection, the caller's cancellation) gives an empty body.</summary>
+    private static async Task<string> ReadAcceptedAsync(HttpResponseMessage response, CancellationToken token)
+    {
+        try
+        {
+            using var buffer = new MemoryStream();
+            await using (var stream = await response.Content.ReadAsStreamAsync(token))
+            {
+                await ApiHttp.CopyLimitedAsync(stream, buffer, MaxAnswerBytes, token);
+            }
+
+            return Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
+        }
+        catch (Exception)
+        {
+            return ""; // deliberately everything: the message was accepted, and that fact must reach the caller
+        }
+    }
+
     /// <summary>The message id (string or number) and the number of parts (<c>smsCount</c>) when the answer has them; otherwise null.</summary>
     internal static (string? MessageId, int? Parts) ParseSuccess(string body)
     {
@@ -208,6 +244,10 @@ public sealed class HttpSmsSender(Func<HttpMessageHandler>? handlerFactory = nul
             if (root.TryGetProperty("messageId", out var id))
             {
                 messageId = id.ValueKind switch { JsonValueKind.String => id.GetString(), JsonValueKind.Number => id.GetRawText(), _ => null };
+                if (messageId is { Length: > MaxMessageIdLength })
+                {
+                    messageId = null; // not an id we expect (Brevo's is a number): dropped rather than cut, never stored at any length
+                }
             }
 
             int? parts = root.TryGetProperty("smsCount", out var c) && c.ValueKind == JsonValueKind.Number && c.TryGetInt32(out var n) ? n : null;

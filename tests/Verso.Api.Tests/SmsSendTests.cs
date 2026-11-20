@@ -299,6 +299,23 @@ public sealed class SmsSendTests(MigratedDatabaseFixture fixture)
         Assert.Equal(3, text.SmsParts);
     }
 
+    [Fact]
+    public async Task A_message_id_longer_than_100_characters_is_dropped()
+    {
+        var at = new string('i', 100);
+        var over = new string('i', 101);
+        var (kept, _) = await SendAsync(Answer(() => Json(HttpStatusCode.Created, $"{{\"messageId\":\"{at}\",\"smsCount\":1}}")));
+        var (dropped, _) = await SendAsync(Answer(() => Json(HttpStatusCode.Created, $"{{\"messageId\":\"{over}\",\"smsCount\":1}}")));
+        var (longNumber, _) = await SendAsync(Answer(() => Json(HttpStatusCode.Created, $"{{\"messageId\":1{new string('0', 100)}}}")));
+
+        Assert.Equal(at, kept.MessageId);
+        Assert.True(dropped.Ok);
+        Assert.Null(dropped.MessageId);
+        Assert.Equal(1, dropped.SmsParts);
+        Assert.True(longNumber.Ok);
+        Assert.Null(longNumber.MessageId);
+    }
+
     [Theory]
     [InlineData(201, "")]
     [InlineData(201, "not json")]
@@ -413,10 +430,26 @@ public sealed class SmsSendTests(MigratedDatabaseFixture fixture)
     public async Task Blocked_addresses_and_tls_handshake_failures_are_known()
     {
         var (blocked, _) = await SendAsync(Throw(new HttpRequestException("x", new BlockedAddressException())));
-        var (tls, _) = await SendAsync(Throw(new HttpRequestException("x", new System.Security.Authentication.AuthenticationException("bad certificate"))));
+        var (handshake, _) = await SendAsync(Throw(new HttpRequestException(HttpRequestError.SecureConnectionError, "x", new System.Security.Authentication.AuthenticationException("bad certificate"))));
+        var (bare, _) = await SendAsync(Throw(new System.Security.Authentication.AuthenticationException("bad certificate")));
 
         AssertKnown(blocked, "sms.blocked_address");
-        AssertKnown(tls, "sms.certificate_untrusted");
+        AssertKnown(handshake, "sms.certificate_untrusted");
+        AssertKnown(bare, "sms.certificate_untrusted");
+    }
+
+    [Theory]
+    [InlineData(HttpRequestError.Unknown)]
+    [InlineData(HttpRequestError.ResponseEnded)]
+    [InlineData(HttpRequestError.InvalidResponse)]
+    public async Task A_tls_failure_outside_the_handshake_is_unknown(HttpRequestError error)
+    {
+        // For example a TLS failure while the answer is read: the request may already have been written.
+        var (direct, _) = await SendAsync(Throw(new HttpRequestException(error, "x", new System.Security.Authentication.AuthenticationException("tls failed"))));
+        var (nested, _) = await SendAsync(Throw(new HttpRequestException(error, "x", new IOException("read", new System.Security.Authentication.AuthenticationException("tls failed")))));
+
+        AssertUnknown(direct, "sms.connection_lost");
+        AssertUnknown(nested, "sms.connection_lost");
     }
 
     [Theory]
@@ -469,8 +502,32 @@ public sealed class SmsSendTests(MigratedDatabaseFixture fixture)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Bounded(SendAsync(Answer(() => Stalling(HttpStatusCode.Created)), Settings(timeoutSeconds: 30), ct: cts.Token)));
+        // No answer's headers yet: the caller's cancellation propagates.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Bounded(SendAsync(StallBeforeHeaders, Settings(timeoutSeconds: 30), ct: cts.Token)));
     }
+
+    [Fact]
+    public async Task Caller_cancellation_after_a_2xx_still_returns_sent()
+    {
+        // Brevo accepted the message (201 headers); the body then blocks until the token is cancelled. "Sent" must not be lost.
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+
+        var (result, handler) = await Bounded(SendAsync(Answer(() => Stalling(HttpStatusCode.Created)), Settings(timeoutSeconds: 30), ct: cts.Token));
+
+        Assert.True(cts.IsCancellationRequested);
+        Assert.True(result.Ok);
+        Assert.False(result.OutcomeUnknown);
+        Assert.Null(result.MessageId);
+        Assert.Null(result.SmsParts);
+        Assert.Single(handler.Requests);
+    }
+
+    private static readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> StallBeforeHeaders =
+        async (_, ct) =>
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            return Json(HttpStatusCode.Created, "{}");
+        };
 
     // ---------------------------------------------------------------- the service
 
@@ -524,6 +581,12 @@ public sealed class SmsSendTests(MigratedDatabaseFixture fixture)
     [InlineData("3570", "35799000000")]   // the number must START with the whole prefix
     [InlineData("99", "35799000000")]     // a prefix inside the number is not a match
     [InlineData("1", "35799000000")]
+    // Stored garbage (the save rules would refuse it) never allows a number: only 1..4 ASCII digits not starting with 0 count.
+    [InlineData("35a,+357,0357,35700,, ,00357,٣٥٧", "35799000000")]
+    [InlineData("35a,+357,0357,35700,, ,00357,٣٥٧", "35700123456")]
+    [InlineData("+357", "35799000000")]
+    [InlineData("35700", "35700123456")]
+    [InlineData("3 5 7", "35799000000")]
     public async Task Countries_not_allowed_are_refused_before_decrypting(string prefixes, string recipient)
     {
         var key = await CreateConnectionAsync(prefixes: prefixes);
@@ -630,7 +693,11 @@ public sealed class SmsSendTests(MigratedDatabaseFixture fixture)
         Assert.Single(handler3.Requests);
     }
 
-    public static TheoryData<string> InvalidTexts => ["", "   ", "a\u0000b", "a\tb", "a\rb", "a\ud800b", "a\u0085b", new string('a', 481)];
+    public static TheoryData<string> InvalidTexts =>
+    [
+        "", "   ", "a\u0000b", "a\tb", "a\rb", "a\ud800b", "a\u0085b", new string('a', 481),
+        "Pay at bank.example‮moc.live", "a​b", "a﻿b", "a⁦b⁩", "a­b", // invisible / bidi characters can disguise a link
+    ];
 
     [Theory]
     [MemberData(nameof(InvalidTexts), DisableDiscoveryEnumeration = true)] // a lone surrogate must not go through discovery serialisation
@@ -747,7 +814,7 @@ public sealed class SmsSendTests(MigratedDatabaseFixture fixture)
     {
         var key = await CreateConnectionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
-        var handler = new FakeHandler(Answer(() => Stalling(HttpStatusCode.Created)));
+        var handler = new FakeHandler(StallBeforeHeaders);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Bounded(RunAsync(Request(key), new HttpSmsSender(() => handler), ct: cts.Token)));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => RunAsync(Request(key), new ThrowingSender(new OperationCanceledException()), ct: new CancellationToken(true)));
@@ -813,5 +880,14 @@ public sealed class SmsSendTests(MigratedDatabaseFixture fixture)
         var send = Assert.Single(services, d => d.ServiceType == typeof(ISmsSend));
         Assert.Equal(ServiceLifetime.Scoped, send.Lifetime);
         Assert.Equal(typeof(SmsSendService), send.ImplementationType);
+    }
+
+    [Fact]
+    public void Only_ISmsSend_is_public_so_nothing_can_send_around_its_checks()
+    {
+        Assert.True(typeof(ISmsSend).IsPublic);
+        Assert.False(typeof(ISmsSender).IsPublic);
+        Assert.False(typeof(SmsSendService).IsPublic);
+        Assert.False(typeof(HttpSmsSender).IsPublic);
     }
 }

@@ -242,7 +242,8 @@ public static partial class SmsRules
     /// <summary>
     /// The text rules of a message: not empty or only white space, at most <see cref="MaxTextLength"/> characters, no control characters except a line
     /// feed (a carriage return is accepted only right before a line feed, and the pair becomes one line feed), no lone surrogate (a half of a UTF-16 pair,
-    /// which can't be encoded). <paramref name="normalised"/> is the text with CR LF turned into LF.
+    /// which can't be encoded), no invisible format character except the zero-width joiner (see <see cref="IsHiddenFormat"/>). Pure; shared with the
+    /// Send SMS step's template rules. <paramref name="normalised"/> is the text with CR LF turned into LF (empty when refused).
     /// </summary>
     public static bool TryNormaliseText(string? text, out string normalised)
     {
@@ -263,14 +264,15 @@ public static partial class SmsRules
             var c = value[i];
             if (char.IsHighSurrogate(c))
             {
-                if (i + 1 >= value.Length || !char.IsLowSurrogate(value[i + 1]))
+                if (i + 1 >= value.Length || !char.IsLowSurrogate(value[i + 1])
+                    || System.Globalization.CharUnicodeInfo.GetUnicodeCategory(char.ConvertToUtf32(c, value[i + 1])) == System.Globalization.UnicodeCategory.Format)
                 {
-                    return false;
+                    return false; // a lone half, or an invisible format character outside the basic plane (such as a TAG character)
                 }
 
                 i++; // a complete pair
             }
-            else if (char.IsLowSurrogate(c) || (char.IsControl(c) && c != '\n'))
+            else if (char.IsLowSurrogate(c) || (char.IsControl(c) && c != '\n') || IsHiddenFormat(c))
             {
                 return false;
             }
@@ -279,6 +281,13 @@ public static partial class SmsRules
         normalised = value;
         return true;
     }
+
+    /// <summary>
+    /// An invisible format character (Unicode category Cf): bidi overrides and isolates, LRM / RLM, zero-width space, word joiner, BOM, soft hyphen and
+    /// the like. They can disguise a link in a bank's SMS, so they are refused. The zero-width joiner U+200D is kept: emoji sequences need it.
+    /// </summary>
+    private static bool IsHiddenFormat(char c) =>
+        c != '‍' && System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Format;
 
     /// <summary>The tag Verso sends with a message: 1 to 24 ASCII letters, digits and dashes (Brevo documents a tag but not its limits).</summary>
     public static bool IsValidTag(string? tag) => tag is not null && TagRegex().IsMatch(tag);

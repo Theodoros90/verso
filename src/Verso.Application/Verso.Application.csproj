@@ -7,4 +7,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- ISmsSender / SmsSendService are internal so nothing can send an SMS around ISmsSend's checks: only the registration and the tests see them. -->
+    <InternalsVisibleTo Include="Verso.Infrastructure" />
+    <InternalsVisibleTo Include="Verso.Api.Tests" />
+  </ItemGroup>
 </Project>

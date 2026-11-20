@@ -66,6 +66,51 @@ public sealed class SmsTextRulesTests
         Assert.False(SmsRules.TryNormaliseText(text, out _));
     }
 
+    [Theory]
+    [InlineData("‪")] // LRE
+    [InlineData("‫")] // RLE
+    [InlineData("‬")] // PDF
+    [InlineData("‭")] // LRO
+    [InlineData("‮")] // RLO
+    [InlineData("⁦")] // LRI
+    [InlineData("⁧")] // RLI
+    [InlineData("⁨")] // FSI
+    [InlineData("⁩")] // PDI
+    [InlineData("‎")] // LRM
+    [InlineData("‏")] // RLM
+    [InlineData("​")] // zero-width space
+    [InlineData("⁠")] // word joiner
+    [InlineData("﻿")] // byte order mark / zero-width no-break space
+    [InlineData("­")] // soft hyphen
+    [InlineData("؜")] // Arabic letter mark
+    public void Invisible_format_characters_are_refused(string character)
+    {
+        Assert.False(SmsRules.TryNormaliseText("Visit bank" + character + ".example 35799000000", out var normalised));
+        Assert.Equal("", normalised); // nothing of the text (or the number in it) comes back
+    }
+
+    public static TheoryData<string> AcceptedUnicode =>
+    [
+        "\U0001F468‍\U0001F469‍\U0001F467", // a family emoji: joined with ZWJ
+        "❤️",                               // a heart with the emoji variation selector
+        "Γεια σου",  // Greek
+        "\U0001F44D\U0001F3FD",                        // a skin-tone modifier
+    ];
+
+    [Theory]
+    [MemberData(nameof(AcceptedUnicode), DisableDiscoveryEnumeration = true)]
+    public void Emoji_sequences_and_other_scripts_are_accepted(string text)
+    {
+        Assert.True(SmsRules.TryNormaliseText(text, out var normalised));
+        Assert.Equal(text, normalised);
+    }
+
+    [Fact]
+    public void A_format_character_outside_the_basic_plane_is_refused()
+    {
+        Assert.False(SmsRules.TryNormaliseText("a\U000E0041b", out _)); // a TAG character: invisible
+    }
+
     [Fact]
     public void The_text_may_be_at_most_480_characters()
     {
