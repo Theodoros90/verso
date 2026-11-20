@@ -37,9 +37,11 @@ public sealed class ApiFetchService(IVersoDbContext db, ISecretProtector secrets
             return ApiFetchResult.Failure("api.connection_unavailable", retryable: false);
         }
 
-        if (!ApiUrls.IsValidBaseUrl(connection.BaseUrl))
+        // A stored address the save rules would refuse is never used, whatever AllowedHosts says (the token endpoint receives the client id and secret).
+        if (!ApiUrls.IsValidBaseUrl(connection.BaseUrl)
+            || (connection.AuthType == ApiAuthTypes.OAuthClientCredentials && !ApiUrls.IsValidTokenUrl(connection.TokenUrl)))
         {
-            return ApiFetchResult.Failure("api.bad_request", retryable: false); // a stored address the save rules would refuse: never sent
+            return ApiFetchResult.Failure("api.bad_request", retryable: false);
         }
 
         if (!HostsAllowed(connection))

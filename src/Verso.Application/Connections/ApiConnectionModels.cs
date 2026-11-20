@@ -22,7 +22,15 @@ public sealed record ApiConnectionTestDto(
 
 /// <summary>What the Worker needs to call the API, secret decrypted in memory only.</summary>
 public sealed record ApiConnectionSettings(
-    string BaseUrl, string TestPath, string AuthType, string AuthName, string Secret, string TokenUrl, string Scope, TimeSpan Timeout);
+    string BaseUrl, string TestPath, string AuthType, string AuthName, string Secret, string TokenUrl, string Scope, TimeSpan Timeout)
+{
+    /// <summary>Holds the secret and the addresses: ToString shows only the authentication kind and the timeout.</summary>
+    private bool PrintMembers(System.Text.StringBuilder builder)
+    {
+        builder.Append(System.Globalization.CultureInfo.InvariantCulture, $"AuthType = {AuthType}, Timeout = {Timeout}, addresses, names and secret redacted");
+        return true;
+    }
+}
 
 /// <summary>The outcome of one test request. The body is never kept: only the status, the time, the content type and the size.</summary>
 public sealed record ApiProbeResult(bool Ok, string? Code, string? Message, int? HttpStatus, int? ElapsedMs, string? ContentType, long? ResponseBytes)

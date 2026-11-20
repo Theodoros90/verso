@@ -134,6 +134,44 @@ public sealed class ApiFetchTests(MigratedDatabaseFixture fixture)
 
     private static Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> Answer(Func<HttpResponseMessage> make) => (_, _) => Task.FromResult(make());
 
+    /// <summary>A body that never arrives: every read waits until its token is cancelled.</summary>
+    private sealed class StallingStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => 0; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException("synchronous read");
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return 0;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    }
+
+    private static HttpResponseMessage StallingJson()
+    {
+        var content = new StreamContent(new StallingStream());
+        content.Headers.ContentType = new("application/json");
+        return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+    }
+
+    /// <summary>Fails the test instead of hanging the suite if <paramref name="task"/> does not finish within <paramref name="seconds"/>.</summary>
+    private static async Task<T> Bounded<T>(Task<T> task, int seconds = 20)
+    {
+        Assert.Same(task, await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(seconds))));
+        return await task;
+    }
+
     [Fact]
     public async Task Sends_one_GET_to_base_plus_path_with_encoded_query()
     {
@@ -638,6 +676,139 @@ public sealed class ApiFetchTests(MigratedDatabaseFixture fixture)
 
         var thrown = await RunAsync(request, new ThrowingSender(new InvalidOperationException($"{BaseUrl}?api_key={Secret}")));
         Assert.DoesNotContain(Secret, JsonSerializer.Serialize(thrown), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_body_that_stalls_after_the_headers_is_a_retryable_timeout()
+    {
+        var key = await CreateConnectionAsync();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        var (result, _) = await Bounded(FetchAsync(Request(key, timeoutSeconds: 1), Answer(StallingJson)));
+
+        Assert.Equal("api.timeout", result.Code);
+        Assert.True(result.Retryable);
+        Assert.InRange(clock.Elapsed.TotalSeconds, 0.9, 10);
+    }
+
+    [Fact]
+    public async Task A_token_endpoint_that_stalls_after_the_headers_is_a_timeout_and_the_api_is_never_called()
+    {
+        var key = await CreateConnectionAsync("OAuthClientCredentials", "c", "s", tokenUrl: "https://auth.fetch-host.example/token");
+
+        var (result, handler) = await Bounded(FetchAsync(Request(key, timeoutSeconds: 1), Answer(StallingJson)));
+
+        Assert.Equal("api.timeout", result.Code);
+        Assert.True(result.Retryable);
+        Assert.Equal(HttpMethod.Post, Assert.Single(handler.Requests).Method);
+    }
+
+    [Fact]
+    public async Task Token_request_and_get_share_one_timeout()
+    {
+        // Each call alone stays under the 2-second timeout; together they exceed it.
+        var key = await CreateConnectionAsync("OAuthClientCredentials", "c", "s", tokenUrl: "https://auth.fetch-host.example/token");
+
+        var (result, handler) = await Bounded(FetchAsync(Request(key, timeoutSeconds: 2), async (request, ct) =>
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(1400), ct);
+            return request.Method == HttpMethod.Post ? Json("{\"access_token\":\"t\"}") : Json();
+        }));
+
+        Assert.Equal("api.timeout", result.Code);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_during_the_body_read_propagates()
+    {
+        var key = await CreateConnectionAsync();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Bounded(FetchAsync(Request(key, timeoutSeconds: 30), Answer(StallingJson), ct: cts.Token)));
+    }
+
+    [Theory]
+    [InlineData("http://auth.fetch-host.example/token")]
+    [InlineData("")]
+    [InlineData("auth/token")]
+    [InlineData("/token")]
+    [InlineData("https://user:pw@auth.fetch-host.example/token")]
+    public async Task OAuth_token_address_is_revalidated_before_anything(string tokenUrl)
+    {
+        var key = await CreateConnectionAsync("OAuthClientCredentials", "c", Secret, tokenUrl: tokenUrl);
+        var wrongKey = new AesGcmSecretProtector(AesGcmSecretProtector.GenerateKey()); // a decrypt would give secret_unreadable
+
+        var (result, handler) = await FetchAsync(Request(key), protector: wrongKey);
+
+        Assert.Equal("api.bad_request", result.Code);
+        Assert.False(result.Retryable);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Theory]
+    [InlineData("http://auth.fetch-host.example/token")]
+    [InlineData("")]
+    [InlineData("https://user:pw@auth.fetch-host.example/token")]
+    public async Task The_sender_refuses_a_token_address_that_is_not_plain_https(string tokenUrl)
+    {
+        var handler = new FakeHandler(Answer(() => Json("{\"access_token\":\"t\"}")));
+        var settings = new ApiConnectionSettings(BaseUrl, "/status", "OAuthClientCredentials", "c", "s", tokenUrl, "", TimeSpan.FromSeconds(5));
+
+        var result = await new HttpApiFetchSender(() => handler).SendAsync(settings, Request("k"), CancellationToken.None);
+
+        Assert.Equal("api.bad_request", result.Code);
+        Assert.False(result.Retryable);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task A_json_answer_starting_with_a_utf8_bom_is_accepted()
+    {
+        var key = await CreateConnectionAsync();
+
+        var (result, _) = await FetchAsync(Request(key), Answer(() =>
+        {
+            var content = new ByteArrayContent([0xEF, 0xBB, 0xBF, .. "{\"rate\":2}"u8.ToArray()]);
+            content.Headers.ContentType = new("application/json");
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        }));
+
+        Assert.True(result.Found, result.Code);
+        Assert.Equal(2, result.Body!.Value.GetProperty("rate").GetInt32());
+    }
+
+    [Fact]
+    public async Task An_address_that_cannot_be_built_is_a_bad_request_not_a_retry()
+    {
+        var key = await CreateConnectionAsync();
+
+        var (result, handler) = await FetchAsync(Request(key, query: [new("q", "a\uD800b")])); // a lone surrogate can't be URL-encoded
+
+        Assert.Equal("api.bad_request", result.Code);
+        Assert.False(result.Retryable);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public void Records_never_print_secrets_values_or_answers()
+    {
+        const string marker = "printed-marker-99";
+        var request = new ApiFetchRequest("conn", "/accounts/" + marker, [new("holder", marker)], 1024, TimeSpan.FromSeconds(5));
+        var settings = new ApiConnectionSettings($"https://{Host}/{marker}", "/status?" + marker, "Bearer", marker, Secret, "https://auth.example/" + marker, marker, TimeSpan.FromSeconds(5));
+        using var doc = JsonDocument.Parse($"{{\"v\":\"{marker}\"}}");
+        var result = ApiFetchResult.Success(200, doc.RootElement.Clone(), 20, 5);
+
+        foreach (var text in new[] { request.ToString(), settings.ToString(), result.ToString() })
+        {
+            Assert.DoesNotContain(marker, text, StringComparison.Ordinal);
+            Assert.DoesNotContain(Secret, text, StringComparison.Ordinal);
+            Assert.DoesNotContain(Host, text, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("conn", request.ToString(), StringComparison.Ordinal);
+        Assert.Contains("Bearer", settings.ToString(), StringComparison.Ordinal);
+        Assert.Contains("200", result.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

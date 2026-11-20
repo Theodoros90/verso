@@ -15,13 +15,21 @@ namespace Verso.Infrastructure.Connections;
 /// </summary>
 public sealed class HttpApiFetchSender(Func<HttpMessageHandler>? handlerFactory = null) : IApiFetchSender
 {
+    private static readonly System.Text.UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
     public async Task<ApiFetchResult> SendAsync(ApiConnectionSettings settings, ApiFetchRequest request, CancellationToken ct)
     {
         var clock = Stopwatch.StartNew();
-        if (BuildUri(settings, request) is not { } uri)
+        if (TryBuildUri(settings, request) is not { } uri
+            || (settings.AuthType == ApiAuthTypes.OAuthClientCredentials && !IsPlainHttps(settings.TokenUrl)))
         {
             return ApiFetchResult.Failure("api.bad_request", retryable: false);
         }
+
+        // ONE deadline for the whole call: the token request, the GET and the body reads (HttpClient.Timeout alone stops at the response headers).
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(request.Timeout);
+        var token = deadline.Token;
 
         using var http = new HttpClient(handlerFactory?.Invoke() ?? ApiHttp.CreateHandler(request.Timeout)) { Timeout = request.Timeout };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Verso-fetch/1.0");
@@ -30,7 +38,7 @@ public sealed class HttpApiFetchSender(Func<HttpMessageHandler>? handlerFactory 
             string? bearer = null;
             if (settings.AuthType == ApiAuthTypes.OAuthClientCredentials)
             {
-                bearer = await ApiHttp.RequestTokenAsync(http, settings, ct);
+                bearer = await ApiHttp.RequestTokenAsync(http, settings, token);
                 if (bearer is null)
                 {
                     return Fail("api.token_failed", null, clock);
@@ -41,7 +49,7 @@ public sealed class HttpApiFetchSender(Func<HttpMessageHandler>? handlerFactory 
             message.Headers.Accept.ParseAdd("application/json");
             ApiHttp.ApplyAuth(message, settings, bearer);
 
-            using var response = await http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var response = await http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token);
             var status = (int)response.StatusCode;
             if (status == 404)
             {
@@ -53,7 +61,7 @@ public sealed class HttpApiFetchSender(Func<HttpMessageHandler>? handlerFactory 
                 return Fail(ApiHttp.CodeForStatus(status), status, clock); // a 3xx is never followed: the handler does not redirect
             }
 
-            return await ReadJsonAsync(response, status, request.MaxResponseBytes, clock, ct);
+            return await ReadJsonAsync(response, status, request.MaxResponseBytes, clock, token);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -61,7 +69,8 @@ public sealed class HttpApiFetchSender(Func<HttpMessageHandler>? handlerFactory 
         }
         catch (Exception ex) when (ex is HttpRequestException or SocketException or AuthenticationException or BlockedAddressException or InvalidOperationException or UriFormatException or IOException)
         {
-            return Fail(ApiHttp.CodeForException(ex), null, clock);
+            ct.ThrowIfCancellationRequested(); // a cancelled read can surface as an IOException: the caller's cancellation still propagates
+            return Fail(deadline.IsCancellationRequested ? "api.timeout" : ApiHttp.CodeForException(ex), null, clock);
         }
     }
 
@@ -69,6 +78,22 @@ public sealed class HttpApiFetchSender(Func<HttpMessageHandler>? handlerFactory 
     /// Base + path, then each query pair encoded, then the API key for the "query" kind. Null when the result is not an absolute https address on the base's
     /// host and port without user info or fragment (defence in depth: the service has checked the path already, but no path may ever move the host).
     /// </summary>
+    internal static Uri? TryBuildUri(ApiConnectionSettings settings, ApiFetchRequest request)
+    {
+        try
+        {
+            return BuildUri(settings, request);
+        }
+        catch (Exception ex) when (ex is UriFormatException or ArgumentException or FormatException)
+        {
+            return null; // for example a value with a lone surrogate, which can't be URL-encoded: a bad request, never a retry
+        }
+    }
+
+    /// <summary>An absolute https address with a host and no user info (the token endpoint receives the client id and secret).</summary>
+    internal static bool IsPlainHttps(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && uri.Host.Length > 0 && uri.UserInfo.Length == 0;
+
     internal static Uri? BuildUri(ApiConnectionSettings settings, ApiFetchRequest request)
     {
         if (!Uri.TryCreate(settings.BaseUrl, UriKind.Absolute, out var baseUri) || baseUri.Scheme != Uri.UriSchemeHttps
@@ -80,6 +105,9 @@ public sealed class HttpApiFetchSender(Func<HttpMessageHandler>? handlerFactory 
         var url = ApiUrls.Combine(settings.BaseUrl, path);
         foreach (var (name, value) in request.Query)
         {
+            // Uri.EscapeDataString silently replaces a lone surrogate; the strict encoder throws instead (caught by TryBuildUri), so a value is never altered.
+            StrictUtf8.GetByteCount(name);
+            StrictUtf8.GetByteCount(value);
             url = ApiHttp.AppendQuery(url, name, value);
         }
 
@@ -136,7 +164,13 @@ public sealed class HttpApiFetchSender(Func<HttpMessageHandler>? handlerFactory 
 
         try
         {
-            using var document = JsonDocument.Parse(buffer.GetBuffer().AsMemory(0, (int)buffer.Length));
+            var bytes = buffer.GetBuffer().AsMemory(0, (int)buffer.Length);
+            if (bytes.Span.StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF]))
+            {
+                bytes = bytes[3..]; // a UTF-8 byte order mark is not part of the JSON
+            }
+
+            using var document = JsonDocument.Parse(bytes);
             return ApiFetchResult.Success(status, document.RootElement.Clone(), buffer.Length, clock.ElapsedMilliseconds);
         }
         catch (JsonException)

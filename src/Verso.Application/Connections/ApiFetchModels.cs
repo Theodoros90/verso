@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 
 namespace Verso.Application.Connections;
@@ -6,7 +8,15 @@ namespace Verso.Application.Connections;
 /// One GET of the Fetch from API step. <see cref="Path"/> is already resolved and URL-encoded piece by piece (it starts with a single "/" and has no query
 /// or fragment); <see cref="Query"/> pairs are raw (the sender encodes names and values). The host is never part of the request: the connection fixes it.
 /// </summary>
-public sealed record ApiFetchRequest(string ConnectionKey, string Path, IReadOnlyList<KeyValuePair<string, string>> Query, int MaxResponseBytes, TimeSpan Timeout);
+public sealed record ApiFetchRequest(string ConnectionKey, string Path, IReadOnlyList<KeyValuePair<string, string>> Query, int MaxResponseBytes, TimeSpan Timeout)
+{
+    /// <summary>The path and query carry run-data values: never printed (a record's ToString would otherwise list them).</summary>
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append(CultureInfo.InvariantCulture, $"ConnectionKey = {ConnectionKey}, Path = [redacted], Query = [{Query?.Count ?? 0} value(s) redacted], MaxResponseBytes = {MaxResponseBytes}, Timeout = {Timeout}");
+        return true;
+    }
+}
 
 /// <summary>
 /// The outcome of a fetch. <see cref="Body"/> is the parsed JSON answer (it owns its memory) and is the only place the answer appears: callers merge it into
@@ -26,6 +36,13 @@ public sealed record ApiFetchResult(string? Code, string? Message, bool Retryabl
 
     /// <summary>A GET is safe to repeat: only timeouts, connection failures, HTTP 5xx and 429 are worth another attempt.</summary>
     public static bool IsRetryable(string code) => code is "api.timeout" or "api.unreachable" or "api.server_error" or "api.rate_limited";
+
+    /// <summary>The answer is third-party data: ToString shows only its kind.</summary>
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append(CultureInfo.InvariantCulture, $"Code = {Code}, Retryable = {Retryable}, HttpStatus = {HttpStatus}, Body = {(Body is { } b ? $"[{b.ValueKind} redacted]" : "null")}, ResponseBytes = {ResponseBytes}, DurationMs = {DurationMs}");
+        return true;
+    }
 }
 
 /// <summary>Worker side of the Fetch from API step: resolves the connection and sends one GET (Worker only).</summary>
