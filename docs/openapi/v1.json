@@ -126,6 +126,29 @@
         }
       }
     },
+    "/api/v1/api-connection-options": {
+      "get": {
+        "tags": [
+          "API connections"
+        ],
+        "operationId": "ListApiConnectionOptions",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiConnectionOptionDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/templates/{id}/draft/preview/pdf": {
       "post": {
         "tags": [
@@ -4393,6 +4416,25 @@
           }
         }
       },
+      "ApiConnectionOptionDto": {
+        "required": [
+          "key",
+          "name",
+          "host"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          }
+        }
+      },
       "ApiConnectionTestDto": {
         "required": [
           "id",
@@ -8363,6 +8405,9 @@
       "name": "Database connections"
     },
     {
+      "name": "API connections"
+    },
+    {
       "name": "Templates"
     },
     {
@@ -8376,9 +8421,6 @@
     },
     {
       "name": "Document categories"
-    },
-    {
-      "name": "API connections"
     },
     {
       "name": "SMS connections"

@@ -63,6 +63,73 @@ public sealed class ApiConnectionApiTests(MigratedDatabaseFixture fixture) : IDi
         await (await _client.GetAsync($"/api/v1/api-connections/tests/{testId}")).Content.ReadFromJsonAsync<JsonElement>();
 
     [Fact]
+    public async Task Options_ListActiveConnectionsOnly_ByName_WithNothingButKeyNameAndHost()
+    {
+        var active = "aaa-" + UniqueKey();
+        var inactive = UniqueKey();
+        var later = "zzz-" + UniqueKey();
+        await CreateAsync(later);
+        await CreateAsync(active);
+        var inactiveId = (await CreateAsync(inactive)).GetProperty("id").GetGuid();
+        Assert.Equal(HttpStatusCode.OK, (await _client.PostAsync($"/api/v1/api-connections/{inactiveId}/deactivate", null)).StatusCode);
+
+        using var author = fixture.Factory.CreateClientAs("dev.workflow-author");
+        var response = await author.GetAsync("/api/v1/api-connection-options");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var text = await response.Content.ReadAsStringAsync();
+        var options = JsonSerializer.Deserialize<JsonElement>(text).EnumerateArray().ToList();
+        Assert.Contains(options, o => o.GetProperty("key").GetString() == active);
+        Assert.DoesNotContain(options, o => o.GetProperty("key").GetString() == inactive);
+        var option = options.Single(o => o.GetProperty("key").GetString() == active);
+        Assert.Equal(["host", "key", "name"], option.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(Host, option.GetProperty("host").GetString());
+        Assert.Equal("API " + active, option.GetProperty("name").GetString());
+        foreach (var leak in new[] { Secret, "https://", "/status", "/v1", "Bearer", "baseUrl", "testPath", "authType", "token", "secret" })
+        {
+            Assert.DoesNotContain(leak, text, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var keys = options.Select(o => o.GetProperty("key").GetString()).ToList();
+        Assert.True(keys.IndexOf(active) < keys.IndexOf(later));
+    }
+
+    [Fact]
+    public async Task Options_ShowTheHostInLowerCase()
+    {
+        var key = UniqueKey();
+        var response = await _client.PostAsJsonAsync("/api/v1/api-connections", Body(key, "None", null, baseUrl: "https://API.Mixed-Case.Example/v1"));
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        using var author = fixture.Factory.CreateClientAs("dev.workflow-author");
+        var options = (await author.GetFromJsonAsync<JsonElement>("/api/v1/api-connection-options")).EnumerateArray().ToList();
+
+        Assert.Equal("api.mixed-case.example", options.Single(o => o.GetProperty("key").GetString() == key).GetProperty("host").GetString());
+    }
+
+    [Fact]
+    public async Task Options_NeedSignIn_AndAWorkflowEditorRole_WhileTheConnectionsStayAdministratorsOnly()
+    {
+        using var anonymous = fixture.Factory.CreateClientAs(null);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/v1/api-connection-options")).StatusCode);
+
+        foreach (var user in new[] { "dev.viewer", "dev.template-author", "dev.auditor", "dev.operator" })
+        {
+            using var other = fixture.Factory.CreateClientAs(user);
+            Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync("/api/v1/api-connection-options")).StatusCode);
+        }
+
+        foreach (var user in new[] { "dev.workflow-author", "dev.admin" })
+        {
+            using var editor = fixture.Factory.CreateClientAs(user);
+            Assert.Equal(HttpStatusCode.OK, (await editor.GetAsync("/api/v1/api-connection-options")).StatusCode);
+        }
+
+        using var author = fixture.Factory.CreateClientAs("dev.workflow-author");
+        Assert.Equal(HttpStatusCode.Forbidden, (await author.GetAsync("/api/v1/api-connections")).StatusCode);
+    }
+
+    [Fact]
     public async Task TheFrankfurterExample_NeedsNoKey_AndIsAccepted()
     {
         var response = await _client.PostAsJsonAsync("/api/v1/api-connections", new

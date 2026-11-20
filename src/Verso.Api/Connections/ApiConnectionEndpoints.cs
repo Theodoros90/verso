@@ -65,6 +65,13 @@ public static class ApiConnectionEndpoints
             .Produces<ApiConnectionTestDto>()
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+        // Workflow authors pick a connection by name in the Fetch from API step: key, name and host only, for people who may edit workflows.
+        app.MapGet("/api/v1/api-connection-options", async (ApiConnectionService service, CancellationToken ct) => Results.Ok(await service.ListOptionsAsync(ct)))
+            .WithTags("API connections")
+            .RequireAuthorization(Policies.WorkflowAuthoring)
+            .WithName("ListApiConnectionOptions")
+            .Produces<IReadOnlyList<ApiConnectionOptionDto>>();
+
         return app;
     }
 }

@@ -18,6 +18,12 @@ export interface ApiConnectionDto {
   updatedBy: string
 }
 
+export interface ApiConnectionOptionDto {
+  key: string
+  name: string
+  host: string
+}
+
 export interface ApiConnectionTestDto {
   id: string
   connectionKey: string
