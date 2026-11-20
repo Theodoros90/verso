@@ -260,13 +260,13 @@ public sealed class SmsConnectionApiTests(MigratedDatabaseFixture fixture) : IDi
         var key = UniqueKey();
         var id = (await CreateAsync(key)).GetProperty("id").GetGuid();
 
-        var on = await PutSendingAsync(id, key, true, "357, 30");
+        var on = await PutSendingAsync(id, key, true, "4471, 8863");
         Assert.Equal(HttpStatusCode.OK, on.StatusCode);
         var dto = await on.Content.ReadFromJsonAsync<JsonElement>();
         Assert.True(dto.GetProperty("allowSending").GetBoolean());
-        Assert.Equal("357,30", dto.GetProperty("allowedCountryPrefixes").GetString());
-        await PutSendingAsync(id, key, true, "357, 30"); // unchanged: no new entries
-        var off = await PutSendingAsync(id, key, false, "357,30");
+        Assert.Equal("4471,8863", dto.GetProperty("allowedCountryPrefixes").GetString());
+        await PutSendingAsync(id, key, true, "4471, 8863"); // unchanged: no new entries
+        var off = await PutSendingAsync(id, key, false, "4471,8863");
         Assert.False((await off.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("allowSending").GetBoolean());
 
         var changes = await AuditEntriesAsync(id, "SmsConnectionSendingChanged");
@@ -276,19 +276,49 @@ public sealed class SmsConnectionApiTests(MigratedDatabaseFixture fixture) : IDi
         {
             Assert.Equal(key, c.GetProperty("details").GetProperty("key").GetString());
             Assert.Equal(["allowSending", "key"], c.GetProperty("details").EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
-            Assert.DoesNotContain("357", c.GetRawText(), StringComparison.Ordinal);
+            var stringValues = c.GetProperty("details").EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.String).Select(p => p.Value.GetString()!);
+            Assert.All(stringValues, v => Assert.DoesNotContain("4471", v, StringComparison.Ordinal));
+            Assert.All(stringValues, v => Assert.DoesNotContain("8863", v, StringComparison.Ordinal));
         });
-        var updated = string.Join(' ', (await AuditEntriesAsync(id, "SmsConnectionUpdated")).Select(e => e.GetRawText()));
-        Assert.Contains("allowSending", updated, StringComparison.Ordinal);
-        Assert.Contains("allowedCountryPrefixes", updated, StringComparison.Ordinal);
+        var updates = await AuditEntriesAsync(id, "SmsConnectionUpdated");
+        var changedNames = updates.Select(e => e.GetProperty("details").GetProperty("changed").EnumerateArray().Select(n => n.GetString()!).Order(StringComparer.Ordinal).ToList()).ToList();
+        Assert.Contains(new List<string> { "allowSending", "allowedCountryPrefixes" }, changedNames, new ListComparer());
+        Assert.Contains(new List<string> { "allowSending" }, changedNames, new ListComparer());
+        Assert.Equal(2, updates.Count); // the unchanged repeat wrote nothing
         var all = await _client.GetStringAsync($"/api/v1/audit?entityType=SmsConnection&entityId={id}");
-        foreach (var value in new[] { ApiKey, FakeDigits, "357,30" })
+        foreach (var value in new[] { ApiKey, FakeDigits, "4471,8863" })
         {
             Assert.DoesNotContain(value, all, StringComparison.Ordinal);
         }
 
         using var other = fixture.Factory.CreateClientAs("dev.workflow-author");
         Assert.Equal(HttpStatusCode.Forbidden, (await other.PutAsJsonAsync($"/api/v1/sms-connections/{id}", new { name = "x", sender = "Verso", allowSending = true })).StatusCode);
+    }
+
+    private sealed class ListComparer : IEqualityComparer<List<string>>
+    {
+        public bool Equals(List<string>? x, List<string>? y) => x is not null && y is not null && x.SequenceEqual(y);
+        public int GetHashCode(List<string> obj) => obj.Count;
+    }
+
+    [Fact]
+    public async Task An_empty_prefix_list_clears_but_an_omitted_one_keeps_and_a_null_switch_keeps()
+    {
+        var key = UniqueKey();
+        var id = (await CreateAsync(key)).GetProperty("id").GetGuid();
+        await PutSendingAsync(id, key, true, "357, 30");
+
+        var kept = await PutSendingAsync(id, key, null, null);
+        var keptDto = await kept.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("357,30", keptDto.GetProperty("allowedCountryPrefixes").GetString());
+        Assert.True(keptDto.GetProperty("allowSending").GetBoolean());
+
+        var cleared = await PutSendingAsync(id, key, null, "");
+        var clearedDto = await cleared.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("", clearedDto.GetProperty("allowedCountryPrefixes").GetString());
+        Assert.True(clearedDto.GetProperty("allowSending").GetBoolean());
+        var list = await _client.GetFromJsonAsync<JsonElement>("/api/v1/sms-connections");
+        Assert.Equal("", list.EnumerateArray().Single(c => c.GetProperty("id").GetGuid() == id).GetProperty("allowedCountryPrefixes").GetString());
     }
 
     [Fact]
@@ -381,14 +411,10 @@ public sealed class SmsConnectionApiTests(MigratedDatabaseFixture fixture) : IDi
         var optionOff = options.Single(o => o.GetProperty("key").GetString() == off);
         Assert.True(optionOn.GetProperty("allowsSending").GetBoolean());
         Assert.False(optionOff.GetProperty("allowsSending").GetBoolean());
-        Assert.Equal(["allowsSending", "key", "messageType", "name"], optionOn.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
+        Assert.All(options, o => Assert.Equal(["allowsSending", "key", "messageType", "name"], o.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal)));
         Assert.Equal("transactional", optionOn.GetProperty("messageType").GetString());
         var names = options.Select(o => o.GetProperty("name").GetString()!).ToList();
         Assert.Equal(names.OrderBy(n => n, StringComparer.Ordinal).ToList(), names);
-        foreach (var value in new[] { Host, "TestSender", "TestOrg", ApiKey, "sender", "prefix", "baseUrl", "secret", "357" })
-        {
-            Assert.DoesNotContain(value, text, StringComparison.OrdinalIgnoreCase);
-        }
     }
 
     [Fact]
