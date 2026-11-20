@@ -706,12 +706,12 @@ public sealed class ApiFetchTests(MigratedDatabaseFixture fixture)
     [Fact]
     public async Task Token_request_and_get_share_one_timeout()
     {
-        // Each call alone stays under the 2-second timeout; together they exceed it.
+        // Each call alone stays under the 3-second timeout (1.8 s); together (3.6 s) they exceed it, with a 1.2 s margin each way.
         var key = await CreateConnectionAsync("OAuthClientCredentials", "c", "s", tokenUrl: "https://auth.fetch-host.example/token");
 
-        var (result, handler) = await Bounded(FetchAsync(Request(key, timeoutSeconds: 2), async (request, ct) =>
+        var (result, handler) = await Bounded(FetchAsync(Request(key, timeoutSeconds: 3), async (request, ct) =>
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(1400), ct);
+            await Task.Delay(TimeSpan.FromMilliseconds(1800), ct);
             return request.Method == HttpMethod.Post ? Json("{\"access_token\":\"t\"}") : Json();
         }));
 

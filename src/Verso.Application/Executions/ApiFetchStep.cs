@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Verso.Application.Connections;
 using Verso.Rendering.Binding;
 
 namespace Verso.Application.Executions;
@@ -311,6 +312,19 @@ public static partial class ApiPathTemplate
                     field = names.Count == 0 ? "path" : names[0],
                 });
             }
+        }
+
+        // The service refuses a resolved path longer than ApiUrls.MaxUrlLength (api.bad_request, a technical failure). Percent-encoding makes values grow, so a long
+        // (especially non-ASCII) value is the data's fault: say so here, naming the data paths of the pieces, never a value, and send nothing.
+        if (issues.Count == 0 && resolved.Length > ApiUrls.MaxUrlLength)
+        {
+            var names = PieceRegex().Matches(template).Select(m => $"'{Short(m.Groups[1].Value.Trim())}'").ToList();
+            issues.Add(new
+            {
+                code = "fetch.value_invalid",
+                message = $"The path would be longer than {ApiUrls.MaxUrlLength} characters once {(names.Count == 0 ? "the values are" : string.Join(", ", names) + (names.Count == 1 ? " is" : " are"))} filled in (each value is percent-encoded, so non-ASCII characters take 6 to 9 characters each).",
+                field = names.Count == 0 ? "path" : PieceRegex().Match(template).Groups[1].Value.Trim(),
+            });
         }
 
         return (issues.Count == 0 ? resolved : null, issues);

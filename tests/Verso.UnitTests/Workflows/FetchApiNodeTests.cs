@@ -178,7 +178,7 @@ public sealed class FetchApiNodeTests
         Assert.Contains(failed, i => i.NodeId == "f" && i.Port == "failed"
             && i.Message == "Data that can't make a valid request (for example a missing value for the path or a query parameter) will end the run as Rejected.");
         Assert.Contains(failed, i => i.NodeId == "f" && i.Port == "not-found"
-            && i.Message == "A request that finds nothing (HTTP 404 or an empty answer) ends the run here.");
+            && i.Message == "A request that finds nothing (HTTP 404, an empty answer or a JSON null) ends the run here.");
     }
 
     [Fact]

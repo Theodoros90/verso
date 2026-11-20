@@ -121,6 +121,42 @@ public sealed class ApiFetchStepTests
     }
 
     [Fact]
+    public void Resolve_RefusesAnEncodedPathOverTheLimit_NamingTheDataPath_NeverTheValue()
+    {
+        var value = string.Concat(Enumerable.Repeat("α", 90)); // 90 Greek letters encode to 540 characters (%CE%B1 each)
+        var (path, issues) = ApiPathTemplate.Resolve("/customers/{{customer.name}}", Data(JsonSerializer.Serialize(new { customer = new { name = value } })));
+
+        Assert.Null(path);
+        Assert.Equal("fetch.value_invalid", Codes(issues));
+        var json = JsonSerializer.Serialize(issues);
+        Assert.Contains("customer.name", json, StringComparison.Ordinal);
+        Assert.Contains("500", json, StringComparison.Ordinal);
+        Assert.DoesNotContain(value[..5], json, StringComparison.Ordinal);
+        Assert.DoesNotContain("%CE", json, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(497, true)] // "/a/" + 497 = exactly 500 characters
+    [InlineData(498, false)] // 501
+    public void Resolve_TheEncodedPathLimitIs500Characters(int valueLength, bool accepted)
+    {
+        var (path, issues) = ApiPathTemplate.Resolve("/a/{{v}}", Data(JsonSerializer.Serialize(new { v = new string('x', valueLength) })));
+
+        Assert.Equal(accepted, path is not null);
+        Assert.Equal(accepted ? 500 : 0, path?.Length ?? 0);
+        Assert.Equal(accepted ? "" : "fetch.value_invalid", Codes(issues));
+    }
+
+    [Fact]
+    public void Resolve_ANonAsciiValueUnderTheLimit_Passes()
+    {
+        var (path, issues) = ApiPathTemplate.Resolve("/customers/{{customer.name}}", Data(JsonSerializer.Serialize(new { customer = new { name = string.Concat(Enumerable.Repeat("α", 40)) } })));
+
+        Assert.Empty(issues);
+        Assert.Equal(11 + 40 * 6, path!.Length);
+    }
+
+    [Fact]
     public void Resolve_IssuesNeverEchoTheValue()
     {
         const string Sentinel = "SENTINEL-9f3a";

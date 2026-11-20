@@ -323,7 +323,7 @@ public static class GraphValidator
         (NodeCatalog.QueryDatabase, "failed") => "Data that can't make a valid query (for example a missing value for a parameter) will end the run as Rejected.",
         (NodeCatalog.WriteDatabase, "failed") => "Data that can't make a valid statement (for example a missing value for a parameter) will end the run as Rejected.",
         (NodeCatalog.FetchApi, "failed") => "Data that can't make a valid request (for example a missing value for the path or a query parameter) will end the run as Rejected.",
-        (NodeCatalog.FetchApi, "not-found") => "A request that finds nothing (HTTP 404 or an empty answer) ends the run here.",
+        (NodeCatalog.FetchApi, "not-found") => "A request that finds nothing (HTTP 404, an empty answer or a JSON null) ends the run here.",
         (NodeCatalog.QueryDatabase, "not-found") => "A query that finds no row ends the run here.",
         (NodeCatalog.CombinePdfs, "failed") => "A run with fewer than two PDFs to combine ends here as Rejected.",
         _ => $"'{port.Label}' isn't connected; the run ends there.",
