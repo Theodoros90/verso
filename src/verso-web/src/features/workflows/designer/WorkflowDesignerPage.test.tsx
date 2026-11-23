@@ -386,6 +386,21 @@ const nodeTypes: NodeTypeDto[] = [
     defaults: { connection: '', sql: 'UPDATE customers SET status = @status WHERE id = @id', parameters: 'status = customer.status\nid = customer.id', maxRows: 1 },
   },
   {
+    type: 'send-sms', label: 'Send SMS', category: 'output', description: 'Sends ONE real SMS through an SMS connection an administrator switched on for workflows.',
+    inputs: [{ id: 'in', label: 'In', required: true }],
+    outputs: [{ id: 'sent', label: 'Sent', required: true }, { id: 'failed', label: 'Failed', required: false }],
+    configSchema: {
+      type: 'object',
+      properties: {
+        connection: { type: 'string', title: 'SMS connection', 'x-widget': 'sms-connection', 'x-requires-sending': true },
+        to: { type: 'string', title: 'Recipient\'s number', maxLength: 100, 'x-widget': 'mono' },
+        text: { type: 'string', title: 'Message', maxLength: 480, 'x-widget': 'multiline' },
+      },
+      required: ['connection', 'to', 'text'],
+    },
+    defaults: { connection: '', to: '{{customer.mobile}}', text: 'Dear {{customer.name}}, your statement is ready.' },
+  },
+  {
     type: 'fetch-api', label: 'Fetch from API', category: 'process', description: 'Reads data from an HTTP API connection.',
     inputs: [{ id: 'in', label: 'In', required: true }],
     outputs: [{ id: 'found', label: 'Found', required: true }, { id: 'not-found', label: 'Not found', required: false }, { id: 'failed', label: 'Failed', required: false }],
@@ -452,6 +467,7 @@ function mockApi(opts: { issues?: WorkflowIssueDto[]; publish?: 'ok' | 'invalid'
       if (url === '/api/v1/node-types') return json(nodeTypes)
       if (url === '/api/v1/database-connection-options') return json([{ key: 'core-db', name: 'Core DB', provider: 'SqlServer', allowsWrites: false }, { key: 'ledger', name: 'Ledger', provider: 'Oracle', allowsWrites: true }])
       if (url === '/api/v1/api-connection-options') return json([{ key: 'rates', name: 'Exchange rates', host: 'rates.example.test' }])
+      if (url === '/api/v1/sms-connection-options') return json([{ key: 'notices', name: 'Customer notices', messageType: 'transactional', allowsSending: true }, { key: 'alerts', name: 'Card alerts', messageType: 'transactional', allowsSending: false }])
       if (url === `/api/v1/workflows/${WF}`) return json({ id: WF, key: 'invoice-standard', name: 'Invoice standard', description: null, createdAt: '', createdBy: '', latestPublishedVersion: null, draftVersionId: 'v1', isActive: active })
       if (url === `/api/v1/workflows/${WF}/deactivate` && method === 'POST') {
         active = false
@@ -801,6 +817,57 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     expect(screen.queryByRole('option', { name: /writes off/ })).not.toBeInTheDocument()
     await user.selectOptions(querySelect, 'core-db')
     expect(screen.queryByText(/Writes are switched off for this connection/)).not.toBeInTheDocument()
+  })
+
+  it('adds a Send SMS step with a "sends a message" marker, a summary, a message counter and its Sent and Failed outputs', async () => {
+    const calls = mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Send SMS' }))
+
+    expect(await screen.findByRole('heading', { name: 'Send SMS', level: 3 })).toBeInTheDocument()
+    for (const port of ['Sent', 'Failed']) expect(screen.getByLabelText(`Send SMS: output ${port}`)).toBeInTheDocument()
+    expect(screen.getByText('sms: (no connection)')).toBeInTheDocument()
+    expect(screen.getByText('Sends a message')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /Recipient's number/ })).toHaveClass('font-mono')
+    const message = screen.getByRole('textbox', { name: /Message/ })
+    expect(screen.getByText('48 / 480')).toBeInTheDocument()
+    await user.type(message, '!')
+    expect(screen.getByText('49 / 480')).toBeInTheDocument()
+    await user.selectOptions(await screen.findByRole('combobox', { name: /SMS connection/ }), 'notices')
+    expect(await screen.findByText('sms: notices')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Save draft/ }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    const saved = (calls.find((c) => c.method === 'PUT')!.body as { definition: typeof definition }).definition
+    expect(saved.nodes.at(-1)).toMatchObject({ type: 'send-sms', config: { connection: 'notices', to: '{{customer.mobile}}' } })
+  })
+
+  it('the x-requires-sending flag reaches the SMS connection select: a connection with sending off is marked and warned about', async () => {
+    mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Send SMS' }))
+    expect(await screen.findByRole('heading', { name: 'Send SMS', level: 3 })).toBeInTheDocument()
+    const select = await screen.findByRole('combobox', { name: /SMS connection/ })
+    expect(await screen.findByRole('option', { name: 'Card alerts (transactional), sending off' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Customer notices (transactional)' })).toBeInTheDocument()
+    await user.selectOptions(select, 'alerts')
+    expect(await screen.findByText(/Sending is switched off for this connection/)).toBeInTheDocument()
+  })
+
+  it('a message box of a step that does not send SMS has no counter', async () => {
+    mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    await user.click(screen.getByRole('button', { name: 'Add Query database' }))
+    expect(await screen.findByRole('heading', { name: 'Query database', level: 3 })).toBeInTheDocument()
+    expect(screen.queryByText(/^\d+ \/ 480$/)).not.toBeInTheDocument()
   })
 
   it('adds a Fetch from API step with a connection choice, its path help, a summary and its three outputs', async () => {

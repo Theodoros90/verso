@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { jsonObjectProblem } from '../model/payloadSchema'
 import { ApiConnectionSelect } from './ApiConnectionSelect'
 import { DatabaseConnectionSelect } from './DatabaseConnectionSelect'
+import { SmsConnectionSelect } from './SmsConnectionSelect'
 
 /** The JSON Schema subset the node catalog uses (see ConfigSchemaValidator on the server), plus designer hints. */
 export interface FieldSchema {
@@ -24,7 +25,9 @@ export interface FieldSchema {
   'x-enumLabels'?: string[]
   /** On a database connection field: the step changes data, so the connection must allow writes. */
   'x-requires-writes'?: boolean
-  'x-widget'?: 'multiline' | 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches' | 'retention' | 'email-relay' | 'database-connection' | 'api-connection' | 'sql'
+  /** On an SMS connection field: the step sends messages, so the connection must allow sending. */
+  'x-requires-sending'?: boolean
+  'x-widget'?: 'multiline' | 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches' | 'retention' | 'email-relay' | 'database-connection' | 'api-connection' | 'sms-connection' | 'sql'
   maxItems?: number
   maxLength?: number
   minimum?: number
@@ -89,6 +92,7 @@ export function SchemaForm({
           parent={value}
           required={schema.required?.includes(name) ?? false}
           writes={props.some(([, f]) => f['x-requires-writes'] === true)}
+          sends={props.some(([, f]) => f['x-requires-sending'] === true)}
           onChange={(v, key) => set(name, v, key)}
           ctx={ctx}
           listId={listId}
@@ -106,6 +110,7 @@ function PropertyField({
   parent,
   required,
   writes,
+  sends,
   onChange,
   ctx,
   listId,
@@ -118,6 +123,8 @@ function PropertyField({
   required: boolean
   /** The step changes data (one of its fields has x-requires-writes). */
   writes: boolean
+  /** The step sends messages (one of its fields has x-requires-sending). */
+  sends: boolean
   onChange: (v: unknown, key: string) => void
   ctx: FormContext
   listId: string
@@ -160,7 +167,7 @@ function PropertyField({
 
   return (
     <Field label={label} htmlFor={id} hint={field.description} error={errors[0]}>
-      <StringInput id={id} path={path} field={field} value={typeof value === 'string' ? value : ''} parent={parent} writes={writes} onChange={onChange} ctx={ctx} listId={listId} invalid={errors.length > 0} />
+      <StringInput id={id} path={path} field={field} value={typeof value === 'string' ? value : ''} parent={parent} writes={writes} sends={sends} onChange={onChange} ctx={ctx} listId={listId} invalid={errors.length > 0} />
     </Field>
   )
 }
@@ -203,6 +210,7 @@ function StringInput({
   value,
   parent,
   writes,
+  sends,
   onChange,
   ctx,
   listId,
@@ -215,6 +223,7 @@ function StringInput({
   value: string
   parent: Value
   writes?: boolean
+  sends?: boolean
   onChange: (v: unknown, key: string) => void
   ctx: FormContext
   listId: string
@@ -291,6 +300,10 @@ function StringInput({
     return <ApiConnectionSelect {...common} value={value} onChange={(v) => onChange(v, path)} />
   }
 
+  if (field['x-widget'] === 'sms-connection') {
+    return <SmsConnectionSelect {...common} requiresSending={field['x-requires-sending'] === true} value={value} onChange={(v) => onChange(v, path)} />
+  }
+
   if (field['x-widget'] === 'sql') {
     const max = field.maxLength ?? 4000
     return (
@@ -342,6 +355,21 @@ function StringInput({
   }
 
   if (field['x-widget'] === 'multiline') {
+    if (sends) {
+      // The message of a Send SMS step: a live count against the limit (the count is of the template as typed; the server checks the filled-in text again).
+      const max = field.maxLength ?? 480
+      return (
+        <div className="flex flex-col gap-1">
+          <Textarea {...common} value={value} rows={4} maxLength={max} onChange={(e) => onChange(e.target.value, path)} />
+          <div className="flex items-start justify-between gap-2 text-xs text-ink-3">
+            <span>Up to 160 characters is one SMS; longer messages are sent in parts.</span>
+            <span className="flex-none tabular-nums">
+              {value.length} / {max}
+            </span>
+          </div>
+        </div>
+      )
+    }
     return <Textarea {...common} value={value} rows={6} onChange={(e) => onChange(e.target.value, path)} />
   }
 

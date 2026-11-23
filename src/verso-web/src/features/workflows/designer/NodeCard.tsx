@@ -1,5 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { Archive, ArrowLeftRight, CalendarClock, Circle, CloudDownload, Clock, CopyCheck, Database, DatabaseZap, ClipboardList, FileCode, Files, FilePenLine, Folders, FileSignature, FileText, LayoutTemplate, FolderInput, FolderSync, GitBranch, GitFork, GitMerge, Inbox, Merge, Mail, MousePointerClick, PencilLine, Printer, Repeat, Send, Server, Shuffle, ShieldCheck, Search, Split, TableProperties, Upload, UserCheck, Webhook, type LucideIcon } from 'lucide-react'
+import { Archive, ArrowLeftRight, CalendarClock, Circle, CloudDownload, Clock, CopyCheck, Database, DatabaseZap, ClipboardList, FileCode, Files, FilePenLine, Folders, FileSignature, FileText, LayoutTemplate, FolderInput, FolderSync, GitBranch, GitFork, GitMerge, Inbox, Merge, Mail, MessageSquareText, MousePointerClick, PencilLine, Printer, Repeat, Send, Server, Shuffle, ShieldCheck, Search, Split, TableProperties, Upload, UserCheck, Webhook, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import type { NodeTypeDto, WorkflowIssueDto } from '@/lib/api/generated'
@@ -34,6 +34,7 @@ export const NODE_ICONS: Record<string, LucideIcon> = {
   'query-database': TableProperties,
   'write-database': PencilLine,
   'fetch-api': CloudDownload,
+  'send-sms': MessageSquareText,
   'form-submission': ClipboardList,
   'scheduled-trigger': CalendarClock,
   'manual-trigger': MousePointerClick,
@@ -156,6 +157,14 @@ export function NodeCard({ data, selected }: NodeProps<VersoFlowNode>) {
           <span className="inline-flex items-center rounded-full bg-warn-soft px-1.5 py-px text-[11px] font-medium text-warn">Changes data</span>
           <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-3">
             write: {typeof node.config.connection === 'string' && node.config.connection ? node.config.connection : '(no connection)'}
+          </span>
+        </div>
+      )}
+      {node.type === 'send-sms' && (
+        <div className="flex items-center gap-1.5 px-2.5 pb-1.5">
+          <span className="inline-flex items-center rounded-full bg-warn-soft px-1.5 py-px text-[11px] font-medium text-warn">Sends a message</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-3">
+            sms: {typeof node.config.connection === 'string' && node.config.connection ? node.config.connection : '(no connection)'}
           </span>
         </div>
       )}
