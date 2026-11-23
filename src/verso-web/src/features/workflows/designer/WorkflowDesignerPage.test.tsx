@@ -844,6 +844,27 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     expect(saved.nodes.at(-1)).toMatchObject({ type: 'send-sms', config: { connection: 'notices', to: '{{customer.mobile}}' } })
   })
 
+  it('the SMS message counter and hint describe the message box, and a paste over 480 is kept and flagged, not cut', async () => {
+    mockApi()
+    await open()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Expand all' }))
+    await user.click(screen.getByRole('button', { name: 'Add Send SMS' }))
+    const message = await screen.findByRole('textbox', { name: /Message/ })
+    expect(message).toHaveAccessibleDescription(/Up to 160 characters is one SMS.*48 \/ 480/)
+    expect(screen.queryByText(/^Too long:/)).not.toBeInTheDocument()
+
+    await user.clear(message)
+    await user.click(message)
+    await user.paste('x'.repeat(500))
+
+    expect(message).toHaveValue('x'.repeat(500)) // nothing is silently cut: the server's limit decides
+    expect(screen.getByText('500 / 480')).toBeInTheDocument()
+    const tooLong = screen.getByText('Too long: at most 480 characters. Shorten the message before publishing.')
+    expect(tooLong).toHaveAttribute('role', 'alert')
+    expect(message).toHaveAccessibleDescription(/500 \/ 480/)
+  })
+
   it('the x-requires-sending flag reaches the SMS connection select: a connection with sending off is marked and warned about', async () => {
     mockApi()
     await open()

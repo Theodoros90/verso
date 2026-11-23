@@ -231,6 +231,9 @@ function StringInput({
   ariaLabel?: string
 }) {
   const common = { id, 'aria-label': ariaLabel, 'aria-invalid': invalid, disabled: ctx.readOnly }
+  const smsHintId = useId()
+  const smsCountId = useId()
+  const smsTooLongId = useId()
 
   if (field.enum) {
     const labels = field['x-enumLabels'] ?? field.enum
@@ -357,16 +360,30 @@ function StringInput({
   if (field['x-widget'] === 'multiline') {
     if (sends) {
       // The message of a Send SMS step: a live count against the limit (the count is of the template as typed; the server checks the filled-in text again).
+      // No maxLength attribute: a longer paste is kept and flagged instead of silently cut; the server's limit decides.
       const max = field.maxLength ?? 480
+      const tooLong = value.length > max
       return (
         <div className="flex flex-col gap-1">
-          <Textarea {...common} value={value} rows={4} maxLength={max} onChange={(e) => onChange(e.target.value, path)} />
+          <Textarea
+            {...common}
+            aria-invalid={invalid || tooLong}
+            aria-describedby={[smsHintId, smsCountId, tooLong && smsTooLongId].filter(Boolean).join(' ')}
+            value={value}
+            rows={4}
+            onChange={(e) => onChange(e.target.value, path)}
+          />
           <div className="flex items-start justify-between gap-2 text-xs text-ink-3">
-            <span>Up to 160 characters is one SMS; longer messages are sent in parts.</span>
-            <span className="flex-none tabular-nums">
+            <span id={smsHintId}>Up to 160 characters is one SMS; longer messages are sent in parts.</span>
+            <span id={smsCountId} className={cn('flex-none tabular-nums', tooLong && 'font-semibold text-err')}>
               {value.length} / {max}
             </span>
           </div>
+          {tooLong && (
+            <p id={smsTooLongId} role="alert" className="m-0 text-xs text-err">
+              Too long: at most {max} characters. Shorten the message before publishing.
+            </p>
+          )}
         </div>
       )
     }
