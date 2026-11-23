@@ -33,7 +33,7 @@ public sealed class StepException(string code, string message, bool retryable) :
 /// Hangfire's own retry is off for this job); data problems end the run as Rejected.
 /// </summary>
 public sealed partial class ExecutionEngine(
-    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IPdfCombiner combiner, IEmailSender email, IPrintSpooler spooler, IDatabaseQuery query, IDatabaseWrite write, IApiFetch apiFetch, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
+    IVersoDbContext db, IPdfPrinter printer, IDocxWriter docx, IPdfCombiner combiner, IEmailSender email, IPrintSpooler spooler, IDatabaseQuery query, IDatabaseWrite write, IApiFetch apiFetch, ISmsSend sms, IDocumentStore store, IExecutionJobs jobs, TimeProvider clock, ILogger<ExecutionEngine> logger)
 {
     /// <summary>Attempts per step (plan §6.3), within one execution attempt.</summary>
     public const int MaxStepAttempts = 3;
@@ -381,7 +381,7 @@ public sealed partial class ExecutionEngine(
     private static bool Rejects(string nodeType, string? port) => (nodeType, port) is
         (NodeCatalog.Validate, "invalid") or (NodeCatalog.ParseContent, "failed") or (NodeCatalog.MapFields, "failed")
         or (NodeCatalog.TransformData, "failed") or (NodeCatalog.MergeData, "failed") or (NodeCatalog.GeneratePdf or NodeCatalog.GenerateDocx or NodeCatalog.GenerateEmail or NodeCatalog.CombinePdfs or NodeCatalog.SendEmail, "failed")
-        or (NodeCatalog.QueryDatabase, "failed") or (NodeCatalog.WriteDatabase, "failed") or (NodeCatalog.FetchApi, "failed")
+        or (NodeCatalog.QueryDatabase, "failed") or (NodeCatalog.WriteDatabase, "failed") or (NodeCatalog.FetchApi, "failed") or (NodeCatalog.SendSms, "failed")
         or (NodeCatalog.ApprovalStep, Approval.Rejected);
 
     private sealed record Outcome(string? Port, object? Result, Func<Task>? AfterSave = null);
@@ -509,6 +509,7 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.SendEmail => SendEmailAsync(run, node, ct),
         NodeCatalog.QueryDatabase => QueryDatabaseAsync(run, node, ct),
         NodeCatalog.WriteDatabase => WriteDatabaseAsync(run, node, ct),
+        NodeCatalog.SendSms => SendSmsAsync(run, node, ct),
         NodeCatalog.FetchApi => FetchApiAsync(run, node, ct),
         NodeCatalog.PrintQueue => PrintQueueAsync(run, node, ct),
         NodeCatalog.UploadSftp => Task.FromResult(UploadSftp(node)),
@@ -1238,6 +1239,79 @@ public sealed partial class ExecutionEngine(
     }
 
     /// <summary>
+    /// Send SMS: sends ONE message through the named SMS connection (sending must be switched on for it), to a number and with a text built from the run data.
+    /// A value that is missing or unusable, a number that isn't a valid international number, or (reported by the service) a number in a country the connection
+    /// may not send to or a text that can't be sent is the data's fault: port 'failed' (the run ends Rejected unless handled) and, when the engine finds it, the
+    /// service is not called. Every other failure ends the run Failed and is never retried automatically: the message may have left, so only a person decides to
+    /// send it again (the message says when the outcome is unknown). The run's data is not changed. The result and the audit entry hold the provider's message
+    /// id, the parts, the duration and the connection key; NEVER the number, the text or the tag (nothing here logs them either).
+    /// </summary>
+    private async Task<Outcome> SendSmsAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    {
+        var connection = QuerySetting(node, "connection");
+        var (to, toIssues) = SmsTemplates.Resolve(QuerySetting(node, "to"), run.Data, isText: false);
+        var (text, textIssues) = SmsTemplates.Resolve(QuerySetting(node, "text"), run.Data, isText: true);
+        var issues = new List<object>(toIssues);
+        var digits = "";
+        if (toIssues.Count == 0 && !SmsRules.TryNormaliseRecipient(to, out digits))
+        {
+            issues.Add(SmsIssue("sms.recipient_invalid"));
+        }
+
+        issues.AddRange(textIssues);
+        if (issues.Count > 0)
+        {
+            return new Outcome("failed", new { issues });
+        }
+
+        var execution = run.Execution;
+        var request = new SmsSendRequest(connection, digits, text!, $"verso-{execution.Id.ToString("N")[..12]}-{run.Iteration}");
+        SmsSendResult sent;
+        try
+        {
+            sent = await sms.RunAsync(request, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The service reports failures as results; anything else is unexpected, may have happened after the request left, and its text could hold the
+            // number or the text, so it is not kept. A cancellation is left to RunStepAsync: on shutdown the step stays Running (StepAsync then fails the run
+            // sms.outcome_unknown), otherwise Describe makes it a final unknown failure (execution.timeout or sms.unreachable).
+            throw new StepException("sms.unreachable", SmsSendMessages.OutcomeUnknown, retryable: false);
+        }
+
+        if (!sent.Ok)
+        {
+            if (!sent.OutcomeUnknown && sent.Code is "sms.recipient_invalid" or "sms.country_not_allowed" or "sms.text_invalid")
+            {
+                // The service refused the data before sending (nothing left): a data issue, the run ends Rejected. The issue names the rule, never the value.
+                return new Outcome("failed", new { issues = new[] { SmsIssue(sent.Code) } });
+            }
+
+            // Never retryable, whatever the code: the service's message already carries the outcome-unknown warning when the message may have left.
+            throw new StepException(sent.Code!, sent.Message ?? (sent.OutcomeUnknown ? SmsSendMessages.OutcomeUnknown : SmsSendMessages.For(sent.Code!)), retryable: false);
+        }
+
+        // Audited when the message is known to have been accepted; the entry is saved with the step's success (the same SaveChanges in RunStepAsync). No number,
+        // no text, no tag.
+        db.AuditEntries.Add(AuditEntry.Record(
+            ExecutionService.Actions.SmsSent, ExecutionService.EntityType, execution.Id.ToString(), ActorId, ActorName, clock.GetUtcNow(),
+            JsonSerializer.Serialize(new { executionId = execution.Id, nodeId = node.Id, iteration = run.Iteration, connection, messageId = sent.MessageId, smsParts = sent.SmsParts }),
+            execution.CorrelationId));
+        return new Outcome("sent", new { messageId = sent.MessageId, smsParts = sent.SmsParts, durationMs = sent.DurationMs, connection });
+    }
+
+    /// <summary>A data issue of the Send SMS step for a rule on the whole number or text: the rule and the field, never the value.</summary>
+    private static SmsDataIssue SmsIssue(string code) => code switch
+    {
+        "sms.country_not_allowed" => new(code, "The recipient's number is in a country this SMS connection may not send to.", "to"),
+        "sms.text_invalid" => new(code, "The message can't be sent (it is empty, too long or has a character that can't be sent).", "text"),
+        _ => new(code, "The recipient's number isn't a valid international number (8 to 15 digits, starting with the country code).", "to"),
+    };
+
+    /// <summary>One data issue of the Send SMS step, serialised as <c>{ code, message, field }</c> like every other issue.</summary>
+    private sealed record SmsDataIssue(string Code, string Message, string Field);
+
+    /// <summary>
     /// A step that changes the outside world (<see cref="NodeCatalog.ChangesOutsideWorld"/>) found Running: an earlier run started it and never recorded how it
     /// ended. It is not run again; it is recorded failed with the outcome-unknown warning and the run fails (not retried), with the same events as any other final
     /// failure. An operator retry runs it again. Write to database: <c>write.outcome_unknown</c>; Send SMS: <c>sms.outcome_unknown</c>.
@@ -1616,6 +1690,10 @@ public sealed partial class ExecutionEngine(
                 break;
             case (NodeCatalog.WriteDatabase, "failed"):
                 execution.Reject("data.write_invalid", $"The data can't make a valid statement in step '{last.Title}' (see its issues).", now);
+                Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
+                break;
+            case (NodeCatalog.SendSms, "failed"):
+                execution.Reject("data.sms_invalid", $"The data can't make a valid message in step '{last.Title}' (see its issues).", now);
                 Event(execution, ExecutionEventTypes.Rejected, now, last.Id, new { code = execution.FailureCode });
                 break;
             case (NodeCatalog.FetchApi, "failed"):

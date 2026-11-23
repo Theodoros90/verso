@@ -400,7 +400,7 @@ public sealed class LeastPrivilegeTests(LeastPrivilegeFixture grants) : IClassFi
     private async Task RunAsWorkerAsync(Guid executionId)
     {
         await using var db = grants.WorkerDb();
-        await new ExecutionEngine(db, new FakePdfPrinter(), new FakeDocxWriter(), new FakePdfCombiner(), new FakeEmailSender(), new FakePrintSpooler(), new FakeDatabaseQuery(), new FakeDatabaseWrite(), new FakeApiFetch(), _store, new RecordingExecutionJobs(), TimeProvider.System, NullLogger<ExecutionEngine>.Instance)
+        await new ExecutionEngine(db, new FakePdfPrinter(), new FakeDocxWriter(), new FakePdfCombiner(), new FakeEmailSender(), new FakePrintSpooler(), new FakeDatabaseQuery(), new FakeDatabaseWrite(), new FakeApiFetch(), new FakeSmsSend(), _store, new RecordingExecutionJobs(), TimeProvider.System, NullLogger<ExecutionEngine>.Instance)
             .RunAsync(executionId, CancellationToken.None);
     }
 }

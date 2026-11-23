@@ -43,7 +43,7 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     public static JsonNode Broken => JsonNode.Parse(Fixture("invoice/broken.json"))!;
 
     /// <summary>Publishes the invoice template (v1) and a workflow trigger → validate → generate-pdf → archive. Returns the workflow key.</summary>
-    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null, JsonNode? combineConfig = null, JsonNode? sendConfig = null, JsonNode? printConfig = null, bool parallelBranches = false, bool joinBranches = false, Guid? templateCategoryId = null, bool archiveMatchInvoice = false, JsonNode? queryConfig = null, string queryAt = "after-validate", bool queryNotFoundToPdf = false, JsonNode? writeConfig = null, string writeAt = "after-validate", JsonNode? fetchConfig = null, string fetchAt = "after-validate", bool fetchNotFoundToPdf = false, JsonNode? secondFetchConfig = null)
+    public async Task<string> PublishInvoiceWorkflowAsync(JsonNode? rules = null, JsonNode? trigger = null, JsonNode? parseConfig = null, JsonNode? mapConfig = null, JsonNode? transformConfig = null, JsonNode? mergeConfig = null, JsonNode? ifConfig = null, JsonNode? switchConfig = null, string switchPort = "mid", JsonNode? forEachConfig = null, bool forEachBackEdge = false, JsonNode? approvalConfig = null, bool approvalDeclinedToPdf = false, string? docxEditing = null, JsonNode? emailConfig = null, JsonNode? combineConfig = null, JsonNode? sendConfig = null, JsonNode? printConfig = null, bool parallelBranches = false, bool joinBranches = false, Guid? templateCategoryId = null, bool archiveMatchInvoice = false, JsonNode? queryConfig = null, string queryAt = "after-validate", bool queryNotFoundToPdf = false, JsonNode? writeConfig = null, string writeAt = "after-validate", JsonNode? fetchConfig = null, string fetchAt = "after-validate", bool fetchNotFoundToPdf = false, JsonNode? secondFetchConfig = null, JsonNode? smsConfig = null, string smsAt = "after-validate")
     {
         var templateId = await PublishInvoiceTemplateAsync(templateCategoryId);
         var key = "inv-" + Guid.NewGuid().ToString("N")[..12];
@@ -337,6 +337,21 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
             }
         }
 
+        if (smsConfig is not null)
+        {
+            // A Send SMS step: by default validate (valid) → sms (sent) → whatever validate led to (the approval, the loop or pdf);
+            // "in-loop": loop (each) → sms → pdf. Its 'failed' output is left open (the run ends Rejected there).
+            var nodes = definition["nodes"]!.AsArray();
+            var edges = definition["edges"]!.AsArray();
+            var sms = JsonNode.Parse("""{ "id": "sms", "type": "send-sms", "title": "Send SMS", "position": { "x": 400, "y": 1040 }, "config": {} }""")!;
+            sms["config"] = smsConfig.DeepClone();
+            nodes.Add(sms);
+            var before = edges.First(e => (string?)e!["id"] == (smsAt == "in-loop" ? "e11" : "e2"))!;
+            var target = (string)before["target"]!;
+            before["target"] = "sms";
+            edges.Add(JsonNode.Parse($$"""{ "id": "s1", "source": "sms", "sourcePort": "sent", "target": "{{target}}", "targetPort": "in" }"""));
+        }
+
         using var draft = await client.GetAsync(new Uri($"/api/v1/workflows/{workflowId}/draft", UriKind.Relative));
         using var save = await SendAsync(HttpMethod.Put, $"/api/v1/workflows/{workflowId}/draft", draft.Headers.ETag!.ToString(), new JsonObject { ["definition"] = definition });
         Assert.Equal(HttpStatusCode.OK, save.StatusCode);
@@ -396,13 +411,13 @@ internal sealed class ExecutionTestKit(VersoApiFactory factory, HttpClient clien
     }
 
     /// <summary>One job run of the execution, as the Worker's Hangfire job would do it.</summary>
-    public async Task RunEngineAsync(Guid executionId, IPdfPrinter printer, IDocumentStore store, RecordingExecutionJobs jobs, IDocxWriter? docx = null, IPdfCombiner? combiner = null, IEmailSender? email = null, IPrintSpooler? spooler = null, IDatabaseQuery? query = null, IDatabaseWrite? write = null, IApiFetch? apiFetch = null, bool captureLogs = false, CancellationToken ct = default)
+    public async Task RunEngineAsync(Guid executionId, IPdfPrinter printer, IDocumentStore store, RecordingExecutionJobs jobs, IDocxWriter? docx = null, IPdfCombiner? combiner = null, IEmailSender? email = null, IPrintSpooler? spooler = null, IDatabaseQuery? query = null, IDatabaseWrite? write = null, IApiFetch? apiFetch = null, ISmsSend? sms = null, bool captureLogs = false, CancellationToken ct = default)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VersoDbContext>();
         // captureLogs: the engine logs through the host's logger, so the test host's capture (factory.Logs) sees every line.
         var logger = captureLogs ? scope.ServiceProvider.GetRequiredService<ILogger<ExecutionEngine>>() : NullLogger<ExecutionEngine>.Instance;
-        await new ExecutionEngine(db, printer, docx ?? new FakeDocxWriter(), combiner ?? new FakePdfCombiner(), email ?? new FakeEmailSender(), spooler ?? new FakePrintSpooler(), query ?? new FakeDatabaseQuery(), write ?? new FakeDatabaseWrite(), apiFetch ?? new FakeApiFetch(), store, jobs, TimeProvider.System, logger).RunAsync(executionId, ct);
+        await new ExecutionEngine(db, printer, docx ?? new FakeDocxWriter(), combiner ?? new FakePdfCombiner(), email ?? new FakeEmailSender(), spooler ?? new FakePrintSpooler(), query ?? new FakeDatabaseQuery(), write ?? new FakeDatabaseWrite(), apiFetch ?? new FakeApiFetch(), sms ?? new FakeSmsSend(), store, jobs, TimeProvider.System, logger).RunAsync(executionId, ct);
     }
 
     public async Task<T> WithDbAsync<T>(Func<VersoDbContext, Task<T>> action)

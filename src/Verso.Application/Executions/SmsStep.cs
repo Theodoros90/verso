@@ -106,6 +106,14 @@ public static class SmsTemplates
                 continue;
             }
 
+            if (value.ValueKind == JsonValueKind.Number && !IsFiniteNumber(value))
+            {
+                // A JSON number no .NET number can hold (such as 1e400): read as a double it is Infinity (or, on older runtimes, a FormatException). It would be
+                // written out as "Infinity", so it is the data's fault, never an unhandled exception and never sent.
+                issues.Add(Issue("sms.value_invalid", $"'{Short(dataPath, 40)}' holds a number too large to be written out.", dataPath));
+                continue;
+            }
+
             var text = ApiFetchStep.ScalarText(value); // null for a list, a group of fields, or text System.Text.Json can't read (a lone surrogate escape)
             if (text is null)
             {
@@ -236,6 +244,24 @@ public static class SmsTemplates
     }
 
     private static object Issue(string code, string message, string field) => new { code, message, field };
+
+    /// <summary>False for a JSON number that is not a finite double (1e400 reads as Infinity, or throws on some runtimes); true for every number <see cref="ApiFetchStep.ScalarText"/> can write.</summary>
+    private static bool IsFiniteNumber(JsonElement value)
+    {
+        if (value.TryGetInt64(out _) || value.TryGetDecimal(out _))
+        {
+            return true;
+        }
+
+        try
+        {
+            return double.IsFinite(value.GetDouble());
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
 
     private static string Short(string s, int max) => s.Length > max ? s[..max] + "…" : s;
 }

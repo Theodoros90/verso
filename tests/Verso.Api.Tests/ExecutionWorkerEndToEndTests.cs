@@ -52,6 +52,7 @@ public sealed class ExecutionWorkerFixture : IAsyncLifetime
         builder.Services.AddSingleton<Verso.Application.Connections.IDatabaseQuery, FakeDatabaseQuery>();
         builder.Services.AddSingleton<Verso.Application.Connections.IDatabaseWrite, FakeDatabaseWrite>(); // the engine needs one (Write to database step); never called here
         builder.Services.AddSingleton<Verso.Application.Connections.IApiFetch, FakeApiFetch>(); // the engine needs one (Fetch from API step); never called here
+        builder.Services.AddSingleton<Verso.Application.Connections.ISmsSend, FakeSmsSend>(); // the engine needs one (Send SMS step); never called here
         builder.Services.AddVersoDocumentStore(builder.Configuration);
         builder.Services.AddVersoJobServer(builder.Configuration);
         _worker = builder.Build();

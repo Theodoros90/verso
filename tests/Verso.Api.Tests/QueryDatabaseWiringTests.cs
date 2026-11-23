@@ -36,6 +36,7 @@ public sealed class QueryDatabaseWiringTests
         services.AddVersoDatabaseConnections(configuration);
         services.AddVersoDatabaseDrivers();
         services.AddVersoApiConnections(configuration);
+        services.AddVersoSmsConnections(configuration);
         services.AddSingleton<IPdfPrinter, FakePdfPrinter>();
         services.AddSingleton<IDocxWriter, FakeDocxWriter>();
         services.AddSingleton<IPdfCombiner, FakePdfCombiner>();
@@ -97,6 +98,26 @@ public sealed class QueryDatabaseWiringTests
         Assert.Contains(nameof(IApiFetch), ex.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Worker_DI_resolves_the_engine_with_ISmsSend()
+    {
+        // Send SMS step (Phase 4): the engine needs ISmsSend. With the Worker's registrations (AddVersoSmsConnections) it resolves the real, scoped
+        // SmsSendService (ValidateScopes); without ISmsSend it does not, so the engine really asks for it. Resolving sends nothing.
+        using (var provider = WorkerServices().BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true }))
+        using (var scope = provider.CreateScope())
+        {
+            Assert.NotNull(scope.ServiceProvider.GetRequiredService<ExecutionEngine>());
+            Assert.IsType<SmsSendService>(scope.ServiceProvider.GetRequiredService<ISmsSend>());
+        }
+
+        var withoutSms = WorkerServices();
+        withoutSms.RemoveAll<ISmsSend>();
+        using var broken = withoutSms.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var brokenScope = broken.CreateScope();
+        var ex = Assert.Throws<InvalidOperationException>(() => brokenScope.ServiceProvider.GetRequiredService<ExecutionEngine>());
+        Assert.Contains(nameof(ISmsSend), ex.Message, StringComparison.Ordinal);
+    }
+
     /// <summary>The Worker's registrations (src/Verso.Worker/Program.cs) relevant to the engine, with fakes for what needs Chromium, files or Hangfire. Nothing connects.</summary>
     private static ServiceCollection WorkerServices()
     {
@@ -111,6 +132,7 @@ public sealed class QueryDatabaseWiringTests
         services.AddVersoDatabaseConnections(configuration);
         services.AddVersoDatabaseDrivers();
         services.AddVersoApiConnections(configuration);
+        services.AddVersoSmsConnections(configuration);
         services.AddSingleton<IPdfPrinter, FakePdfPrinter>();
         services.AddSingleton<IDocxWriter, FakeDocxWriter>();
         services.AddSingleton<IPdfCombiner, FakePdfCombiner>();
