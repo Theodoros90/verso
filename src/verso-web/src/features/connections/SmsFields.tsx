@@ -1,3 +1,6 @@
+import { useEffect, useRef, useState } from 'react'
+
+import { Button } from '@/components/ui/button'
 import { Field, Input, Select, Switch, Textarea } from '@/components/ui/form'
 import { ApiError } from '@/lib/api/client'
 import type { SmsConnectionDto } from '@/lib/api/generated'
@@ -27,9 +30,15 @@ export interface SmsForm {
   timeoutSeconds: string
   description: string
   secret: string
+  /** Workflows may send real SMS through this connection (Send SMS step). */
+  allowSending: boolean
+  /** The switch was changed in this dialog. Only then is allowSending sent when saving an existing connection, so an unrelated edit never overwrites a change made by someone else. */
+  sendingTouched: boolean
+  /** Country prefixes the Send SMS step may send to: digits, comma-separated. Empty allows no country. */
+  allowedCountryPrefixes: string
 }
 
-export const blankSms: SmsForm = { key: '', baseUrl: BREVO_BASE_URL, sender: '', messageType: 'transactional', unicodeEnabled: true, organisationPrefix: '', timeoutSeconds: '15', description: '', secret: '' }
+export const blankSms: SmsForm = { key: '', baseUrl: BREVO_BASE_URL, sender: '', messageType: 'transactional', unicodeEnabled: true, organisationPrefix: '', timeoutSeconds: '15', description: '', secret: '', allowSending: false, sendingTouched: true, allowedCountryPrefixes: '' }
 
 export const toSmsForm = (c: SmsConnectionDto): SmsForm => ({
   key: c.key,
@@ -41,6 +50,9 @@ export const toSmsForm = (c: SmsConnectionDto): SmsForm => ({
   timeoutSeconds: String(c.timeoutSeconds),
   description: c.description,
   secret: '', // never filled in: the saved API key is not sent to the browser
+  allowSending: c.allowSending === true,
+  sendingTouched: false,
+  allowedCountryPrefixes: c.allowedCountryPrefixes ?? '',
 })
 
 const isHttps = (u: string) => {
@@ -94,6 +106,8 @@ export function smsBody(form: SmsForm, name: string) {
     timeoutSeconds: Number(form.timeoutSeconds),
     description: form.description.trim(),
     secret: form.secret === '' ? null : form.secret,
+    allowSending: form.sendingTouched ? form.allowSending : null, // null: the server keeps the saved value
+    allowedCountryPrefixes: form.allowedCountryPrefixes.trim(), // checked and normalised by the server
   }
 }
 
@@ -121,6 +135,20 @@ export function SmsFields({
   existing: SmsConnectionDto | null
   onChange: (patch: Partial<SmsForm>) => void
 }) {
+  const [confirmingSending, setConfirmingSending] = useState(false)
+  const keepOff = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!confirmingSending) return
+    keepOff.current?.focus() // the safe choice has focus
+    // Escape cancels the question only; the window listener runs before the dialog's own Escape handling.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      setConfirmingSending(false)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [confirmingSending])
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
@@ -170,6 +198,58 @@ export function SmsFields({
       </div>
       <Field label="Description" htmlFor="sms-desc" error={errors.description}>
         <Textarea id="sms-desc" rows={2} value={form.description} onChange={(e) => onChange({ description: e.target.value })} placeholder="What is this connection for?" />
+      </Field>
+      <div className="flex flex-col gap-1.5">
+        <Switch
+          checked={form.allowSending}
+          onCheckedChange={(on) => {
+            if (on) {
+              setConfirmingSending(true) // turning sending on asks first
+            } else {
+              setConfirmingSending(false)
+              onChange({ allowSending: false, sendingTouched: true })
+            }
+          }}
+          label="Allow workflows to send SMS"
+        />
+        {confirmingSending && (
+          <div role="group" aria-label="Confirm sending" className="flex flex-col gap-2 rounded-md border border-warn/50 bg-warn-soft p-3 text-[13px] text-ink">
+            <p className="m-0">Workflows will be able to send real SMS to numbers taken from their data, within the allowed countries. Each message costs a credit and cannot be recalled.</p>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant="primary" onClick={() => { setConfirmingSending(false); onChange({ allowSending: true, sendingTouched: true }) }}>
+                Allow sending
+              </Button>
+              <Button ref={keepOff} type="button" size="sm" onClick={() => setConfirmingSending(false)}>
+                Keep sending off
+              </Button>
+            </div>
+          </div>
+        )}
+        <p className="m-0 text-xs text-ink-3">
+          {form.allowSending
+            ? form.messageType === 'marketing'
+              ? 'Marketing connections can’t be used in workflows, even with sending on. Choose Transactional for service messages.'
+              : 'Send SMS steps in workflows can send real messages through this connection, only to the countries listed below.'
+            : 'Off: workflows cannot send SMS through this connection. Test connection still works.'}
+        </p>
+      </div>
+      <Field
+        label="Allowed country prefixes"
+        htmlFor="sms-countries"
+        error={errors.allowedCountryPrefixes}
+        hint="Digits without +, separated by commas, for example 357, 30. Nothing can be sent to a country that is not listed."
+      >
+        <Input
+          id="sms-countries"
+          className="font-mono"
+          inputMode="numeric"
+          value={form.allowedCountryPrefixes}
+          onChange={(e) => onChange({ allowedCountryPrefixes: e.target.value })}
+          aria-invalid={!!errors.allowedCountryPrefixes}
+          autoComplete="off"
+          maxLength={200}
+          placeholder="357, 30"
+        />
       </Field>
       <Field label="Connection key" htmlFor="sms-key" error={errors.key} hint="A short name for this connection in workflows later. It cannot change.">
         <Input id="sms-key" className="font-mono" value={form.key} disabled={!!existing} onChange={(e) => onChange({ key: e.target.value.toLowerCase() })} aria-invalid={!!errors.key} placeholder="brevo-sms" />

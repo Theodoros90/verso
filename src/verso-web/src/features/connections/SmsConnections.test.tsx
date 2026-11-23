@@ -66,12 +66,27 @@ function smsApi(
     const failure = fail?.()
     if (failure) return failure
     if (method === 'POST') {
-      const created = connection({ id: `s-${items.length + 1}`, key: String(body.key), name: String(body.name), sender: String(body.sender), messageType: String(body.messageType), hasSecret: !!body.secret })
+      const created = connection({
+        id: `s-${items.length + 1}`,
+        key: String(body.key),
+        name: String(body.name),
+        sender: String(body.sender),
+        messageType: String(body.messageType),
+        hasSecret: !!body.secret,
+        allowSending: body.allowSending === true,
+        allowedCountryPrefixes: typeof body.allowedCountryPrefixes === 'string' ? body.allowedCountryPrefixes : '',
+      })
       items.push(created)
       return json(created, 201)
     }
     const c = items.find((x) => url.includes(x.id))!
-    Object.assign(c, { name: body.name, sender: body.sender, hasSecret: body.secret ? true : c.hasSecret })
+    Object.assign(c, {
+      name: body.name,
+      sender: body.sender,
+      hasSecret: body.secret ? true : c.hasSecret,
+      allowSending: typeof body.allowSending === 'boolean' ? body.allowSending : c.allowSending,
+      allowedCountryPrefixes: typeof body.allowedCountryPrefixes === 'string' ? body.allowedCountryPrefixes : c.allowedCountryPrefixes,
+    })
     return json(c)
   }
   return { handler, bodies, calls }
@@ -282,6 +297,154 @@ describe('SMS connections (real Brevo SMS in the Connections tab)', () => {
     await userEvent.click(await within(drawer).findByRole('switch', { name: 'Enable Customer SMS' }))
     expect(await within(drawer).findByText('Customer SMS turned on.')).toBeInTheDocument()
     expect(api.calls).toContain('POST /api/v1/sms-connections/s-1/activate')
+  })
+
+  describe('Allow workflows to send SMS', () => {
+    const switchName = 'Allow workflows to send SMS'
+    const confirmText = 'Workflows will be able to send real SMS to numbers taken from their data, within the allowed countries. Each message costs a credit and cannot be recalled.'
+    const prefixHint = 'Digits without +, separated by commas, for example 357, 30. Nothing can be sent to a country that is not listed.'
+
+    const fillNew = async (dialog: HTMLElement) => {
+      await userEvent.type(within(dialog).getByLabelText('Name'), 'Customer SMS')
+      await userEvent.type(within(dialog).getByLabelText('Sender'), 'TestSender')
+      await userEvent.type(within(dialog).getByLabelText('API key'), 'test-key-not-real')
+      await userEvent.type(within(dialog).getByLabelText('Connection key'), 'brevo-sms')
+    }
+
+    it('is off for a new connection, with the prefixes field and its helper, and a new connection sends allowSending false', async () => {
+      const api = smsApi([])
+      const drawer = await openConfiguration('Connections', api.handler)
+      const dialog = await chooseSms(drawer)
+
+      expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'false')
+      expect(within(dialog).getByLabelText('Allowed country prefixes')).toHaveValue('')
+      expect(within(dialog).getByText(prefixHint)).toBeInTheDocument()
+      await fillNew(dialog)
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Create connection' }))
+
+      await within(drawer).findByText('SMS connection “Customer SMS” created.')
+      expect(api.bodies[0]).toMatchObject({ allowSending: false, allowedCountryPrefixes: '' })
+    })
+
+    it('asks for confirmation when turned on; cancelling keeps it off', async () => {
+      const drawer = await openConfiguration('Connections', smsApi([]).handler)
+      const dialog = await chooseSms(drawer)
+
+      await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+      expect(within(dialog).getByText(confirmText)).toBeInTheDocument()
+      expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'false')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Keep sending off' }))
+
+      expect(within(dialog).queryByText(confirmText)).not.toBeInTheDocument()
+      expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'false')
+    })
+
+    it('confirming turns it on; the request carries allowSending true and the prefixes; the card shows "Sending on"', async () => {
+      const api = smsApi([])
+      const drawer = await openConfiguration('Connections', api.handler)
+      const dialog = await chooseSms(drawer)
+      await fillNew(dialog)
+      await userEvent.type(within(dialog).getByLabelText('Allowed country prefixes'), '357, 30')
+
+      await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Allow sending' }))
+      expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'true')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Create connection' }))
+
+      const card = (await within(drawer).findByRole('heading', { name: 'Customer SMS' })).closest('li')!
+      expect(within(card).getByText('Sending on')).toBeInTheDocument()
+      expect(api.bodies[0]).toMatchObject({ allowSending: true, allowedCountryPrefixes: '357, 30' })
+    })
+
+    it('the card says "Sending on" only for connections that allow sending, and its guidance follows the switch', async () => {
+      const drawer = await openConfiguration('Connections', smsApi([connection({ allowSending: true, allowedCountryPrefixes: '357' }), connection({ id: 's-2', key: 'other', name: 'Other SMS' })]).handler)
+      const on = (await within(drawer).findByRole('heading', { name: 'Customer SMS' })).closest('li')!
+      const off = within(drawer).getByRole('heading', { name: 'Other SMS' }).closest('li')!
+      expect(within(on).getByText('Sending on')).toBeInTheDocument()
+      expect(within(on).getByText(/Workflows can send real SMS through it to numbers starting with 357/)).toBeInTheDocument()
+      expect(within(off).queryByText('Sending on')).not.toBeInTheDocument()
+      expect(within(off).getByText(/Test connection sends one real SMS to the number you type/)).toBeInTheDocument()
+    })
+
+    it('shows the server\'s message for invalid prefixes under the field', async () => {
+      const problem = () => json({ title: 'Validation failed', errors: { AllowedCountryPrefixes: ['Each prefix is 1 to 4 digits that do not start with 0.'] } }, 400)
+      const drawer = await openConfiguration('Connections', smsApi([connection()], problem).handler)
+      const dialog = await openEdit(drawer)
+      await userEvent.type(within(dialog).getByLabelText('Allowed country prefixes'), '0abc')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Save settings' }))
+
+      expect(await within(dialog).findByText('Each prefix is 1 to 4 digits that do not start with 0.')).toBeInTheDocument()
+      expect(within(dialog).getByLabelText('Allowed country prefixes')).toHaveAttribute('aria-invalid', 'true')
+    })
+
+    describe('saving an existing connection (the switch is sent only when changed)', () => {
+      it('an unrelated edit of a connection that allows sending sends no allowSending value', async () => {
+        const api = smsApi([connection({ allowSending: true, allowedCountryPrefixes: '357' })])
+        const drawer = await openConfiguration('Connections', api.handler)
+        const dialog = await openEdit(drawer)
+        expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'true')
+        expect(within(dialog).getByLabelText('Allowed country prefixes')).toHaveValue('357')
+        await userEvent.clear(within(dialog).getByLabelText('Name'))
+        await userEvent.type(within(dialog).getByLabelText('Name'), 'Customer SMS 2')
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Save settings' }))
+
+        await within(drawer).findByText('Settings saved for Customer SMS 2.')
+        expect(api.bodies[0]?.allowSending ?? null).toBeNull()
+        expect(api.bodies[0]).toMatchObject({ name: 'Customer SMS 2', allowedCountryPrefixes: '357' })
+      })
+
+      it('turning it on, then confirming, sends true', async () => {
+        const api = smsApi([connection()])
+        const drawer = await openConfiguration('Connections', api.handler)
+        const dialog = await openEdit(drawer)
+        await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Allow sending' }))
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Save settings' }))
+
+        await within(drawer).findByText('Settings saved for Customer SMS.')
+        expect(api.bodies[0]).toMatchObject({ allowSending: true })
+      })
+
+      it('turning it on, then cancelling, sends nothing about sending', async () => {
+        const api = smsApi([connection()])
+        const drawer = await openConfiguration('Connections', api.handler)
+        const dialog = await openEdit(drawer)
+        await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Keep sending off' }))
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Save settings' }))
+
+        await within(drawer).findByText('Settings saved for Customer SMS.')
+        expect(api.bodies[0]?.allowSending ?? null).toBeNull()
+      })
+
+      it('turning it off needs no confirmation and sends false', async () => {
+        const api = smsApi([connection({ allowSending: true, allowedCountryPrefixes: '357' })])
+        const drawer = await openConfiguration('Connections', api.handler)
+        const dialog = await openEdit(drawer)
+        await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+        expect(within(dialog).queryByText(confirmText)).not.toBeInTheDocument()
+        expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'false')
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Save settings' }))
+
+        await within(drawer).findByText('Settings saved for Customer SMS.')
+        expect(api.bodies[0]).toMatchObject({ allowSending: false })
+      })
+
+      it('the confirmation starts on the safe choice and Escape cancels it without closing the dialog', async () => {
+        const drawer = await openConfiguration('Connections', smsApi([connection()]).handler)
+        const dialog = await openEdit(drawer)
+        await userEvent.click(within(dialog).getByRole('switch', { name: switchName }))
+        expect(within(dialog).getByRole('button', { name: 'Keep sending off' })).toHaveFocus()
+
+        await userEvent.keyboard('{Escape}')
+
+        expect(within(dialog).queryByRole('group', { name: 'Confirm sending' })).not.toBeInTheDocument()
+        expect(screen.getByRole('dialog', { name: 'Customer SMS' })).toBeInTheDocument()
+        expect(within(dialog).getByRole('switch', { name: switchName })).toHaveAttribute('aria-checked', 'false')
+        await userEvent.keyboard('{Escape}')
+        expect(screen.queryByRole('dialog', { name: 'Customer SMS' })).not.toBeInTheDocument()
+      })
+    })
   })
 
   it('people who are not administrators see no SMS connections and cannot create one', async () => {

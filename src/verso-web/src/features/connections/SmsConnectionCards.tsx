@@ -55,7 +55,11 @@ export function SmsCard({ connection, onToggle, onConfigure }: { connection: Sms
         </div>
         <Switch checked={connection.isActive} onCheckedChange={onToggle} label={`Enable ${connection.name}`} hideLabel />
       </div>
-      <p className="m-0 text-[13px] text-ink-2">Real: stored on the server. Test connection sends one real SMS to the number you type.</p>
+      <p className="m-0 text-[13px] text-ink-2">
+        {connection.allowSending
+          ? `Real: stored on the server. Workflows can send real SMS through it to numbers starting with ${connection.allowedCountryPrefixes ? connection.allowedCountryPrefixes.split(',').map((p) => p.trim()).filter(Boolean).join(', ') : '(no country allowed yet)'}.`
+          : 'Real: stored on the server. Test connection sends one real SMS to the number you type.'}
+      </p>
       <dl className="m-0 mt-auto flex items-baseline justify-between gap-3 text-[12.5px]">
         <dt className="text-ink-3">Sender</dt>
         <dd className="m-0 min-w-0 text-right font-mono text-[11.5px] break-words text-ink-2">
@@ -66,6 +70,7 @@ export function SmsCard({ connection, onToggle, onConfigure }: { connection: Sms
         <StatusPill tone={!connection.isActive ? 'neutral' : missingSecret ? 'warn' : 'ok'}>
           {!connection.isActive ? 'Off' : missingSecret ? 'No key' : 'Ready'}
         </StatusPill>
+        {connection.allowSending && <StatusPill tone="warn">Sending on</StatusPill>}
         {connection.hasSecret && <span>Key saved</span>}
         <Button type="button" size="sm" className="ml-auto" onClick={onConfigure} aria-label={`Configure ${connection.name}`}>
           Configure
@@ -165,7 +170,7 @@ export function SmsEditDialog({ connection, onClose, onSaved }: { connection: Sm
       open
       onOpenChange={(open) => !open && onClose()}
       title={connection.name}
-      description="SMS (Brevo) · real. Stored on the server; Test connection sends one real SMS."
+      description={`SMS (Brevo) · real. Stored on the server; Test connection sends one real SMS.${connection.allowSending ? ' Workflows can send real SMS through it.' : ''}`}
       footer={
         <>
           <Button type="button" onClick={() => setAsking(true)} disabled={testing || !connection.isActive} className="mr-auto">
