@@ -78,7 +78,7 @@ A bank flow often has to tell a customer something short: "your statement is rea
 - **Tags are shared** by two Send SMS steps of the same run and iteration (item 8).
 - **With a system proxy the address guard checks the proxy, not the target** (the open question of ADR 0021 applies here too).
 - **The send path** (item 9) and **Brevo's tag limits** (item 8) are unresolved until the owner's manual check.
-- **Found while building, NOT fixed here (follow-ups for the owner):** (a) Fetch from API (`ApiFetchStep.ScalarText`) still turns a data number such as `1e400` into the text "Infinity" in a path or query value (Send SMS refuses it with its own check); (b) a lone-surrogate escape in any node's configuration string makes the schema check throw before the node rules run (pre-existing, every node).
+- **Found while building, NOT fixed here (follow-ups for the owner):** (a) ~~Fetch from API turned a data number such as `1e400` into the text "Infinity"~~ fixed afterwards (2026-11-23): the shared `ApiFetchStep.ScalarText` now returns null for a number no double can hold, so Fetch from API reports `fetch.value_invalid` (nothing sent) and Send SMS keeps its own more specific `sms.value_invalid`; (b) a lone-surrogate escape in any node's configuration string makes the schema check throw before the node rules run (pre-existing, every node).
 - **Not built:** Send to API (changing calls), Upload to SFTP (still simulated) and other SMS providers each need their own ADR; Deliver via API stays simulated.
 
 ## Unverified

@@ -107,7 +107,7 @@ public static partial class ApiFetchStep
             var text = ScalarText(value);
             if (text is null || !IsValidText(text))
             {
-                var kind = value.ValueKind switch { JsonValueKind.Array => "a list", JsonValueKind.Object => "a group of fields", _ => "text that can't be sent" };
+                var kind = value.ValueKind switch { JsonValueKind.Array => "a list", JsonValueKind.Object => "a group of fields", JsonValueKind.Number => "a number too large to be written out", _ => "text that can't be sent" };
                 issues.Add(new { code = "fetch.value_invalid", message = $"Query value '{name}': '{Short(path)}' holds {kind}; only text, a number or true/false can be sent.", field = path });
                 continue;
             }
@@ -120,7 +120,8 @@ public static partial class ApiFetchStep
 
     /// <summary>
     /// The text of a scalar data value as it is sent (path piece or query value): text as is, true/false, numbers in the invariant culture (whole numbers,
-    /// then exact decimals, then the round-trip form of a double). Null for a list, a group of fields, or text System.Text.Json can't read (a lone surrogate escape).
+    /// then exact decimals, then the round-trip form of a double). Null for a list, a group of fields, text System.Text.Json can't read (a lone surrogate escape),
+    /// or a number no double can hold (1e400 reads as Infinity on .NET 10, or throws FormatException on other runtimes): it must never be written out as "Infinity".
     /// </summary>
     internal static string? ScalarText(JsonElement value) => value.ValueKind switch
     {
@@ -129,9 +130,22 @@ public static partial class ApiFetchStep
         JsonValueKind.False => "false",
         JsonValueKind.Number when value.TryGetInt64(out var whole) => whole.ToString(CultureInfo.InvariantCulture),
         JsonValueKind.Number when value.TryGetDecimal(out var exact) => exact.ToString(CultureInfo.InvariantCulture),
-        JsonValueKind.Number => value.GetDouble().ToString("R", CultureInfo.InvariantCulture),
+        JsonValueKind.Number => FiniteDoubleText(value),
         _ => null,
     };
+
+    private static string? FiniteDoubleText(JsonElement value)
+    {
+        try
+        {
+            var number = value.GetDouble();
+            return double.IsFinite(number) ? number.ToString("R", CultureInfo.InvariantCulture) : null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
 
     private static string? ReadString(JsonElement value)
     {
@@ -277,7 +291,7 @@ public static partial class ApiPathTemplate
             var text = ApiFetchStep.ScalarText(value); // null (invalid) for a list, a group, or text System.Text.Json can't read, such as a lone surrogate escape
             if (text is null)
             {
-                issues.Add(new { code = "fetch.value_invalid", message = $"'{Short(dataPath)}' holds {value.ValueKind switch { JsonValueKind.Array => "a list", JsonValueKind.String => "text that can't be sent", _ => "a group of fields" }}; only text, a number or true/false can go in the path.", field = dataPath });
+                issues.Add(new { code = "fetch.value_invalid", message = $"'{Short(dataPath)}' holds {value.ValueKind switch { JsonValueKind.Array => "a list", JsonValueKind.String => "text that can't be sent", JsonValueKind.Number => "a number too large to be written out", _ => "a group of fields" }}; only text, a number or true/false can go in the path.", field = dataPath });
                 continue;
             }
 

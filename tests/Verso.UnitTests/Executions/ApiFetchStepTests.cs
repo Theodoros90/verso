@@ -343,6 +343,43 @@ public sealed class ApiFetchStepTests
         Assert.Contains("\"v\"", text, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("""{ "v": 1e400 }""")]
+    [InlineData("""{ "v": -1e400 }""")]
+    public void ResolveQuery_ANumberNoDoubleCanHold_IsInvalid_NeverTheTextInfinity(string json)
+    {
+        var (items, _) = ApiFetchStep.ParseQuery("q = v");
+
+        var (pairs, issues) = ApiFetchStep.ResolveQuery(items, Data(json));
+
+        Assert.Empty(pairs);
+        Assert.Equal("fetch.value_invalid", Codes(issues));
+        Assert.Contains("\"v\"", JsonSerializer.Serialize(issues), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""{ "c": { "v": 1e400 } }""")]
+    [InlineData("""{ "c": { "v": -1e400 } }""")]
+    public void Resolve_ANumberNoDoubleCanHold_IsInvalid_NeverTheTextInfinity(string json)
+    {
+        var (path, issues) = ApiPathTemplate.Resolve("/a/{{c.v}}", Data(json));
+
+        Assert.Null(path);
+        Assert.Equal("fetch.value_invalid", Codes(issues));
+        Assert.Contains("c.v", JsonSerializer.Serialize(issues), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolveQuery_ABigButFiniteNumber_IsStillSent()
+    {
+        var (items, _) = ApiFetchStep.ParseQuery("q = v");
+
+        var (pairs, issues) = ApiFetchStep.ResolveQuery(items, Data("""{ "v": 1e300 }"""));
+
+        Assert.Empty(issues);
+        Assert.Equal("1E+300", Assert.Single(pairs).Value);
+    }
+
     [Fact]
     public void ResolveQuery_ReportsEveryProblem_AndAnEmojiPairIsAValue()
     {
