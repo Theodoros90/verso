@@ -20,8 +20,8 @@ namespace Verso.Api.Tests;
 public sealed class SendSmsExecutionTests(MigratedDatabaseFixture fixture) : IDisposable
 {
     /// <summary>The number as the data holds it, and the digits the service must receive.</summary>
-    private const string Mobile = "+357 99 441733";
-    private const string MobileDigits = "35799441733";
+    private const string Mobile = "+357 99 000009";
+    private const string MobileDigits = "35799000009";
 
     /// <summary>A value that exists only in the submitted data and is used in the text.</summary>
     private const string TextMarker = "TXTMARK-8812";
@@ -150,7 +150,7 @@ public sealed class SendSmsExecutionTests(MigratedDatabaseFixture fixture) : IDi
         foreach (var text in new[] { done.GetRawText(), await events.Content.ReadAsStringAsync(), string.Join('\n', audit) })
         {
             Assert.DoesNotContain(MobileDigits, text, StringComparison.Ordinal);
-            Assert.DoesNotContain("441733", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("99 000009", text, StringComparison.Ordinal); // the number as the data writes it (MobileDigits covers the digits)
             Assert.DoesNotContain(TextMarker, text, StringComparison.Ordinal);
             Assert.DoesNotContain(request.Tag, text, StringComparison.Ordinal);
         }
@@ -170,13 +170,13 @@ public sealed class SendSmsExecutionTests(MigratedDatabaseFixture fixture) : IDi
     [Fact]
     public async Task Invalid_number_in_data_rejects_without_calling()
     {
-        var (_, done) = await RunAsync(Sms(), Data(mobile: "call me 441733"));
+        var (_, done) = await RunAsync(Sms(), Data(mobile: "call me 99 000008"));
 
         AssertRejected(done, calls: 0);
         var issue = Assert.Single(Step(done, "sms").GetProperty("result").GetProperty("issues").EnumerateArray());
         Assert.Equal("sms.recipient_invalid", issue.GetProperty("code").GetString());
         Assert.Equal("to", issue.GetProperty("field").GetString());
-        Assert.DoesNotContain("441733", done.GetRawText(), StringComparison.Ordinal);
+        Assert.DoesNotContain("99 000008", done.GetRawText(), StringComparison.Ordinal);
     }
 
     [Fact]

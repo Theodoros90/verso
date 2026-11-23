@@ -762,7 +762,7 @@ public sealed class SmsSendTests(MigratedDatabaseFixture fixture)
     [Fact]
     public async Task Secret_number_text_never_appear_in_results_messages_or_ToString()
     {
-        const string number = "35799123456";
+        const string number = "35799000007";
         const string text = "SECRET-TEXT-MARKER balance 1234";
         var key = await CreateConnectionAsync();
         var markers = new[] { number, text, "SECRET-TEXT-MARKER", ApiKey, Tag, "MARKER" };

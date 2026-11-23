@@ -23,7 +23,7 @@ namespace Verso.Api.Tests;
 [Collection(ApiTestGroup.Name)]
 public sealed class SendSmsRealServiceExecutionTests(MigratedDatabaseFixture fixture) : IDisposable
 {
-    private const string Digits = "35799552301";
+    private const string Digits = "35799000006";
     private const string TextMarker = "REALTXT-7731";
 
     private static readonly AesGcmSecretProtector Protector = new(AesGcmSecretProtector.GenerateKey());
