@@ -71,6 +71,13 @@ public static class NodeCatalog
     /// <summary>The steps that render a template version into a document (PDF or Word).</summary>
     public static bool IsDocumentStep(string type) => type is GeneratePdf or GenerateDocx;
 
+    /// <summary>
+    /// The steps that change something outside Verso that can't be taken back (a database write, a sent SMS). The engine never retries them automatically and
+    /// never runs them twice by itself: a step found Running fails the run with an unknown outcome, a shutdown mid-step leaves it Running, the run's time limit is
+    /// a final failure, a succeeded one is only replayed on resume, and a For each containing one checks that its list is unchanged before resuming (ADR 0020).
+    /// </summary>
+    public static bool ChangesOutsideWorld(string type) => type is WriteDatabase or SendSms;
+
     /// <summary>Every step that leaves a document for a later Archive step: the template steps and the HTML email (which needs no template).</summary>
     public static bool ProducesDocument(string type) => IsDocumentStep(type) || type is GenerateEmail or CombinePdfs;
 

@@ -149,7 +149,7 @@ public sealed partial class ExecutionEngine(
     /// Items already done are found again by their step rows and skipped over, so a retried or redelivered run resumes in the right item.
     /// <para>
     /// Step rows are matched to items by position, and the list is rebuilt from the data on every resume (a Query database step before the loop reads again).
-    /// When the loop contains a Write to database step, a list that changed would skip an item whose position already has a succeeded write, or write an item
+    /// When the loop contains a step that changes the outside world (<see cref="NodeCatalog.ChangesOutsideWorld"/>: Write to database, Send SMS), a list that changed would skip an item whose position already has a succeeded write, or write an item
     /// again at a later position. So before any item runs, the list is compared with the fingerprint the first pass recorded; on any difference (count, order or
     /// content) the run fails with <c>loop.items_changed</c> and nothing in the loop runs. A recorded result without a fingerprint can't be verified and fails the
     /// same way (only a run started before this check existed could have one, and write steps are newer than the check).
@@ -158,14 +158,19 @@ public sealed partial class ExecutionEngine(
     private async Task<bool> RunLoopAsync(Run run, Workflows.WorkflowNode forEach, ExecutionStep loopStep, CancellationToken timeoutToken, CancellationToken shutdown)
     {
         var items = ForEach.Items(forEach.Config, run.Data);
-        if (LoopWrites(run.Plan, forEach.Id) && RecordedFingerprint(loopStep) != ForEach.Fingerprint(run.Execution.Id, forEach.Id, items))
+        if (LoopChangesOutsideWorld(run.Plan, forEach.Id) && RecordedFingerprint(loopStep) != ForEach.Fingerprint(run.Execution.Id, forEach.Id, items))
         {
             var before = RecordedCount(loopStep) is { } c ? c.ToString(System.Globalization.CultureInfo.InvariantCulture) : "an unknown number of";
+            var changed = $"The list of step '{forEach.Title}' is not the same as when the run started ({before} item(s) then, {items.Count} now, or the same number in another order or with other content)";
             await FailRestoreAsync(run, forEach, loopStep, new StepException(
                 "loop.items_changed",
-                $"The list of step '{forEach.Title}' is not the same as when the run started ({before} item(s) then, {items.Count} now, or the same number in another order or with other content), and the loop contains a Write to database step. " +
-                "The run can't continue: matching the list again could skip an item or write one twice. Writes already made for earlier items are kept and were not repeated; no later item ran. " +
-                "Check the database, then submit the data again if needed (a new run writes every item again).",
+                LoopContains(run.Plan, forEach.Id, NodeCatalog.WriteDatabase)
+                    ? changed + ", and the loop contains a Write to database step. " +
+                      "The run can't continue: matching the list again could skip an item or write one twice. Writes already made for earlier items are kept and were not repeated; no later item ran. " +
+                      "Check the database, then submit the data again if needed (a new run writes every item again)."
+                    : changed + ", and the loop contains a Send SMS step. " +
+                      "The run can't continue: matching the list again could skip an item or send one twice. Messages already sent for earlier items were not sent again; no later item ran. " +
+                      "Check the SMS provider's log, then submit the data again if needed (a new run sends every item again).",
                 retryable: false));
             return false;
         }
@@ -309,11 +314,11 @@ public sealed partial class ExecutionEngine(
             return new StepResult(step.OutputPort, step);
         }
 
-        if (node.Type == NodeCatalog.WriteDatabase && step.Status == StepStatus.Running)
+        if (NodeCatalog.ChangesOutsideWorld(node.Type) && step.Status == StepStatus.Running)
         {
-            // A write that an earlier run started and never recorded as finished (the Worker crashed, or stopped mid-write: see the shutdown catch in RunStepAsync).
-            // The statement may or may not have changed data, so the engine never sends it again: the run fails and a person decides (an operator retry runs it).
-            await FailUnfinishedWriteAsync(run, node, step);
+            // A write (or an SMS) that an earlier run started and never recorded as finished (the Worker crashed, or stopped mid-step: see the shutdown catch in
+            // RunStepAsync). It may or may not have happened, so the engine never sends it again: the run fails and a person decides (an operator retry runs it).
+            await FailUnfinishedAsync(run, node, step);
             return null;
         }
 
@@ -439,9 +444,9 @@ public sealed partial class ExecutionEngine(
         {
             // The Worker is stopping. Leave the run resumable: Hangfire re-queues the job and the next run
             // continues here (or the dispatcher re-queues it if that doesn't happen).
-            // A Write to database step stays Running: its statement may already have reached the database, so the next run must not send it again
-            // (StepAsync fails the run with write.outcome_unknown when it finds the step Running).
-            if (step.Status == StepStatus.Running && node.Type != NodeCatalog.WriteDatabase)
+            // A step that changes the outside world (Write to database, Send SMS) stays Running: its statement or message may already have left, so the next run
+            // must not send it again (StepAsync fails the run with write.outcome_unknown / sms.outcome_unknown when it finds the step Running).
+            if (step.Status == StepStatus.Running && !NodeCatalog.ChangesOutsideWorld(node.Type))
             {
                 step.Interrupt();
             }
@@ -582,7 +587,7 @@ public sealed partial class ExecutionEngine(
 
     /// <summary>
     /// Counts the list: <c>each</c> when there are items (the engine then runs the loop), <c>empty</c> when there are none. The data is
-    /// unchanged, so a resumed run has nothing to rebuild. The result holds the count, never the items; when the loop contains a Write to database step it also
+    /// unchanged, so a resumed run has nothing to rebuild. The result holds the count, never the items; when the loop contains a Write to database or Send SMS step it also
     /// holds the list's <see cref="ForEach.Fingerprint"/> (a keyed hash, no value), which <see cref="RunLoopAsync"/> compares on resume.
     /// </summary>
     private static Outcome Repeat(Run run, Workflows.WorkflowNode node)
@@ -595,15 +600,23 @@ public sealed partial class ExecutionEngine(
         }
 
         var port = count == 0 ? ForEach.Empty : ForEach.Each;
-        return LoopWrites(run.Plan, node.Id)
+        return LoopChangesOutsideWorld(run.Plan, node.Id)
             ? new Outcome(port, new { count, itemsFingerprint = ForEach.Fingerprint(run.Execution.Id, node.Id, items) })
             : new Outcome(port, new { count });
     }
 
-    /// <summary>Whether the loop of this For each contains a Write to database step anywhere in its body (behind a branch too).</summary>
-    private static bool LoopWrites(ExecutionPlan plan, string forEachId) =>
+    /// <summary>
+    /// Whether the loop of this For each contains, anywhere in its body (behind a branch too), a step that changes the outside world
+    /// (<see cref="NodeCatalog.ChangesOutsideWorld"/>: Write to database, Send SMS).
+    /// </summary>
+    private static bool LoopChangesOutsideWorld(ExecutionPlan plan, string forEachId) =>
         plan.Loops.FirstOrDefault(l => l.ForEach.Id == forEachId) is { } loop
-        && loop.Body.Any(id => plan.Node(id).Type == NodeCatalog.WriteDatabase);
+        && loop.Body.Any(id => NodeCatalog.ChangesOutsideWorld(plan.Node(id).Type));
+
+    /// <summary>Whether the loop of this For each contains a step of <paramref name="type"/> anywhere in its body.</summary>
+    private static bool LoopContains(ExecutionPlan plan, string forEachId, string type) =>
+        plan.Loops.FirstOrDefault(l => l.ForEach.Id == forEachId) is { } loop
+        && loop.Body.Any(id => plan.Node(id).Type == type);
 
     /// <summary>The fingerprint the first pass recorded in the For each step's result; null when there is none.</summary>
     private static string? RecordedFingerprint(ExecutionStep step)
@@ -1225,18 +1238,23 @@ public sealed partial class ExecutionEngine(
     }
 
     /// <summary>
-    /// A Write to database step found Running: an earlier run started it and never recorded how it ended. It is not run again; it is recorded failed with the
-    /// outcome-unknown warning and the run fails (not retried), with the same events as any other final failure. An operator retry runs it again.
+    /// A step that changes the outside world (<see cref="NodeCatalog.ChangesOutsideWorld"/>) found Running: an earlier run started it and never recorded how it
+    /// ended. It is not run again; it is recorded failed with the outcome-unknown warning and the run fails (not retried), with the same events as any other final
+    /// failure. An operator retry runs it again. Write to database: <c>write.outcome_unknown</c>; Send SMS: <c>sms.outcome_unknown</c>.
     /// </summary>
-    private async Task FailUnfinishedWriteAsync(Run run, Workflows.WorkflowNode node, ExecutionStep step)
+    private async Task FailUnfinishedAsync(Run run, Workflows.WorkflowNode node, ExecutionStep step)
     {
-        const string code = "write.outcome_unknown";
+        var (code, stepError, runMessage) = node.Type == NodeCatalog.SendSms
+            ? ("sms.outcome_unknown", SmsSendMessages.OutcomeUnknown,
+                $"Step '{node.Title}' was started but never recorded as finished (the Worker stopped or crashed): the message may or may not have been sent. Check the SMS provider's log before retrying.")
+            : ("write.outcome_unknown", DatabaseQueryMessages.OutcomeUnknown,
+                $"Step '{node.Title}' was started but never recorded as finished (the Worker stopped or crashed): the statement may or may not have changed data. Check the database before retrying.");
         var execution = run.Execution;
         var now = clock.GetUtcNow();
-        step.Fail(DatabaseQueryMessages.OutcomeUnknown, now);
+        step.Fail(stepError, now);
         LogStepFailed(logger, node.Id, execution.Id, step.Attempt, code);
         Event(execution, ExecutionEventTypes.StepFailed, now, node.Id, Data(step, ("attempt", step.Attempt), ("code", code)));
-        execution.Fail(code, $"Step '{node.Title}' was started but never recorded as finished (the Worker stopped or crashed): the statement may or may not have changed data. Check the database before retrying.", now);
+        execution.Fail(code, runMessage, now);
         Event(execution, ExecutionEventTypes.Failed, now, node.Id, Data(step, ("code", code)));
         Completed(execution, now);
         await SaveAsync(execution, CancellationToken.None);
@@ -1432,6 +1450,14 @@ public sealed partial class ExecutionEngine(
     /// <summary>Re-establishes what a step that already succeeded produced (the parsed data or the document, for later steps).</summary>
     private async Task RestoreAsync(Run run, Workflows.WorkflowNode node, ExecutionStep step, CancellationToken ct)
     {
+        if (NodeCatalog.ChangesOutsideWorld(node.Type))
+        {
+            // A Write to database or Send SMS step that succeeded is only replayed (its recorded port is followed): it changed nothing in the run's data, and
+            // running it again would repeat the write or send the message twice. Its record stays as it was; nothing is called on resume
+            // (WriteDatabaseExecutionTests, SendSmsExecutionTests).
+            return;
+        }
+
         if (NodeCatalog.ProducesDocument(node.Type))
         {
             run.Document = await FindDocumentAsync(run.Execution.Id, node.Id, run.Iteration, ct);
@@ -1526,8 +1552,6 @@ public sealed partial class ExecutionEngine(
             }
         }
 
-        // A Write to database step that succeeded is deliberately NOT handled here: it changed nothing in the run's data, and running it again would repeat
-        // the write. Its row count stays in the step record; the database is never called on resume (WriteDatabaseExecutionTests).
     }
 
     /// <summary>A step that succeeded before can't be re-established on resume: the run fails (an operator retry resumes here). Only the code is logged.</summary>
@@ -1618,21 +1642,27 @@ public sealed partial class ExecutionEngine(
     private static object DocumentResult(Document d, IReadOnlyList<string> warnings, object? renderWarnings = null) =>
         new { documentId = d.Id, d.FileName, d.SizeBytes, d.Sha256, warnings, renderWarnings };
 
-    /// <summary>Code, sanitized message and retryability of a step failure. Messages never contain payload values.</summary>
-    private static (string Code, string Message, bool Retryable) Describe(Exception ex, string nodeType, CancellationToken timeoutToken)
+    /// <summary>
+    /// Code, sanitized message and retryability of a step failure. Messages never contain payload values. Internal (not private) so tests can reach the run's
+    /// time-limit branch, which no engine test can trigger (the 5-minute limit has no seam).
+    /// </summary>
+    internal static (string Code, string Message, bool Retryable) Describe(Exception ex, string nodeType, CancellationToken timeoutToken)
     {
         if (ex is StepException step)
         {
             return (step.Code, step.Message, step.Retryable);
         }
 
-        if (nodeType == NodeCatalog.WriteDatabase)
+        if (NodeCatalog.ChangesOutsideWorld(nodeType))
         {
-            // A write is never retried automatically: a cancellation that is not the Worker stopping (the run's time limit) or any other surprise may have
-            // come after the statement reached the database.
+            // A step that changes the outside world is never retried automatically: a cancellation that is not the Worker stopping (the run's time limit) or any
+            // other surprise may have come after the statement reached the database or the message reached the SMS provider.
+            var (unknown, surpriseCode, during) = nodeType == NodeCatalog.SendSms
+                ? (SmsSendMessages.OutcomeUnknown, "sms.unreachable", "the message was being sent")
+                : (DatabaseQueryMessages.OutcomeUnknown, "db.query_failed", "the statement was running");
             return ex is OperationCanceledException && timeoutToken.IsCancellationRequested
-                ? ("execution.timeout", $"The run exceeded its time limit of {RunTimeout.TotalMinutes:0} minutes while the statement was running. {DatabaseQueryMessages.OutcomeUnknown}", false)
-                : ("db.query_failed", DatabaseQueryMessages.OutcomeUnknown, false);
+                ? ("execution.timeout", $"The run exceeded its time limit of {RunTimeout.TotalMinutes:0} minutes while {during}. {unknown}", false)
+                : (surpriseCode, unknown, false);
         }
 
         if (ex is OperationCanceledException && timeoutToken.IsCancellationRequested)
