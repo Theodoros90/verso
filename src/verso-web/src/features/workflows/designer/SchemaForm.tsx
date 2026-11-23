@@ -28,6 +28,8 @@ export interface FieldSchema {
   /** On an SMS connection field: the step sends messages, so the connection must allow sending. */
   'x-requires-sending'?: boolean
   'x-widget'?: 'multiline' | 'template' | 'template-version' | 'data-path' | 'pattern' | 'json' | 'endpoint-path' | 'mono' | 'folder-path' | 'legacy' | 'conditions' | 'branches' | 'retention' | 'email-relay' | 'database-connection' | 'api-connection' | 'sms-connection' | 'sql'
+  /** Shown only while another setting of the same step has this value. */
+  'x-showWhen'?: { field: string; equals: string }
   maxItems?: number
   maxLength?: number
   minimum?: number
@@ -66,7 +68,9 @@ export function SchemaForm({
   ctx: FormContext
 }) {
   const listId = useId()
-  const props = Object.entries(schema.properties ?? {}).filter(([, f]) => f['x-widget'] !== 'legacy') // legacy settings stay in the saved workflow but aren't shown
+  const props = Object.entries(schema.properties ?? {})
+    .filter(([, f]) => f['x-widget'] !== 'legacy') // legacy settings stay in the saved workflow but aren't shown
+    .filter(([, f]) => !f['x-showWhen'] || value[f['x-showWhen'].field] === f['x-showWhen'].equals)
   if (props.length === 0) return <p className="text-[12.5px] text-ink-3">This step has no settings.</p>
 
   const set = (name: string, v: unknown, key = name) => {

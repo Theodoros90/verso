@@ -15,13 +15,16 @@ public sealed record FolderRef(string Location, string Subfolder)
 /// typed, an approved location key plus subfolder (<c>sourceLocation</c> + <c>sourceSubfolder</c>, and so on).
 /// </summary>
 public sealed record FolderInputSettings(
-    FolderRef Source, string Pattern, bool IncludeSubfolders, string Interval, FolderRef Processed, FolderRef Failed)
+    FolderRef Source, string Pattern, bool IncludeSubfolders, string Interval, FolderRef Processed, FolderRef Failed, int? IntervalMs = null)
 {
     public const string SourceRole = "source";
     public const string ProcessedRole = "processed";
     public const string FailedRole = "failed";
 
-    public TimeSpan IntervalTime => FolderPaths.Intervals.TryGetValue(Interval, out var t) ? t : TimeSpan.FromMinutes(1);
+    public TimeSpan IntervalTime =>
+        Interval == FolderPaths.CustomInterval && IntervalMs is { } ms
+            ? TimeSpan.FromMilliseconds(Math.Clamp(ms, FolderPaths.MinCustomIntervalMs, FolderPaths.MaxCustomIntervalMs))
+            : FolderPaths.Intervals.TryGetValue(Interval, out var t) ? t : TimeSpan.FromMinutes(1);
 
     /// <summary>The typed path of a role, trimmed, or empty.</summary>
     public static string TypedPath(JsonElement config, string role) => Text(config, role + "Path");
@@ -35,8 +38,9 @@ public sealed record FolderInputSettings(
         }
 
         var include = config.TryGetProperty("includeSubfolders", out var b) && b.ValueKind == JsonValueKind.True;
+        int? intervalMs = config.TryGetProperty("intervalMs", out var ms) && ms.ValueKind == JsonValueKind.Number && ms.TryGetInt32(out var n) ? n : null;
         var settings = new FolderInputSettings(
-            Ref(config, SourceRole), Text(config, "pattern"), include, Text(config, "interval"), Ref(config, ProcessedRole), Ref(config, FailedRole));
+            Ref(config, SourceRole), Text(config, "pattern"), include, Text(config, "interval"), Ref(config, ProcessedRole), Ref(config, FailedRole), intervalMs);
         return settings.Source.Location.Length == 0 || settings.Pattern.Length == 0
                || settings.Processed.Location.Length == 0 || settings.Failed.Location.Length == 0
             ? null
@@ -93,6 +97,12 @@ public static partial class FolderPaths
 
     /// <summary>A file name pattern with '*' and '?' wildcards, no path parts, not starting with '.'.</summary>
     public const string FilePatternPattern = @"^[A-Za-z0-9_*?-][A-Za-z0-9._*?-]*$";
+
+    /// <summary>The interval choice that takes its length from the <c>intervalMs</c> setting.</summary>
+    public const string CustomInterval = "custom";
+
+    public const int MinCustomIntervalMs = 500;
+    public const int MaxCustomIntervalMs = 86_400_000;
 
     public static readonly IReadOnlyDictionary<string, TimeSpan> Intervals = new Dictionary<string, TimeSpan>
     {

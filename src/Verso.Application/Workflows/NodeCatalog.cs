@@ -288,6 +288,7 @@ public static class NodeCatalog
         ["every-5-minutes"] = "Every 5 minutes",
         ["every-15-minutes"] = "Every 15 minutes",
         ["hourly"] = "Hourly",
+        [Ingestion.FolderPaths.CustomInterval] = "Custom (milliseconds)",
     };
 
     public static readonly IReadOnlyDictionary<string, string> ErpModes = new Dictionary<string, string>
@@ -492,6 +493,9 @@ public static class NodeCatalog
                   "description": "For example *.json or *.xml (XML and CSV files reach a Parse step as text). Senders write under a temporary name (such as .tmp) and rename when the file is complete." },
                 "includeSubfolders": { "type": "boolean", "title": "Include subfolders" },
                 "interval": { "type": "string", "title": "Scan interval", "enum": {{JsonSerializer.Serialize(FolderScanIntervals.Keys)}}, "x-enumLabels": {{JsonSerializer.Serialize(FolderScanIntervals.Values)}} },
+                "intervalMs": { "type": "integer", "title": "Custom scan interval (milliseconds)", "minimum": {{Ingestion.FolderPaths.MinCustomIntervalMs}}, "maximum": {{Ingestion.FolderPaths.MaxCustomIntervalMs}},
+                  "x-showWhen": { "field": "interval", "equals": "{{Ingestion.FolderPaths.CustomInterval}}" },
+                  "description": "Time between scans, for example 5000 for every 5 seconds. The Worker checks for due scans at least this often, so a short interval means more load on the folder and the database." },
                 "processedPath": { "type": "string", "title": "Processed files go to", "maxLength": {{Ingestion.FolderPaths.MaxPathLength}}, "x-widget": "folder-path",
                   "description": "Must not be inside the source folder when subfolders are included, or the files would be picked up again." },
                 "failedPath": { "type": "string", "title": "Failed files go to", "maxLength": {{Ingestion.FolderPaths.MaxPathLength}}, "x-widget": "folder-path",

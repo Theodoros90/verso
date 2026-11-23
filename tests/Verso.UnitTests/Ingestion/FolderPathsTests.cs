@@ -113,6 +113,37 @@ public sealed class FolderPathsTests
     public void PathWouldRescan(string source, string destination, bool include, bool expected) =>
         Assert.Equal(expected, FolderPaths.PathWouldRescan(source, destination, include));
 
+    [Theory]
+    [InlineData(1500, 1500)]
+    [InlineData(5000, 5000)]
+    [InlineData(10, 500)] // below the floor: raised
+    [InlineData(999_999_999, 86_400_000)] // above the ceiling: lowered
+    public void CustomInterval_IsReadInMilliseconds(int typed, int expectedMs)
+    {
+        using var config = JsonDocument.Parse($$"""
+            { "sourcePath": "D:\\in", "pattern": "*.json", "includeSubfolders": false, "interval": "custom", "intervalMs": {{typed}},
+              "processedPath": "D:\\done", "failedPath": "D:\\failed" }
+            """);
+
+        Assert.Equal(TimeSpan.FromMilliseconds(expectedMs), FolderInputSettings.Parse(config.RootElement)!.IntervalTime);
+    }
+
+    [Fact]
+    public void CustomInterval_WithoutMilliseconds_FallsBackToEveryMinute_AndIgnoredByPresets()
+    {
+        using var custom = JsonDocument.Parse("""
+            { "sourcePath": "D:\\in", "pattern": "*.json", "includeSubfolders": false, "interval": "custom",
+              "processedPath": "D:\\done", "failedPath": "D:\\failed" }
+            """);
+        using var preset = JsonDocument.Parse("""
+            { "sourcePath": "D:\\in", "pattern": "*.json", "includeSubfolders": false, "interval": "hourly", "intervalMs": 1000,
+              "processedPath": "D:\\done", "failedPath": "D:\\failed" }
+            """);
+
+        Assert.Equal(TimeSpan.FromMinutes(1), FolderInputSettings.Parse(custom.RootElement)!.IntervalTime);
+        Assert.Equal(TimeSpan.FromHours(1), FolderInputSettings.Parse(preset.RootElement)!.IntervalTime);
+    }
+
     [Fact]
     public void Settings_ReadTypedPaths_AndTheirPurposes()
     {

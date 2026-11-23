@@ -59,6 +59,36 @@ public sealed class FolderInputValidationTests
     private static List<string> TriggerErrors(WorkflowValidationDto v) =>
         [.. v.Issues.Where(i => i.NodeId == "trigger" && i.Severity == GraphValidator.Error).Select(i => $"{i.Field}:{i.Code}")];
 
+    // ----- scan interval -----
+
+    [Fact]
+    public void CustomInterval_WithMilliseconds_IsValid()
+    {
+        var config = Typed();
+        config["interval"] = "custom";
+        config["intervalMs"] = 2500;
+        Assert.Empty(TriggerErrors(Validate(config)));
+    }
+
+    [Fact]
+    public void CustomInterval_WithoutMilliseconds_IsReported()
+    {
+        var config = Typed();
+        config["interval"] = "custom";
+        Assert.Contains("intervalMs:folder.interval_required", TriggerErrors(Validate(config)));
+    }
+
+    [Theory]
+    [InlineData(100)]
+    [InlineData(90_000_000)]
+    public void CustomInterval_OutsideTheRange_IsReported(int ms)
+    {
+        var config = Typed();
+        config["interval"] = "custom";
+        config["intervalMs"] = ms;
+        Assert.NotEmpty(TriggerErrors(Validate(config)));
+    }
+
     // ----- typed paths -----
 
     [Theory]

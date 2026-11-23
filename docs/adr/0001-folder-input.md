@@ -11,7 +11,7 @@ Banks commonly hand documents to output systems through watched folders on a fil
 
 ## Decision
 
-1. **New node type `folder-input`** (category input). Settings: source location and optional subfolder, file pattern, include subfolders, scan interval (1, 5, 15 or 60 minutes), processed location and subfolder, failed location and subfolder. The step title is the node's title. There are no credential settings; unknown settings are rejected.
+1. **New node type `folder-input`** (category input). Settings: source location and optional subfolder, file pattern, include subfolders, scan interval (1, 5, 15 or 60 minutes, or custom: `interval` = `custom` plus `intervalMs`, 500 to 86,400,000 milliseconds; the Worker then wakes at least that often, never faster than every 250 ms), processed location and subfolder, failed location and subfolder. The step title is the node's title. There are no credential settings; unknown settings are rejected.
 
 2. **Approved locations live in the Worker's configuration** (`FolderInput:Locations:<key>`: `Name`, `Path`, `Input`, `Output`), so they are controlled by server administrators under change control. The Worker reports **key, name and purpose only** to `ingestion.FolderLocations`. Paths never reach the database, the API or a browser. Designers choose a key from a list and may add a relative subfolder.
 

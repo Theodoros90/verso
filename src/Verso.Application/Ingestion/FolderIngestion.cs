@@ -60,6 +60,9 @@ public sealed partial class FolderIngestion(
 
     private static readonly string Worker = $"{Environment.MachineName}:{Environment.ProcessId}";
 
+    /// <summary>The shortest scan interval among the folder workflows seen in the last pass (null before the first pass or with none).</summary>
+    public TimeSpan? ShortestInterval { get; private set; }
+
     public async Task<FolderPassResult> RunOnceAsync(CancellationToken ct)
     {
         var counters = new Counters();
@@ -213,7 +216,9 @@ public sealed partial class FolderIngestion(
 
     private async Task ScanDueFoldersAsync(Counters counters, CancellationToken ct)
     {
-        foreach (var (workflowId, workflowKey, node, settings) in await FolderWorkflowsAsync(ct))
+        var workflows = await FolderWorkflowsAsync(ct);
+        ShortestInterval = workflows.Count == 0 ? null : workflows.Min(w => w.Settings.IntervalTime);
+        foreach (var (workflowId, workflowKey, node, settings) in workflows)
         {
             ct.ThrowIfCancellationRequested();
             var now = clock.GetUtcNow();

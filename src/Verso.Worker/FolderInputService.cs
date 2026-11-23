@@ -12,7 +12,7 @@ internal sealed partial class FolderInputService(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(options.PollInterval);
+        var wait = options.PollInterval;
         do
         {
             try
@@ -23,6 +23,10 @@ internal sealed partial class FolderInputService(
                 await ingestion.SyncLocationsAsync(stoppingToken);
 
                 var result = await ingestion.RunOnceAsync(stoppingToken);
+                // A workflow with a short custom scan interval makes the Worker look more often (never below the floor).
+                wait = ingestion.ShortestInterval is { } shortest && shortest < options.PollInterval
+                    ? TimeSpan.FromMilliseconds(Math.Max(shortest.TotalMilliseconds, MinimumWait.TotalMilliseconds))
+                    : options.PollInterval;
                 if (result.Claimed + result.Delivered + result.Errors > 0)
                 {
                     LogPass(logger, result.Scanned, result.Claimed, result.Submitted, result.Delivered, result.Errors);
@@ -39,7 +43,22 @@ internal sealed partial class FolderInputService(
                 LogPassFailed(logger, ex); // e.g. database not migrated yet; the next pass tries again
             }
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
+        while (await DelayAsync(wait, stoppingToken));
+    }
+
+    private static readonly TimeSpan MinimumWait = TimeSpan.FromMilliseconds(250);
+
+    private static async Task<bool> DelayAsync(TimeSpan wait, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(wait, ct);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Folder input pass: {Scanned} folder(s) scanned, {Claimed} file(s) picked up, {Submitted} run(s) started, {Delivered} file(s) moved, {Errors} error(s)")]

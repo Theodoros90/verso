@@ -14,7 +14,8 @@ const schema: FieldSchema = {
     sourcePath: { type: 'string', title: 'Source folder', 'x-widget': 'folder-path' },
     pattern: { type: 'string', title: 'File pattern', 'x-widget': 'mono' },
     includeSubfolders: { type: 'boolean', title: 'Include subfolders' },
-    interval: { type: 'string', title: 'Scan interval', enum: ['every-minute', 'hourly'], 'x-enumLabels': ['Every minute', 'Hourly'] },
+    interval: { type: 'string', title: 'Scan interval', enum: ['every-minute', 'hourly', 'custom'], 'x-enumLabels': ['Every minute', 'Hourly', 'Custom (milliseconds)'] },
+    intervalMs: { type: 'integer', title: 'Custom scan interval (milliseconds)', minimum: 500, maximum: 86400000, 'x-showWhen': { field: 'interval', equals: 'custom' } },
     processedPath: { type: 'string', title: 'Processed files go to', 'x-widget': 'folder-path' },
     failedPath: { type: 'string', title: 'Failed files go to', 'x-widget': 'folder-path' },
     sourceLocation: { type: 'string', 'x-widget': 'legacy' },
@@ -94,6 +95,26 @@ describe('Folder input settings', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...config, sourcePath: '\\\\fileserver\\verso\\ap-inbound' }, 'sourcePath')
     fireEvent.click(screen.getByRole('switch', { name: 'Include subfolders' }))
     expect(onChange).toHaveBeenLastCalledWith({ ...config, includeSubfolders: true }, 'includeSubfolders')
+  })
+
+  it('asks for milliseconds only when the scan interval is custom', () => {
+    mockApi()
+    const onChange = renderSettings()
+    expect(screen.queryByLabelText(/Custom scan interval/)).toBeNull()
+
+    fireEvent.change(screen.getByLabelText(/^Scan interval/), { target: { value: 'custom' } })
+    expect(onChange).toHaveBeenLastCalledWith({ ...config, interval: 'custom' }, 'interval')
+  })
+
+  it('shows the milliseconds box for a custom interval and passes the typed number on', () => {
+    mockApi()
+    const custom = { ...config, interval: 'custom', intervalMs: 2500 }
+    const onChange = renderSettings({ value: custom })
+    const box = screen.getByLabelText(/Custom scan interval/)
+    expect(box).toHaveValue(2500)
+
+    fireEvent.change(box, { target: { value: '1500' } })
+    expect(onChange).toHaveBeenLastCalledWith({ ...custom, intervalMs: 1500 }, 'intervalMs')
   })
 
   it('shows server problems next to the path field', () => {

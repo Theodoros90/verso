@@ -697,6 +697,12 @@ public static class GraphValidator
             }
         }
 
+        if (Text("interval") == Ingestion.FolderPaths.CustomInterval && !(c.TryGetProperty("intervalMs", out var ms) && ms.ValueKind == JsonValueKind.Number))
+        {
+            yield return new(Error, "folder.interval_required",
+                $"Type the scan interval in milliseconds ({Ingestion.FolderPaths.MinCustomIntervalMs} to {Ingestion.FolderPaths.MaxCustomIntervalMs}).", NodeId: node.Id, Field: "intervalMs");
+        }
+
         var include = c.TryGetProperty("includeSubfolders", out var inc) && inc.ValueKind == JsonValueKind.True;
         const string Again = "Files moved here would be picked up again. Choose a folder outside the scanned folder";
         if (Ingestion.FolderInputSettings.Parse(c) is { } settings)
