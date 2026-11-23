@@ -207,6 +207,18 @@ The Fetch from API step ([ADR 0021](adr/0021-fetch-api-step.md)) makes the **Wor
 - **Limits.** One call has one time limit (1 to 60 seconds, default 15, covering the token request, the call and the reading of the answer) and a largest answer (1 to 256 KB, default 64). The answer must be JSON (`application/json` or `+json`).
 - Nothing in Verso has been verified against a live third-party API: try a non-production API first (the sample [fetch-api-exchange-rate.md](samples/fetch-api-exchange-rate.md) uses the public Frankfurter service). What a failure code means: [runbook C2](runbook.md#c2-failures).
 
+## 10. Sending SMS from workflows
+
+The Send SMS step ([ADR 0022](adr/0022-send-sms-step.md)) makes the **Worker** send one real SMS through Brevo, to a number and with a text taken from the run's data, through an SMS connection an administrator created (Configuration, Connections, authentication SMS (Brevo), [ADR 0018](adr/0018-sms-connections.md)). A sent message costs a credit and cannot be recalled. To set it up:
+
+- **Who switches it on.** Only an **administrator** can switch **Allow workflows to send SMS** on for a connection (off by default, the page asks for confirmation, audited as `SmsConnectionSendingChanged`) and type its allowed country prefixes. Once it is on, **anyone who can edit a workflow** can send through that connection, to any number in its allowed countries: switch it on only for connections meant for workflows.
+- **Transactional only.** A connection of type marketing is refused by the step (`sms.marketing_not_allowed`): Verso does not manage consent or opt-out wording.
+- **Allowed country prefixes** (deny by default). Country dialling codes without `+`, separated by commas, for example `357, 30`. A number must start with one of them; **an empty list allows no country**. Keep the list as short as the flows need; a 1-digit prefix such as `3` allows every `+3x` country.
+- **Brevo credit and sender.** The Brevo account needs credits (a long text is sent as several messages, each costs a credit; there is no daily cap in Verso, so keep the account's credit to what you are ready to spend). Some countries require a pre-registered or numeric sender, or block alphanumeric senders: check Brevo's rules for every country you allow.
+- **Unicode.** With Unicode off, a text with a character outside the GSM 7-bit set (for example Greek lower-case letters or most emoji) fails the run with `sms.text_needs_unicode` and nothing is sent; switch Unicode on for connections whose texts may need it (Unicode messages hold fewer characters per part).
+- **Set `SmsConnections:AllowedHosts` in production**, in the Worker's configuration, for example `"SmsConnections": { "AllowedHosts": [ "api.brevo.com" ] }`. With it empty any https host typed as the base address is allowed. Egress and the proxy caveat are those of section 9.
+- **First real send.** Nothing in Verso has been verified against live Brevo. Press **Test connection** with your own number first (it also confirms that Brevo accepts Verso's send path, ADR 0022 item 9), then allow only your own country and run the sample [send-sms-individual-or-corporate.md](samples/send-sms-individual-or-corporate.md) with your own number in the data. What a failure code means and what to do after an unknown outcome: [runbook C2](runbook.md#c2-failures).
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
