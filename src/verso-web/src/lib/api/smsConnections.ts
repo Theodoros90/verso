@@ -1,6 +1,6 @@
 /** SMS connection endpoints (docs/api.md#sms-connections, ADR 0018). Administrators only. The API key is write-only: no response has it. */
 import { request } from './client'
-import type { SaveSmsConnectionRequest, SmsConnectionDto, SmsConnectionTestDto } from './generated'
+import type { SaveSmsConnectionRequest, SmsConnectionDto, SmsConnectionOptionDto, SmsConnectionTestDto } from './generated'
 
 const base = '/api/v1/sms-connections'
 
@@ -9,6 +9,9 @@ export type SmsConnectionInput = Partial<SaveSmsConnectionRequest>
 export const smsConnectionsApi = {
   list: (includeInactive = true, signal?: AbortSignal) =>
     request<SmsConnectionDto[]>(`${base}?includeInactive=${includeInactive}`, { signal }).then((r) => r.body),
+
+  /** Key, name, type and sending switch of the active connections, for the Send SMS step (workflow authors and administrators). */
+  listOptions: (signal?: AbortSignal) => request<SmsConnectionOptionDto[]>('/api/v1/sms-connection-options', { signal }).then((r) => r.body),
 
   create: (body: SmsConnectionInput) => request<SmsConnectionDto>(base, { method: 'POST', body }).then((r) => r.body),
 
