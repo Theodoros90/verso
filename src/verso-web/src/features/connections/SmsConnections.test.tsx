@@ -366,6 +366,19 @@ describe('SMS connections (real Brevo SMS in the Connections tab)', () => {
       expect(within(off).getByText(/Test connection sends one real SMS to the number you type/)).toBeInTheDocument()
     })
 
+    it('a marketing connection with sending on says it cannot be used in workflows, on the card and in the dialog', async () => {
+      const drawer = await openConfiguration('Connections', smsApi([connection({ messageType: 'marketing', allowSending: true, allowedCountryPrefixes: '357' })]).handler)
+      const card = (await within(drawer).findByRole('heading', { name: 'Customer SMS' })).closest('li')!
+      expect(within(card).queryByText(/Workflows can send/)).not.toBeInTheDocument()
+      expect(within(card).getByText(/Marketing connections can’t be used in workflows/)).toBeInTheDocument()
+      expect(within(card).queryByText('Sending on')).not.toBeInTheDocument()
+      expect(within(card).getByText('Not used in workflows')).toBeInTheDocument()
+
+      const dialog = await openEdit(drawer)
+      expect(dialog).not.toHaveTextContent(/Workflows can send/)
+      expect(dialog).toHaveAccessibleDescription(/Marketing connections can’t be used in workflows/)
+    })
+
     it('shows the server\'s message for invalid prefixes under the field', async () => {
       const problem = () => json({ title: 'Validation failed', errors: { AllowedCountryPrefixes: ['Each prefix is 1 to 4 digits that do not start with 0.'] } }, 400)
       const drawer = await openConfiguration('Connections', smsApi([connection()], problem).handler)
@@ -390,7 +403,31 @@ describe('SMS connections (real Brevo SMS in the Connections tab)', () => {
 
         await within(drawer).findByText('Settings saved for Customer SMS 2.')
         expect(api.bodies[0]?.allowSending ?? null).toBeNull()
-        expect(api.bodies[0]).toMatchObject({ name: 'Customer SMS 2', allowedCountryPrefixes: '357' })
+        expect(api.bodies[0]?.allowedCountryPrefixes ?? null).toBeNull() // a stale dialog never overwrites the saved list
+        expect(api.bodies[0]).toMatchObject({ name: 'Customer SMS 2' })
+      })
+
+      it('editing the prefixes sends them', async () => {
+        const api = smsApi([connection({ allowSending: true, allowedCountryPrefixes: '357' })])
+        const drawer = await openConfiguration('Connections', api.handler)
+        const dialog = await openEdit(drawer)
+        await userEvent.type(within(dialog).getByLabelText('Allowed country prefixes'), ', 30')
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Save settings' }))
+
+        await within(drawer).findByText('Settings saved for Customer SMS.')
+        expect(api.bodies[0]).toMatchObject({ allowedCountryPrefixes: '357, 30' })
+        expect(api.bodies[0]?.allowSending ?? null).toBeNull()
+      })
+
+      it('clearing the prefixes sends an empty list', async () => {
+        const api = smsApi([connection({ allowSending: true, allowedCountryPrefixes: '357' })])
+        const drawer = await openConfiguration('Connections', api.handler)
+        const dialog = await openEdit(drawer)
+        await userEvent.clear(within(dialog).getByLabelText('Allowed country prefixes'))
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Save settings' }))
+
+        await within(drawer).findByText('Settings saved for Customer SMS.')
+        expect(api.bodies[0]).toMatchObject({ allowedCountryPrefixes: '' })
       })
 
       it('turning it on, then confirming, sends true', async () => {

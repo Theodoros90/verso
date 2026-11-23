@@ -17,7 +17,10 @@ export const SMS_MESSAGE_TYPES: { id: SmsMessageType; name: string }[] = [
   { id: 'marketing', name: 'Marketing (promotions)' },
 ]
 
-const CONNECTION_KEY = /^[a-z0-9][a-z0-9-]{1,63}$/
+/** The server refuses every workflow send through a marketing connection (sms.marketing_not_allowed), whatever the switch says. */
+export const MARKETING_NOT_IN_WORKFLOWS = 'Marketing connections can’t be used in workflows.'
+
+const CONNECTION_KEY =/^[a-z0-9][a-z0-9-]{1,63}$/
 const SENDER = /^([A-Za-z0-9]{1,11}|[0-9]{1,15})$/
 
 export interface SmsForm {
@@ -36,9 +39,11 @@ export interface SmsForm {
   sendingTouched: boolean
   /** Country prefixes the Send SMS step may send to: digits, comma-separated. Empty allows no country. */
   allowedCountryPrefixes: string
+  /** The prefixes were edited in this dialog. Only then are they sent when saving an existing connection, so a stale dialog never overwrites (and so widens) a list changed by someone else. */
+  prefixesTouched: boolean
 }
 
-export const blankSms: SmsForm = { key: '', baseUrl: BREVO_BASE_URL, sender: '', messageType: 'transactional', unicodeEnabled: true, organisationPrefix: '', timeoutSeconds: '15', description: '', secret: '', allowSending: false, sendingTouched: true, allowedCountryPrefixes: '' }
+export const blankSms: SmsForm = { key: '', baseUrl: BREVO_BASE_URL, sender: '', messageType: 'transactional', unicodeEnabled: true, organisationPrefix: '', timeoutSeconds: '15', description: '', secret: '', allowSending: false, sendingTouched: true, allowedCountryPrefixes: '', prefixesTouched: true }
 
 export const toSmsForm = (c: SmsConnectionDto): SmsForm => ({
   key: c.key,
@@ -53,6 +58,7 @@ export const toSmsForm = (c: SmsConnectionDto): SmsForm => ({
   allowSending: c.allowSending === true,
   sendingTouched: false,
   allowedCountryPrefixes: c.allowedCountryPrefixes ?? '',
+  prefixesTouched: false,
 })
 
 const isHttps = (u: string) => {
@@ -107,7 +113,7 @@ export function smsBody(form: SmsForm, name: string) {
     description: form.description.trim(),
     secret: form.secret === '' ? null : form.secret,
     allowSending: form.sendingTouched ? form.allowSending : null, // null: the server keeps the saved value
-    allowedCountryPrefixes: form.allowedCountryPrefixes.trim(), // checked and normalised by the server
+    allowedCountryPrefixes: form.prefixesTouched ? form.allowedCountryPrefixes.trim() : null, // checked and normalised by the server; null keeps the saved list
   }
 }
 
@@ -244,7 +250,7 @@ export function SmsFields({
           className="font-mono"
           inputMode="numeric"
           value={form.allowedCountryPrefixes}
-          onChange={(e) => onChange({ allowedCountryPrefixes: e.target.value })}
+          onChange={(e) => onChange({ allowedCountryPrefixes: e.target.value, prefixesTouched: true })}
           aria-invalid={!!errors.allowedCountryPrefixes}
           autoComplete="off"
           maxLength={200}

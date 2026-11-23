@@ -10,7 +10,7 @@ import { ApiError } from '@/lib/api/client'
 import type { SmsConnectionDto, SmsConnectionTestDto } from '@/lib/api/generated'
 import { smsConnectionsApi } from '@/lib/api/smsConnections'
 
-import { normaliseRecipient, SmsFields, smsBody, smsErrorsOf, toSmsForm, validateSms, type SmsErrors } from './SmsFields'
+import { MARKETING_NOT_IN_WORKFLOWS, normaliseRecipient, SmsFields, smsBody, smsErrorsOf, toSmsForm, validateSms, type SmsErrors } from './SmsFields'
 
 /** The real SMS connections (ADR 0018), loaded for administrators only. `reload` after any change. */
 export function useSmsConnections() {
@@ -45,6 +45,7 @@ export function useSmsConnections() {
 /** One real SMS connection, in the same card layout as the others. The switch activates or deactivates it. */
 export function SmsCard({ connection, onToggle, onConfigure }: { connection: SmsConnectionDto; onToggle: (active: boolean) => void; onConfigure: () => void }) {
   const missingSecret = connection.isActive && !connection.hasSecret
+  const marketing = connection.messageType === 'marketing' // the server never lets a workflow send through a marketing connection
   return (
     <li className={`flex flex-col gap-3 rounded-[10px] border border-line bg-surface p-4 ${connection.isActive ? '' : 'opacity-70'}`}>
       <div className="flex items-center gap-3">
@@ -56,7 +57,9 @@ export function SmsCard({ connection, onToggle, onConfigure }: { connection: Sms
         <Switch checked={connection.isActive} onCheckedChange={onToggle} label={`Enable ${connection.name}`} hideLabel />
       </div>
       <p className="m-0 text-[13px] text-ink-2">
-        {connection.allowSending
+        {connection.allowSending && marketing
+          ? `Real: stored on the server. ${MARKETING_NOT_IN_WORKFLOWS} Test connection sends one real SMS to the number you type.`
+          : connection.allowSending
           ? `Real: stored on the server. Workflows can send real SMS through it to numbers starting with ${connection.allowedCountryPrefixes ? connection.allowedCountryPrefixes.split(',').map((p) => p.trim()).filter(Boolean).join(', ') : '(no country allowed yet)'}.`
           : 'Real: stored on the server. Test connection sends one real SMS to the number you type.'}
       </p>
@@ -70,7 +73,7 @@ export function SmsCard({ connection, onToggle, onConfigure }: { connection: Sms
         <StatusPill tone={!connection.isActive ? 'neutral' : missingSecret ? 'warn' : 'ok'}>
           {!connection.isActive ? 'Off' : missingSecret ? 'No key' : 'Ready'}
         </StatusPill>
-        {connection.allowSending && <StatusPill tone="warn">Sending on</StatusPill>}
+        {connection.allowSending && (marketing ? <StatusPill tone="neutral">Not used in workflows</StatusPill> : <StatusPill tone="warn">Sending on</StatusPill>)}
         {connection.hasSecret && <span>Key saved</span>}
         <Button type="button" size="sm" className="ml-auto" onClick={onConfigure} aria-label={`Configure ${connection.name}`}>
           Configure
@@ -170,7 +173,9 @@ export function SmsEditDialog({ connection, onClose, onSaved }: { connection: Sm
       open
       onOpenChange={(open) => !open && onClose()}
       title={connection.name}
-      description={`SMS (Brevo) · real. Stored on the server; Test connection sends one real SMS.${connection.allowSending ? ' Workflows can send real SMS through it.' : ''}`}
+      description={`SMS (Brevo) · real. Stored on the server; Test connection sends one real SMS.${
+        connection.messageType === 'marketing' ? ` ${MARKETING_NOT_IN_WORKFLOWS}` : connection.allowSending ? ' Workflows can send real SMS through it.' : ''
+      }`}
       footer={
         <>
           <Button type="button" onClick={() => setAsking(true)} disabled={testing || !connection.isActive} className="mr-auto">
