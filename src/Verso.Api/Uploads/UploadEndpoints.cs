@@ -177,36 +177,46 @@ public static class UploadEndpoints
     /// <summary>
     /// The whole stream when it holds at most <paramref name="maxBytes"/>, otherwise null. Never asks for more than
     /// <paramref name="maxBytes"/> + 1 bytes, so a larger file (or a body that never ends) is stopped right there.
+    /// Each pooled chunk is filled completely before the next one is rented (a multipart section hands out about 4 KB per read),
+    /// so the file is held about twice at most: the chunks, then the final array.
     /// </summary>
-    private static async Task<byte[]?> ReadLimitedAsync(Stream body, long maxBytes, CancellationToken ct)
+    internal static async Task<byte[]?> ReadLimitedAsync(Stream body, long maxBytes, CancellationToken ct)
     {
-        var chunks = new List<(byte[] Buffer, int Count)>();
+        var chunks = new List<byte[]>();
+        var lastCount = 0; // bytes in the last chunk; every earlier chunk is full
         long total = 0;
         try
         {
-            while (true)
+            var ended = false;
+            while (!ended)
             {
                 var buffer = ArrayPool<byte>.Shared.Rent(ChunkBytes);
-                var read = await body.ReadAsync(buffer.AsMemory(0, (int)Math.Min(ChunkBytes, maxBytes + 1 - total)), ct);
-                if (read == 0)
+                chunks.Add(buffer); // listed before any read, so the finally returns it even when a read throws
+                lastCount = 0;
+                while (lastCount < buffer.Length)
                 {
-                    ArrayPool<byte>.Shared.Return(buffer);
-                    break;
-                }
+                    var read = await body.ReadAsync(buffer.AsMemory(lastCount, (int)Math.Min(buffer.Length - lastCount, maxBytes + 1 - total)), ct);
+                    if (read == 0)
+                    {
+                        ended = true;
+                        break;
+                    }
 
-                chunks.Add((buffer, read));
-                total += read;
-                if (total > maxBytes)
-                {
-                    return null;
+                    lastCount += read;
+                    total += read;
+                    if (total > maxBytes)
+                    {
+                        return null;
+                    }
                 }
             }
 
             var content = new byte[total];
             var offset = 0;
-            foreach (var (buffer, count) in chunks)
+            for (var i = 0; i < chunks.Count; i++)
             {
-                buffer.AsSpan(0, count).CopyTo(content.AsSpan(offset));
+                var count = i == chunks.Count - 1 ? lastCount : chunks[i].Length;
+                chunks[i].AsSpan(0, count).CopyTo(content.AsSpan(offset));
                 offset += count;
             }
 
@@ -214,7 +224,7 @@ public static class UploadEndpoints
         }
         finally
         {
-            foreach (var (buffer, _) in chunks)
+            foreach (var buffer in chunks)
             {
                 ArrayPool<byte>.Shared.Return(buffer, clearArray: true); // file bytes never linger in the shared pool
             }
