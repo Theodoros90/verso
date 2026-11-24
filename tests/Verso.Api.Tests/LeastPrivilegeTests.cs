@@ -341,6 +341,51 @@ public sealed class LeastPrivilegeTests(LeastPrivilegeFixture grants) : IClassFi
         }
     }
 
+    [Fact]
+    public async Task FileUpload_RunsUnderTheApiAndWorkerRoles()
+    {
+        using var client = grants.Api.CreateClient();
+        var kit = new ExecutionTestKit(grants.BaseFactory, client);
+        var trigger = JsonNode.Parse("""
+            { "id": "trigger", "type": "file-upload", "title": "File upload", "position": { "x": 0, "y": 80 },
+              "config": { "accept": "PDF", "maxSize": "1mb", "who": "staff" } }
+            """)!;
+        var key = await kit.PublishInvoiceWorkflowAsync(trigger: trigger);
+        static byte[] Pdf() => System.Text.Encoding.ASCII.GetBytes($"%PDF-1.7\n% synthetic {Guid.NewGuid():N}\n%%EOF\n");
+        async Task<(HttpStatusCode Status, Guid ExecutionId)> UploadAsync(byte[] bytes)
+        {
+            using var form = new MultipartFormDataContent { { new ByteArrayContent(bytes), "file", "statement.pdf" } };
+            using var response = await client.PostAsync(new Uri($"/api/v1/workflows/{key}/uploads", UriKind.Relative), form);
+            var status = response.StatusCode;
+            var body = await ExecutionTestKit.ReadAsync(response);
+            Assert.True(body.TryGetProperty("executionId", out var id), $"{(int)status}: {body}");
+            return (status, id.GetGuid());
+        }
+
+        var (accepted, executionId) = await UploadAsync(Pdf());                                          // API: stage, start the run, link it
+        Assert.Equal(HttpStatusCode.Accepted, accepted);
+        await RunAsWorkerAsync(executionId);                                                             // Worker: take the file
+        var uploadStep = (await kit.GetExecutionAsync(executionId)).GetProperty("steps").EnumerateArray().Single(s => s.GetProperty("nodeId").GetString() == "trigger");
+        Assert.Equal("Succeeded", uploadStep.GetProperty("status").GetString());
+
+        var again = Pdf();
+        var (_, first) = await UploadAsync(again);
+        await kit.WithDbAsync(db => db.Database.ExecuteSqlInterpolatedAsync($"UPDATE [ingestion].[Uploads] SET [Status] = 'Expired', [Content] = NULL WHERE [ExecutionId] = {first}"));
+        var (reuploaded, second) = await UploadAsync(again);                                             // API: drop the expired row, start a new run
+        Assert.Equal(HttpStatusCode.Accepted, reuploaded);
+        Assert.NotEqual(first, second);
+
+        var workflowId = await kit.WithDbAsync(db => db.Uploads.Where(u => u.ExecutionId == executionId).Select(u => u.WorkflowId).SingleAsync());
+        var orphan = Verso.Domain.Ingestion.Upload.Stage(workflowId, "orphan.pdf", ".pdf", "application/pdf", Pdf(), new string('c', 64), "synthetic", DateTimeOffset.UtcNow.AddDays(-2));
+        await kit.WithDbAsync(db => { db.Uploads.Add(orphan); return db.SaveChangesAsync(); });
+        await using (var db = grants.WorkerDb())
+        {
+            Assert.True(await new Verso.Application.Uploads.UploadRetention(db, TimeProvider.System, Options.Create(new Verso.Application.Uploads.UploadOptions())).RunOnceAsync(CancellationToken.None) >= 1); // Worker: retention
+        }
+
+        Assert.False(await kit.WithDbAsync(db => db.Uploads.AnyAsync(u => u.Id == orphan.Id)));
+    }
+
     private sealed class ShiftedClock(TimeSpan offset) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => base.GetUtcNow() + offset;

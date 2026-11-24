@@ -220,6 +220,18 @@ The Send SMS step ([ADR 0022](adr/0022-send-sms-step.md)) makes the **Worker** s
 - **Set `SmsConnections:AllowedHosts` in production**, in the Worker's configuration, for example `"SmsConnections": { "AllowedHosts": [ "api.brevo.com" ] }`. With it empty any https host typed as the base address is allowed. Egress and the proxy caveat are those of section 9.
 - **First real send.** Nothing in Verso has been verified against live Brevo. Press **Test connection** with your own number first (it also confirms that Brevo accepts Verso's send path, ADR 0022 item 9), then allow only your own country and run the sample [send-sms-individual-or-corporate.md](samples/send-sms-individual-or-corporate.md) with your own number in the data. What a failure code means and what to do after an unknown outcome: [runbook C2](runbook.md#c2-failures).
 
+## 11. File upload (optional)
+
+The File upload step ([ADR 0023](adr/0023-file-upload-step.md)) lets a signed-in Operator or Admin upload one file to a published workflow that starts with it: **Workflows**, the card's **⋯** menu, **Upload file…**. Apply the `FileUploads` migration first (section 1). To try it, publish a workflow File upload → Parse (`content`, CSV) → any next step, sign in as **Omar Operator** and upload `tests/fixtures/uploads/customers.csv`. The run appears under Executions; its File upload step shows the file's name and size.
+
+Settings (defaults in `src/Verso.Api/appsettings.json` and `src/Verso.Worker/appsettings.json`):
+
+- `Limits:MaxUploadBytes` (API, default `26214400` = 25 MB): the largest file the server takes, whatever the step's "Largest file" says. The upload route's own request limit is this + 1 MB; every other route keeps `Limits:MaxRequestBodyBytes` (2 MB).
+- `Limits:UploadsPerMinute` (API, default `30`): uploads per signed-in user and minute, separate from `Limits:SubmissionsPerMinute`.
+- `Uploads:Retention` (Worker, default 24 hours): how long an upload no run has taken is kept; the Worker's hourly pass then expires it (its run fails `upload.expired`) or deletes it. Every Worker should have the same value. (The API's `appsettings.json` carries the same default, but the API does not use it.)
+
+The bytes wait in the database (`ingestion.Uploads`) until the Worker copies them into `Documents:RootPath`, so a run started by an upload needs the Worker running. There is no malware scanning. Server setup and IIS limits: [runbook B10](runbook.md#b10-file-upload).
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

@@ -1,7 +1,7 @@
 # ADR 0023: File upload step (a person uploads a file and starts a run)
 
-- Status: **proposed (draft 2026-11-24), not yet approved, nothing implemented.** On 2026-11-24 the product owner decided three questions: **(1) database staging** for the bytes, **(2) signed-in Verso users only** (no external portal), **(3) no malware scanning**. Questions 4 to 7 below keep the proposed defaults until the owner confirms or changes them; the owner's explicit approval to implement is still needed.
-- Today the `file-upload` step is simulated ([NodeCatalog](../../src/Verso.Application/Workflows/NodeCatalog.cs)): its settings are stored and validated, but there is no upload screen, nothing receives a file, and the engine passes the submitted data straight through. This ADR makes it real.
+- Status: **accepted (implemented 2026-11-24, awaiting acceptance).** On 2026-11-24 the product owner decided three questions: **(1) database staging** for the bytes, **(2) signed-in Verso users only** (no external portal), **(3) no malware scanning**. Questions 4 to 7 below were implemented with the proposed defaults (the seven types, 25 MB, 24 hours, one file per upload, synthetic test files only); the owner can still change them. What the implementation changed or added to the text below: [Implementation notes](#implementation-notes-2026-11-24).
+- Before this ADR the `file-upload` step was simulated ([NodeCatalog](../../src/Verso.Application/Workflows/NodeCatalog.cs)): its settings were stored and validated, but there was no upload screen, nothing received a file, and the engine passed the submitted data straight through. This ADR makes it real.
 - Builds on [ADR 0001](0001-folder-input.md) (the other real file input; its file-to-run handoff, duplicate rules and `.xml` / `.csv` payload shape are reused) and the document store of plan §7.
 - If approved, CLAUDE.md is amended in the same change: the architecture rule moves File upload out of the simulated list, and the "Current milestone" line names this item.
 
@@ -17,7 +17,7 @@ Three facts in the current code shape the design:
 
 An upload is also the first input that carries **bytes chosen by a person who may not be trusted**, so type checks, size limits, retention and the question of malware scanning matter more than for the other steps.
 
-## Decision (proposed)
+## Decision
 
 1. **The step stays `file-upload`**, category input, port `out`. Its three settings keep their meaning and become **enforced at upload time**. The step is removed from the simulated list in the catalog description, `docs/api.md`, the plan and CLAUDE.md.
 
@@ -73,3 +73,22 @@ Decided on 2026-11-24: (1) database staging; (2) signed-in Verso users only; (3)
 5. **Retention.** Is 24 hours for an upload nobody has used acceptable, and how long may a processed upload's staged copy be kept?
 6. **Several files at once.** One file per upload (assumed) or a batch that starts one run per file.
 7. **Test data.** Confirmation that all development and test files stay synthetic (`tests/fixtures`), as the rules require.
+
+## Implementation notes (2026-11-24)
+
+Built on branch `feature/file-upload-step`: table `ingestion.Uploads` (migration **`FileUploads`**, new table only), the upload rules and step settings, `UploadService`, `POST /api/v1/workflows/{key}/uploads` and `GET …/upload-settings` ([api.md](../api.md#file-upload)), the Worker step, the Worker's retention pass, the upload dialog on the workflow list, and the run view naming the uploaded file. No new package. Operations: [runbook](../runbook.md) B10 and C2; settings: [setup.md](../setup.md) section 11.
+
+**Deviations from the text above** (decided while planning):
+
+- **Idempotency (Decision 5).** The observable behaviour is kept (the same file to the same workflow returns the first run, HTTP 200), but it is built with a **unique index on `(WorkflowId, Sha256)`** and the run key **`upload:<upload id, 32 hex digits>`**, not `upload:` + SHA-256; callers do not send `Idempotency-Key` on uploads. Reason: `SubmitAsync` treats a reused key with a different input hash as a conflict, and the run's input contains the new upload id. Two identical uploads at the same instant: the index lets one in, the other is answered as the duplicate. **Exception:** a row whose run failed with `upload.expired` (status Expired) does not block the file: the next upload of the same bytes deletes that row and starts a new run. A Taken row, even of a failed run, still counts as a duplicate (as Folder input does).
+- **Settings (Decision 10).** "Largest file" offers `1mb`, `10mb`, `25mb` (`100mb` is removed, it is above the 25 MB ceiling). "Who can upload" offers only `staff` (`portal-customers` and `anyone-with-link` are out of scope). Versions published earlier with the old values stay valid and immutable: the size is clamped to the ceiling, and another `who` makes the workflow refuse uploads (`upload.not_available`).
+
+**Close-out facts** (behaviour worth knowing that the text above does not say):
+
+- **JSON runs that carry `upload`.** A run submitted as JSON (`POST …/executions`) whose data has a top-level `upload` **object** now fails at the File upload step with **`upload.missing`** instead of passing through, unless it is the upload's own run. A run without an `upload` object still passes through unchanged.
+- **The upload must belong to the run.** The Worker step takes the file only when the row's workflow is the run's workflow **and** the run's key is `upload:<id:N>` of that row (and any recorded link points at this run); otherwise `upload.missing`, and the row is left alone. Both failures (`upload.missing`, `upload.expired`) are final, never retried.
+- **Lost link repaired.** The API links the row to its run in a second save; if that save is lost, the Worker step restores `ExecutionId` when it takes the file (the run key proves it is this run's file).
+- **Retention decides by run key and expires by conditional update.** The hourly Worker pass looks at Staged rows older than `Uploads:Retention`: when a run with key `upload:<id:N>` exists, the row is set Expired and its bytes dropped with one conditional `UPDATE … WHERE Status = 'Staged'` (never load and save, so it cannot overwrite a step that is taking the file at that moment; that run then fails `upload.expired`); when no run exists, the row is deleted. Taken and Expired rows keep their metadata (the duplicate rule still holds). Whether a run exists is decided by the run key, never by `ExecutionId IS NULL`.
+- **Abort on cancel.** In the upload dialog, Cancel, closing the dialog or leaving the page aborts an upload still in flight.
+- **Database grants.** `tools/db/least-privilege.sql` gives the API INSERT, UPDATE and DELETE on `ingestion.Uploads` (stage, link, drop a row whose run could not start or that expired) and the Worker DELETE on it (retention); `LeastPrivilegeTests` runs an upload, the step and the retention pass under those roles.
+- **Memory.** The API holds about **2 × the file size** per upload in progress (the pooled read chunks plus the final byte array), so 25 MB uploads cost about 50 MB each while they run.
