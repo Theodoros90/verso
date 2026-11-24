@@ -54,5 +54,8 @@ builder.Services.AddHostedService<RecurringJobsRegistration>();
 builder.Services.AddVersoFolderAccess(builder.Configuration);
 builder.Services.AddHostedService<FolderInputService>();
 
+// File upload retention (ADR 0023): hourly, expires or removes staged uploads no run took within Uploads:Retention (options come from AddVersoPersistence).
+builder.Services.AddHostedService<UploadRetentionService>();
+
 var host = builder.Build();
 host.Run();

@@ -53,6 +53,7 @@ public static class DependencyInjection
         services.TryAddSingleton(new FolderIngestionOptions());
         services.AddScoped<FolderIngestion>();
         services.AddScoped<FolderAccessTestRunner>();
+        services.AddScoped<Uploads.UploadRetention>();
         services.AddScoped<Mail.EmailRelayTestRunner>();
         services.AddScoped<Connections.DatabaseConnectionTestRunner>();
         services.AddScoped<Connections.ApiConnectionTestRunner>();
