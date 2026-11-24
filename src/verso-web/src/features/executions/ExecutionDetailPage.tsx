@@ -242,7 +242,7 @@ interface ResultIssue {
 
 function Step({ step: s, executionId, onChanged }: { step: ExecutionStepDto; executionId: string; onChanged: () => void }) {
   const { icon: Icon, className } = STEP_ICON[s.status] ?? { icon: CircleDashed, className: 'text-ink-3' }
-  const result = s.result as { issues?: ResultIssue[]; warnings?: string[]; fileName?: string; folderPath?: string } | null
+  const result = s.result as { issues?: ResultIssue[]; warnings?: string[]; fileName?: string; folderPath?: string; size?: number } | null
   const issues = result?.issues ?? []
   const warnings = result?.warnings ?? []
 
@@ -265,6 +265,12 @@ function Step({ step: s, executionId, onChanged }: { step: ExecutionStepDto; exe
         </small>
         {s.error && <p className="mt-1 text-xs text-err">{s.error}</p>}
         {s.type === 'approval' && <ApprovalPanel step={s} executionId={executionId} onChanged={onChanged} />}
+        {s.type === 'file-upload' && result?.fileName && (
+          <p className="mt-1 text-xs text-ink-2">
+            Uploaded file: <span className="font-medium text-ink">{result.fileName}</span>
+            {typeof result.size === 'number' && <> ({formatBytes(result.size)})</>}
+          </p>
+        )}
         {issues.length > 0 && (
           <ul aria-label={`Problems found in ${s.title}`} className="mt-1.5 flex flex-col gap-0.5 rounded-md bg-warn-soft px-2.5 py-1.5 text-xs text-ink">
             {issues.map((i, n) => (
