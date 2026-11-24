@@ -4,7 +4,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Verso.Application;
@@ -56,11 +58,28 @@ public sealed class UploadServiceTests : IDisposable
     private Task<string> PublishAsync(string accept = "PDF, XML, CSV", string maxSize = "1mb") =>
         _kit.PublishInvoiceWorkflowAsync(trigger: UploadTrigger(accept, maxSize));
 
-    private UploadService Service(VersoDbContext db, long ceiling = UploadRules.DefaultCeilingBytes)
+    private UploadService Service(VersoDbContext db, long ceiling = UploadRules.DefaultCeilingBytes, ILogger<UploadService>? logger = null)
     {
         var user = new Operator();
         return new UploadService(db, new ExecutionService(db, _jobs, user, TimeProvider.System, NullLogger<ExecutionService>.Instance),
-            user, TimeProvider.System, Options.Create(new UploadOptions { CeilingBytes = ceiling }));
+            user, TimeProvider.System, Options.Create(new UploadOptions { CeilingBytes = ceiling }), logger ?? NullLogger<UploadService>.Instance);
+    }
+
+    /// <summary>Fails every save that updates an upload row (the AttachExecution save); the first save, which inserts it, goes through.</summary>
+    private sealed class FailUploadUpdates : SaveChangesInterceptor
+    {
+        public int Failures { get; private set; }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context!.ChangeTracker.Entries<Upload>().Any(e => e.State == EntityState.Modified))
+            {
+                Failures++;
+                throw new DbUpdateException("Simulated failure of the link save.");
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
     }
 
     private Task<Result<Submission>> AcceptAsync(string key, string fileName, byte[] content, string? correlationId = null, long ceiling = UploadRules.DefaultCeilingBytes) =>
@@ -125,6 +144,54 @@ public sealed class UploadServiceTests : IDisposable
 
         var idempotencyKey = await WithDb(db => db.Executions.Where(e => e.Id == executionId).Select(e => e.IdempotencyKey).SingleAsync());
         Assert.Equal("upload:" + row.Id.ToString("N"), idempotencyKey);
+    }
+
+    [Fact]
+    public async Task Failed_link_save_still_returns_the_queued_run_and_logs_ids_only()
+    {
+        var key = await PublishAsync();
+        var content = Encoding.ASCII.GetBytes("%PDF-1.7\n% SYNTHETIC-LINK-MARKER\n%%EOF\n");
+        var connectionString = await WithDb(db => Task.FromResult(db.Database.GetConnectionString()!));
+        var interceptor = new FailUploadUpdates();
+        var logs = new CapturingLoggerProvider();
+        using var loggerFactory = LoggerFactory.Create(b => b.AddProvider(logs));
+
+        Result<Submission> result;
+        await using (var db = new VersoDbContext(new DbContextOptionsBuilder<VersoDbContext>().UseSqlServer(connectionString).AddInterceptors(interceptor).Options))
+        {
+            result = await Service(db, logger: loggerFactory.CreateLogger<UploadService>())
+                .AcceptAsync(key, "secret-customer-name.pdf", content, null, CancellationToken.None);
+
+            Assert.Equal(1, interceptor.Failures);
+            Assert.DoesNotContain(db.ChangeTracker.Entries<Upload>(), e => e.State != EntityState.Unchanged); // nothing left for a later save to retry
+            await db.SaveChangesAsync();
+            Assert.Equal(1, interceptor.Failures);
+        }
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        Assert.True(result.Value!.Created);
+        Assert.Equal("Queued", result.Value.Execution.Status);
+        Assert.Contains(result.Value.Execution.ExecutionId, _jobs.Enqueued);
+
+        var row = Assert.Single(await RowsAsync(key));
+        Assert.Equal(UploadStatus.Staged, row.Status);
+        Assert.Null(row.ExecutionId);
+        Assert.Equal(content, row.Content);
+
+        var warning = Assert.Single(logs.Entries, e => e.Level == LogLevel.Warning);
+        Assert.Contains(row.Id.ToString(), warning.AllText, StringComparison.Ordinal);
+        Assert.Contains(result.Value.Execution.ExecutionId.ToString(), warning.AllText, StringComparison.Ordinal);
+        Assert.All(logs.Entries, e =>
+        {
+            Assert.DoesNotContain("secret-customer-name", e.AllText, StringComparison.Ordinal);
+            Assert.DoesNotContain("SYNTHETIC-LINK-MARKER", e.AllText, StringComparison.Ordinal);
+            Assert.DoesNotContain(row.Sha256, e.AllText, StringComparison.Ordinal);
+        });
+
+        // The same file again is still answered with that run: the link is found by the run key.
+        var again = await AcceptAsync(key, "statement.pdf", content);
+        Assert.False(again.Value!.Created);
+        Assert.Equal(result.Value.Execution.ExecutionId, again.Value.Execution.ExecutionId);
     }
 
     [Fact]

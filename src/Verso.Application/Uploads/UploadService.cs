@@ -4,6 +4,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Verso.Application.Documents;
 using Verso.Application.Executions;
@@ -21,7 +22,8 @@ namespace Verso.Application.Uploads;
 /// small text file), never the bytes. The staged row, the run and the <c>FileUploaded</c> audit entry are committed together.
 /// The API never writes the document store: the Worker copies the bytes there when the run starts.
 /// </summary>
-public sealed class UploadService(IVersoDbContext db, ExecutionService executions, ICurrentUser user, TimeProvider clock, IOptions<UploadOptions> options)
+public sealed partial class UploadService(
+    IVersoDbContext db, ExecutionService executions, ICurrentUser user, TimeProvider clock, IOptions<UploadOptions> options, ILogger<UploadService> logger)
 {
     public const string EntityType = "Upload";
 
@@ -125,10 +127,31 @@ public sealed class UploadService(IVersoDbContext db, ExecutionService execution
             return submitted;
         }
 
-        upload.AttachExecution(submitted.Value!.Execution.ExecutionId);
-        await db.SaveChangesAsync(CancellationToken.None); // the run is already committed and queued; the link is also findable by its key
+        // The run is already committed and queued: linking the row to it is best effort and never turns the upload into an error.
+        // The link can always be recovered by the run key upload:<id:N> (the Worker repairs it when it takes the file).
+        var executionId = submitted.Value!.Execution.ExecutionId;
+        upload.AttachExecution(executionId);
+        try
+        {
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+#pragma warning disable CA1031 // any failure here must not undo an accepted upload; logged with ids only
+        catch (Exception ex) when (ex is not OperationCanceledException)
+#pragma warning restore CA1031
+        {
+            foreach (var entry in db.ChangeTracker.Entries<Upload>().Where(e => ReferenceEquals(e.Entity, upload)).ToList())
+            {
+                entry.State = EntityState.Detached; // a later save in this scope must not retry it
+            }
+
+            LogAttachFailed(logger, upload.Id, executionId, ex.GetType().Name);        }
+
         return submitted;
     }
+
+    /// <summary>Ids and the exception type only: never the file name, content or the exception message (it may quote values).</summary>
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Linking upload {UploadId} to execution {ExecutionId} failed ({ErrorType}); the run is queued and the link is recovered by its key")]
+    private static partial void LogAttachFailed(ILogger logger, Guid uploadId, Guid executionId, string errorType);
 
     private sealed record Target(Guid WorkflowId, IReadOnlyList<UploadType> Types, long MaxBytes, AppError? Error = null);
 
