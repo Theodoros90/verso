@@ -142,16 +142,14 @@ public static class NodeCatalog
 
     public static readonly IReadOnlyDictionary<string, string> UploadSizes = new Dictionary<string, string>
     {
+        ["1mb"] = "1 MB",
         ["10mb"] = "10 MB",
         ["25mb"] = "25 MB",
-        ["100mb"] = "100 MB",
     };
 
     public static readonly IReadOnlyDictionary<string, string> Uploaders = new Dictionary<string, string>
     {
         ["staff"] = "Signed-in staff",
-        ["portal-customers"] = "Portal customers",
-        ["anyone-with-link"] = "Anyone with the link",
     };
 
     /// <summary>Assemble document pack step: the format of the pack and the extension its file name must end in.</summary>
@@ -385,7 +383,7 @@ public static class NodeCatalog
             """{ "system": "dynamics-365", "entity": "Invoices", "mode": "on-post" }"""),
 
         Node(FileUpload, "File upload", "input",
-            "Someone uploads a file in Verso or the portal. Simulated: there is no upload screen yet, so runs are submitted to POST /api/v1/workflows/{key}/executions.",
+            "A signed-in operator uploads one file in Verso. Checked, then a run starts with a reference to the file.",
             [], [new PortDto("out", "Out", true)],
             $$"""
             { "type": "object",

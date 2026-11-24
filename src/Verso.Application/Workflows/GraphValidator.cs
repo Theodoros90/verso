@@ -485,6 +485,15 @@ public static class GraphValidator
 
                 break;
 
+            case NodeCatalog.FileUpload:
+                var uploadAccept = c.TryGetProperty("accept", out var acceptElement) && acceptElement.ValueKind == JsonValueKind.String ? acceptElement.GetString()! : "";
+                if (uploadAccept.Trim().Length > 0 && Uploads.UploadRules.ValidateAccept(uploadAccept) is { } acceptProblem)
+                {
+                    yield return new(Error, "config.invalid", acceptProblem, NodeId: node.Id, Field: "accept"); // a blank list is reported once, by the schema check (it trims)
+                }
+
+                break;
+
             case NodeCatalog.FetchApi:
                 // Connection key shape, resultName pattern and the limits are checked by the schema; whether the connection exists is not checked here.
                 if (c.TryGetProperty("resultName", out var fetchResult) && fetchResult.ValueKind == JsonValueKind.String && fetchResult.GetString() == "iteration")
