@@ -4,6 +4,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 
 import { routes } from '@/app/routes'
+import { setSession } from '@/lib/auth'
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
@@ -192,5 +193,46 @@ describe('Workflow list: ready-made starters', () => {
     expect(saved[0]!.definition.edges.map((e) => `${e.source}.${e.sourcePort}>${e.target}`)).toEqual([
       'manual-trigger.out>validate', 'validate.valid>generate-pdf', 'generate-pdf.success>approval', 'approval.approved>archive',
     ])
+  })
+})
+
+const roleSession = (id: string, permissions: Record<string, boolean>) =>
+  setSession({
+    mode: 'Development',
+    me: { id, name: id, roles: [], permissions: { read: true, templateAuthoring: false, workflowAuthoring: false, operate: false, readPayload: false, readAudit: false, administer: false, ...permissions } },
+    getToken: async () => `dev:${id}`,
+    signOut: () => undefined,
+  })
+
+describe('Workflow list: upload action', () => {
+  it('shows_upload_action_only_for_workflows_that_accept_uploads_and_hides_it_for_viewers', async () => {
+    stubApi([summary({ acceptsUpload: true }), summary({ id: 'w2', key: 'other', name: 'Other flow', acceptsUpload: false })])
+    open()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Actions for Invoice standard' }))
+    expect(await screen.findByRole('menuitem', { name: /Upload file/ })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Actions for Other flow' }))
+    await screen.findByRole('menuitem', { name: /Duplicate/ })
+    expect(screen.queryByRole('menuitem', { name: /Upload file/ })).not.toBeInTheDocument()
+  })
+
+  it('hides the upload action from a viewer', async () => {
+    roleSession('dev.viewer', {})
+    stubApi([summary({ acceptsUpload: true })])
+    open()
+    await screen.findByRole('link', { name: /Invoice standard/ })
+    expect(screen.queryByRole('button', { name: /Actions for/ })).not.toBeInTheDocument()
+  })
+
+  it('gives an operator the upload action and nothing that changes the workflow', async () => {
+    roleSession('dev.operator', { operate: true })
+    stubApi([summary({ acceptsUpload: true })])
+    open()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Actions for Invoice standard' }))
+    expect(await screen.findByRole('menuitem', { name: /Upload file/ })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /Duplicate/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /Deactivate/ })).not.toBeInTheDocument()
   })
 })
