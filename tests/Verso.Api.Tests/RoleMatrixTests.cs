@@ -106,6 +106,8 @@ public sealed class RoleMatrixTests(MigratedDatabaseFixture fixture)
         { "POST", "/api/v1/workflows/{id:guid}/deactivate", $"/api/v1/workflows/{Id}/deactivate", "WX" },
 
         { "POST", "/api/v1/workflows/{key}/executions", "/api/v1/workflows/no-such-workflow/executions", "OX" },
+        { "POST", "/api/v1/workflows/{key}/uploads", "/api/v1/workflows/no-such-workflow/uploads", "OX" },
+        { "GET", "/api/v1/workflows/{key}/upload-settings", "/api/v1/workflows/no-such-workflow/upload-settings", "OX" },
         { "GET", "/api/v1/executions/", "/api/v1/executions", AnyRole },
         { "GET", "/api/v1/executions/{id:guid}", $"/api/v1/executions/{Id}", AnyRole },
         { "GET", "/api/v1/executions/{id:guid}/events", $"/api/v1/executions/{Id}/events", AnyRole },

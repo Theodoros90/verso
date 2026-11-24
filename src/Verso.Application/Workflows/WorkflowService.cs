@@ -21,8 +21,9 @@ public sealed record SaveWorkflowDraftRequest(JsonElement? Definition);
 /// <summary>Optional body of the validate endpoint: without a definition, the saved draft is validated.</summary>
 public sealed record ValidateWorkflowRequest(JsonElement? Definition);
 
+/// <summary><see cref="AcceptsUpload"/>: the workflow is active and its latest published version starts with a File upload step for signed-in staff (ADR 0023).</summary>
 public sealed record WorkflowSummaryDto(
-    Guid Id, string Key, string Name, int? LatestPublishedVersion, bool HasDraft, DateTimeOffset UpdatedAt, bool IsActive);
+    Guid Id, string Key, string Name, int? LatestPublishedVersion, bool HasDraft, DateTimeOffset UpdatedAt, bool IsActive, bool AcceptsUpload);
 
 public sealed record WorkflowDto(
     Guid Id, string Key, string Name, string? Description, DateTimeOffset CreatedAt, string CreatedBy, int? LatestPublishedVersion, Guid? DraftVersionId,
@@ -158,10 +159,18 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
                 HasDraft = w.Versions.Any(v => v.Status == WorkflowVersionStatus.Draft),
                 UpdatedAt = w.Versions.Max(v => v.UpdatedAt),
                 w.IsActive,
+                // Only the latest published definition, and only when it can hold a File upload step: the others never leave the database.
+                UploadDefinition = w.Versions
+                    .Where(v => v.Status == WorkflowVersionStatus.Published)
+                    .OrderByDescending(v => v.VersionNumber)
+                    .Select(v => v.Definition.Contains(NodeCatalog.FileUpload) ? v.Definition : null)
+                    .FirstOrDefault(),
             })
             .ToListAsync(ct);
         return new PageResult<WorkflowSummaryDto>(
-            [.. rows.Select(r => new WorkflowSummaryDto(r.Id, r.Key, r.Name, r.LatestPublished, r.HasDraft, r.UpdatedAt, r.IsActive))], page, pageSize, total);
+            [.. rows.Select(r => new WorkflowSummaryDto(r.Id, r.Key, r.Name, r.LatestPublished, r.HasDraft, r.UpdatedAt, r.IsActive,
+                AcceptsUpload: r.IsActive && r.UploadDefinition is not null && Uploads.UploadService.StartsWithStaffUpload(r.UploadDefinition)))],
+            page, pageSize, total);
     }
 
     /// <summary>

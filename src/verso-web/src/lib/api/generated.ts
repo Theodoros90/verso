@@ -766,6 +766,11 @@ export interface TemplateVersionSummaryDto {
   publishedBy: string | null
 }
 
+export interface UploadSettingsDto {
+  accept: string[]
+  maxBytes: number
+}
+
 export interface ValidateWorkflowRequest {
   definition: null | JsonElement
 }
@@ -800,6 +805,7 @@ export interface WorkflowSummaryDto {
   hasDraft: boolean
   updatedAt: string
   isActive: boolean
+  acceptsUpload: boolean
 }
 
 export interface WorkflowValidationDto {

@@ -12,6 +12,7 @@ using Verso.Api.Connections;
 using Verso.Api.Mail;
 using Verso.Api.Realtime;
 using Verso.Api.Templates;
+using Verso.Api.Uploads;
 using Verso.Api.Configuration;
 using Verso.Api.Workflows;
 using Verso.Application;
@@ -25,8 +26,9 @@ var builder = WebApplication.CreateBuilder(args);
 // the configuration is unsafe (Development sign-in elsewhere, or Entra without tenant/client id).
 builder.AddVersoAuth();
 
-// Limits (plan §7). Request bodies are capped for every endpoint (the largest legitimate one is a template draft);
-// submissions are additionally rate-limited per user.
+// Limits (plan §7). Request bodies are capped for every endpoint (the largest legitimate one is a template draft), except the
+// file upload route, which raises the limit of its own requests to Limits:MaxUploadBytes + 1 MB (ADR 0023). Submissions and
+// uploads are additionally rate-limited per user.
 var limits = builder.Configuration.GetSection("Limits");
 var maxBodyBytes = limits.GetValue("MaxRequestBodyBytes", 2L * 1024 * 1024);
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = maxBodyBytes);
@@ -39,6 +41,14 @@ builder.Services.AddRateLimiter(options =>
         _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = limits.GetValue("SubmissionsPerMinute", 120),
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+    options.AddPolicy(UploadEndpoints.UploadRateLimit, http => RateLimitPartition.GetFixedWindowLimiter(
+        http.User.FindFirst(AuthSetup.IdClaim)?.Value ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = limits.GetValue("UploadsPerMinute", 30),
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
@@ -139,6 +149,7 @@ app.MapPdfPreviewEndpoints();
 app.MapWorkflowEndpoints();
 app.MapConfigurationEndpoints();
 app.MapExecutionEndpoints();
+app.MapUploadEndpoints();
 app.MapDocumentEndpoints();
 app.MapAuditEndpoints();
 app.MapFolderInputEndpoints();

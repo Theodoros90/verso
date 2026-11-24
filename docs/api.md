@@ -15,7 +15,7 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | Concurrency | Reads of a template version return an `ETag` header. Changing the draft (`PUT …/draft`, `POST …/draft/publish`) requires `If-Match: <that ETag>`. Missing or `*` → 428; stale → 412. |
 | Paging | `?page=1&pageSize=25` (max 100) → `{ items, page, pageSize, total }` |
 | Correlation | Send `X-Correlation-Id` (1–64 of `A–Z a–z 0–9 . _ : -`) to tie a request to your own logs; otherwise one is generated. It comes back in the response header, appears in every log line of the request, and a submission stores it on the execution (the Worker logs it too). |
-| Limits | Request bodies up to 2 MB (`Limits:MaxRequestBodyBytes`; submissions 1.1 MB) → 413. Submissions per user and minute: 120 (`Limits:SubmissionsPerMinute`) → 429 with `Retry-After`. |
+| Limits | Request bodies up to 2 MB (`Limits:MaxRequestBodyBytes`; submissions 1.1 MB) → 413. The one exception is the file upload route, whose own limit is `Limits:MaxUploadBytes` + 1 MB ([File upload](#file-upload)). Submissions per user and minute: 120 (`Limits:SubmissionsPerMinute`); uploads per user and minute: 30 (`Limits:UploadsPerMinute`) → 429 with `Retry-After`. |
 
 ### Error codes
 
@@ -37,7 +37,7 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | 401 | `unauthenticated` | No token, or a token that is invalid, expired or for another audience |
 | 403 | `forbidden` | Signed in, but your roles don't allow this ([matrix](#roles)) |
 | 413 | `request_too_large` | Request body over the limit |
-| 429 | `rate_limited` | Too many submissions in a minute; see `Retry-After` |
+| 429 | `rate_limited` | Too many submissions or uploads in a minute; see `Retry-After` |
 | 404 | `document.not_found` | Unknown document id, or a document that isn't archived yet |
 | 409 | `document.not_archived` | Content requested for a document that is generated but not archived yet |
 | 409 | `document.content_missing` | The archived file is missing from storage |
@@ -48,6 +48,9 @@ Endpoints that exist today. Planned contracts are in [plan §5](plan/2026-11-09-
 | 409 | `workflow.not_published` | Submission to a workflow with no published version |
 | 409 | `workflow.inactive` | Submission to a workflow that is deactivated |
 | 409 | `execution.not_retryable` | Retry of an execution that isn't `Failed` (Rejected runs need corrected data, not a retry) |
+| 409 | `upload.not_available` | Upload to a workflow that is inactive, unpublished, or doesn't start with a File upload step for signed-in staff |
+| 413 | `upload.too_large` | Uploaded file larger than the step's largest file, or upload body over `Limits:MaxUploadBytes` + 1 MB |
+| 400 | `upload.empty` / `upload.type_not_allowed` / `upload.content_mismatch` | Uploaded file is empty, has an extension the step doesn't accept, or its leading bytes don't match its extension |
 | 404 | `folder_access_test.not_found` | Unknown access test id (or deleted after 24 hours) |
 | 404 | `configuration.item_not_found` | Export of a template or workflow id that doesn't exist |
 
@@ -80,6 +83,7 @@ Every endpoint names a policy; one with no policy would still require a Verso ro
 | Create and edit templates, previews (HTML/PDF), publish templates |  |  | ✓ |  |  | ✓ |
 | Create and edit workflows, validate, publish workflows |  |  |  | ✓ |  | ✓ |
 | Submit executions, retry failed ones |  | ✓ |  |  |  | ✓ |
+| Upload a file to a workflow, read its upload settings (`/workflows/{key}/uploads`, `/workflows/{key}/upload-settings`) |  | ✓ |  |  |  | ✓ |
 | Read submitted payloads (`/executions/{id}/input`) |  |  |  |  | ✓ | ✓ |
 | Audit trail (`/audit`, `/audit/actions`) |  |  |  |  | ✓ | ✓ |
 | Approved folder locations, a workflow's folder activity (`/folder-locations`, `/workflows/{id}/folder-input`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -434,6 +438,7 @@ A workflow is a graph of steps: a trigger, then steps connected output → input
 
 - `key`: 2–48 characters, lower-case letters, digits and single hyphens, starting with a letter (`invoice-standard`). Unique; never changes; used in the submission URL `POST /api/v1/workflows/{key}/executions` ([Executions](#executions)).
 - Errors: 404 `workflow.not_found` / `workflow.version_not_found`, 409 `workflow.key_taken` / `workflow.no_draft` / `workflow.draft_exists` / `workflow.nothing_published` / `workflow.invalid`, 412 / 428 as for templates. Submitting to a deactivated workflow is 409 `workflow.inactive` ([Executions](#executions)).
+- `WorkflowSummary` also carries `acceptsUpload`: true when the workflow is active and its latest published version starts with a File upload step for signed-in staff that accepts at least one type, exactly the workflows `POST …/uploads` takes ([File upload](#file-upload)).
 - `WorkflowSummary` and `Workflow` carry `isActive`. Both state endpoints need the WorkflowAuthoring role, are audited (`WorkflowDeactivated`, `WorkflowActivated`) and are idempotent (repeating one changes nothing and writes no second entry). Runs already started carry on. See [ADR 0008](adr/0008-deactivate-workflows.md).
 
 ### Definition
@@ -452,7 +457,7 @@ Saving checks only the **structure** (400 `validation` with paths like `definiti
 |---|---|---|---|
 | `api-trigger` ("API / webhook") | input | — → `out` | `path` (required; mock path such as `/hooks/invoices`, shown as `https://mock.verso.local/…`; nothing listens there, real runs use `POST /api/v1/workflows/{key}/executions`); `auth` (required; `none`, `api-key`, `hmac-sha256`, `oauth2`, `mtls`; descriptive only, not enforced); `expectedSchema` and `samplePayload` (optional JSON objects, ≤ 20 000 chars each; the designer checks the sample against the schema and suggests the sample's field names in later steps; real submissions are not checked against either). New workflows start with these settings filled in. |
 | `erp-connector` ("ERP connector") | input | — → `out` | `system` (`dynamics-365`, `sap-s4hana`, `oracle-netsuite`), `entity` (record type, required, ≤ 100 chars), `mode` (`on-post`, `every-15-minutes`, `nightly`). **Simulated**: no ERP is connected and nothing polls it; runs are submitted to `POST /api/v1/workflows/{key}/executions` exactly as with `api-trigger`, and the step passes the submitted data on. A workflow has one trigger: either input type. |
-| `file-upload` ("File upload") | input | — → `out` | `accept` (accepted file types, required, ≤ 200 chars, e.g. `PDF, XML, CSV`), `maxSize` (`10mb`, `25mb`, `100mb`), `who` (`staff`, `portal-customers`, `anyone-with-link`). **Simulated**: there is no upload screen or portal yet; runs are submitted to `POST /api/v1/workflows/{key}/executions` and the step passes the submitted data on. |
+| `file-upload` ("File upload") | input | — → `out` | `accept` (required: a comma-separated list of `PDF`, `XML`, `CSV`, `JSON`, `TXT`, `PNG`, `JPG`, each at most once, e.g. `PDF, XML, CSV`), `maxSize` (`1mb`, `10mb`, `25mb`; never above `Limits:MaxUploadBytes`), `who` (`staff`: signed-in operators and administrators). A signed-in operator uploads one file with `POST /api/v1/workflows/{key}/uploads` ([File upload](#file-upload)); it is checked against these settings and a run starts whose input is a reference to the file (ADR 0023). Runs can still be submitted to `POST /api/v1/workflows/{key}/executions`. Versions published earlier with `100mb` or another `who` stay valid: the size is clamped to the ceiling, and another `who` makes the workflow refuse uploads (`upload.not_available`). |
 | `sftp-folder` ("SFTP folder") | input | — → `out` | `host` (required, a plain host name such as `sftp.example.com`: no user name, password or URL), `folder` (required, starts with `/`), `pattern` (optional file pattern such as `*.xml`, no path parts), `poll` (`every-minute`, `every-5-minutes`, `hourly`). A new step has an empty host. **Simulated**: nothing connects to an SFTP server and no credentials are stored; runs are submitted to `POST /api/v1/workflows/{key}/executions` and the step passes the submitted data on. |
 | `email-inbox` ("Email inbox") | input | — → `out` | `mailbox` (required, a plain address such as `accounts@example.com`: no display name, no password), `folder` (required, a folder name such as `Inbox`), `attachments` (boolean, default on). **Simulated**: no mailbox is accessed and no credentials are stored; runs are submitted to `POST /api/v1/workflows/{key}/executions` and the step passes the submitted data on. |
 | `database-query` ("Database query" **input**; not the real "Query database" step below) | input | — → `out` | `conn` (required, the name of a shared connection such as `Core banking`: no connection string or password), `query` (required, ≤ 4000 chars, must start with `SELECT`), `params` (required, a JSON object as text, ≤ 4000 chars). **Simulated**: no database is queried and no credentials are stored; runs are submitted to `POST /api/v1/workflows/{key}/executions` and the step passes the submitted data on. |
@@ -580,6 +585,36 @@ Content-Type: application/json
 - Errors: 400 `execution.idempotency_key_required` / `validation`, 404 `workflow.not_found`, 409 `workflow.not_published` / `workflow.inactive` / `execution.idempotency_conflict`.
 
 The execution row, its steps, the `Submitted` event and the audit entry are saved in one transaction, then the job is queued for the Worker. If queueing fails, the submission still succeeds: the Worker's dispatcher queues every execution that is still waiting after 2 minutes (checked every minute).
+
+### File upload
+
+A signed-in operator uploads one file to a workflow whose latest published version starts with a File upload step, and a run starts ([ADR 0023](adr/0023-file-upload-step.md)). **Operator or Admin** (like submitting).
+
+| Method | Path | Success | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/workflows/{key}/upload-settings` | 200 `UploadSettings` | What the step accepts, for the upload dialog |
+| POST | `/api/v1/workflows/{key}/uploads` | 202 `Submission`, `Location` (new run) · 200 `Submission` (same file again) | Upload one file and start a run |
+
+- `UploadSettings`: `{ "accept": [".pdf", ".xml", ".jpg", ".jpeg"], "maxBytes": 26214400 }`: the accepted file name extensions (`.jpeg` is listed with `.jpg`) and the largest file in bytes (the step's `maxSize`, never above `Limits:MaxUploadBytes`).
+- The upload body is `multipart/form-data` with **exactly one part**: a file part named `file` with a file name. No other parts or fields, no `Idempotency-Key` (the service makes the run key itself). `X-Correlation-Id` works as for submissions. The client's content type is ignored.
+
+```http
+POST /api/v1/workflows/customer-list/uploads
+Content-Type: multipart/form-data; boundary=x
+
+--x
+Content-Disposition: form-data; name="file"; filename="customers.csv"
+Content-Type: text/csv
+
+id,name
+1,Synthetic Customer A
+--x--
+```
+
+- Checks, in order: the workflow exists (404 `workflow.not_found`) and takes uploads: active, published, its latest published version starts with a File upload step for `staff` that accepts at least one type (409 `upload.not_available`); both are answered **before the body is read**. Then the body: anything but one `file` part is 400 `validation`; a file larger than `maxBytes` is **413 `upload.too_large`**, refused as soon as `maxBytes + 1` bytes have arrived, without reading the rest (also for a chunked body that never ends); then the file rules (400 `upload.empty`, `upload.type_not_allowed`, `upload.content_mismatch`: the extension must be accepted and the leading bytes must match it). Each refused file is audited as `FileUploadRejected` with the rule only.
+- The same file (same SHA-256) uploaded again to the same workflow answers **200** with the first run and starts nothing. A new file answers **202** with `Location: /api/v1/executions/{id}`. The run's input is `{ "upload": { "id", "fileName", "contentType", "size", "sha256" } }`, plus `"content"` with the text of an XML, CSV, TXT or JSON file when it fits the 1,000,000-character data limit; never the bytes. The file is staged in the database (`ingestion.Uploads`) and audited as `FileUploaded`.
+- **Size limits.** This is the only route above the global 2 MB cap: before reading, the request's own limit is raised to `Limits:MaxUploadBytes` (default 26,214,400 = 25 MB) + 1 MB for the multipart framing; a body declared or sent larger than that is 413 `upload.too_large`. The file part itself is held in memory only up to the step's `maxBytes` + 1 byte. **IIS**: request filtering's `maxAllowedContentLength` (default 30,000,000 bytes) must be at least this limit for this route; the default is enough for the default ceiling, raise it (for `/api/v1/workflows/*/uploads` only) if `Limits:MaxUploadBytes` is raised.
+- **Rate limit**: 30 uploads per signed-in user and minute (`Limits:UploadsPerMinute`), separate from the submissions budget → 429 `rate_limited` with `Retry-After`.
 
 ### Lifecycle
 

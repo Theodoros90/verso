@@ -65,6 +65,29 @@ public sealed partial class UploadService(
         return new UploadSettingsDto(accept, target.MaxBytes);
     }
 
+    /// <summary>
+    /// The endpoint stopped reading a file larger than <see cref="UploadSettingsDto.MaxBytes"/> (or a body over the request limit):
+    /// audits <c>FileUploadRejected</c> with the rule and returns the same <c>upload.too_large</c> error <see cref="AcceptAsync"/> gives.
+    /// </summary>
+    public async Task<AppError> TooLargeAsync(string workflowKey, CancellationToken ct)
+    {
+        var target = await FindTargetAsync(workflowKey, ct);
+        if (target.Error is not null)
+        {
+            return target.Error;
+        }
+
+        var problem = TooLarge(target.MaxBytes);
+        await RejectAsync(target.WorkflowId, workflowKey, problem.Code, ct);
+        return ToError(problem);
+    }
+
+    private static UploadProblem TooLarge(long maxBytes) =>
+        new("upload.too_large", $"The file is larger than the largest file this workflow accepts ({maxBytes:N0} bytes).");
+
+    private static AppError ToError(UploadProblem problem) =>
+        new(ErrorKind.Validation, problem.Code, problem.Message, new Dictionary<string, string[]> { ["file"] = [problem.Message] });
+
     public async Task<Result<Submission>> AcceptAsync(string workflowKey, string fileName, byte[] content, string? correlationId, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(content);
@@ -74,13 +97,11 @@ public sealed partial class UploadService(
             return target.Error;
         }
 
-        var problem = content.LongLength > target.MaxBytes
-            ? new UploadProblem("upload.too_large", $"The file is larger than the largest file this workflow accepts ({target.MaxBytes:N0} bytes).")
-            : UploadRules.Check(fileName, content, target.Types);
+        var problem = content.LongLength > target.MaxBytes ? TooLarge(target.MaxBytes) : UploadRules.Check(fileName, content, target.Types);
         if (problem is not null)
         {
             await RejectAsync(target.WorkflowId, workflowKey, problem.Code, ct);
-            return new AppError(ErrorKind.Validation, problem.Code, problem.Message, new Dictionary<string, string[]> { ["file"] = [problem.Message] });
+            return ToError(problem);
         }
 
         var type = UploadRules.Match(fileName, target.Types)!; // Check passed, so the extension matched
@@ -174,25 +195,39 @@ public sealed partial class UploadService(
             return NotAvailable(workflowKey, "has no published version");
         }
 
-        var trigger = WorkflowDefinitionParser.Parse(version.Definition).Definition?.Nodes
+        var step = ReadStep(version.Definition);
+        if (step.Reason is not null)
+        {
+            return NotAvailable(workflowKey, step.Reason);
+        }
+
+        return new(workflow.Id, step.Types, UploadRules.MaxBytes(Text(step.Config, "maxSize") ?? "", options.Value.CeilingBytes));
+    }
+
+    /// <summary>
+    /// True when a published definition starts with a File upload step for signed-in staff that accepts at least one type: the
+    /// same test the upload endpoint applies (the workflow must also be active). Used for <c>acceptsUpload</c> on the workflow list.
+    /// </summary>
+    public static bool StartsWithStaffUpload(string definition) => ReadStep(definition).Reason is null;
+
+    private sealed record StartStep(IReadOnlyList<UploadType> Types, JsonElement Config, string? Reason);
+
+    private static StartStep ReadStep(string definition)
+    {
+        var trigger = WorkflowDefinitionParser.Parse(definition).Definition?.Nodes
             .SingleOrDefault(n => NodeCatalog.Find(n.Type)?.Category == "input");
         if (trigger is null || trigger.Type != NodeCatalog.FileUpload)
         {
-            return NotAvailable(workflowKey, "does not start with a File upload step");
+            return new([], default, "does not start with a File upload step");
         }
 
         if (Text(trigger.Config, "who") != "staff")
         {
-            return NotAvailable(workflowKey, "lets someone other than signed-in staff upload, which Verso does not support");
+            return new([], default, "lets someone other than signed-in staff upload, which Verso does not support");
         }
 
         var types = UploadRules.ParseAccept(Text(trigger.Config, "accept") ?? "");
-        if (types.Count == 0)
-        {
-            return NotAvailable(workflowKey, "accepts no file types");
-        }
-
-        return new(workflow.Id, types, UploadRules.MaxBytes(Text(trigger.Config, "maxSize") ?? "", options.Value.CeilingBytes));
+        return types.Count == 0 ? new([], default, "accepts no file types") : new(types, trigger.Config, null);
     }
 
     private static Target NotAvailable(string workflowKey, string reason) =>
