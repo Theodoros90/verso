@@ -14,12 +14,24 @@ internal sealed record CapturedLog(string Category, LogLevel Level, string Messa
 internal sealed class CapturingLoggerProvider : ILoggerProvider, ISupportExternalScope
 {
     private IExternalScopeProvider _scopes = new LoggerExternalScopeProvider();
+    private bool _scopesSet;
 
     public ConcurrentQueue<CapturedLog> Entries { get; } = new();
 
     public ILogger CreateLogger(string categoryName) => new CapturingLogger(this, categoryName);
 
-    public void SetScopeProvider(IExternalScopeProvider scopeProvider) => _scopes = scopeProvider;
+    /// <summary>
+    /// The first host's scopes win. A host derived with <c>WithWebHostBuilder</c> registers this same provider again; taking its
+    /// scope provider would hide the scopes (correlation and execution ids) of the shared host for every later test.
+    /// </summary>
+    public void SetScopeProvider(IExternalScopeProvider scopeProvider)
+    {
+        if (!_scopesSet)
+        {
+            _scopes = scopeProvider;
+            _scopesSet = true;
+        }
+    }
 
     public void Dispose()
     {
