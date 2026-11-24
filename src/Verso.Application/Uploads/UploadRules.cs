@@ -92,11 +92,7 @@ public static class UploadRules
             return new("upload.empty", "The file is empty.");
         }
 
-        var dot = (fileName ?? "").LastIndexOf('.');
-        var extension = dot >= 0 ? fileName![dot..] : "";
-        var type = accepted.FirstOrDefault(t => string.Equals(t.Extension, extension, StringComparison.OrdinalIgnoreCase)
-            // .jpeg is the same format as .jpg
-            || (t.Extension == ".jpg" && string.Equals(extension, ".jpeg", StringComparison.OrdinalIgnoreCase)));
+        var type = Match(fileName, accepted);
         if (type is null)
         {
             return new("upload.type_not_allowed", "This kind of file is not accepted here.");
@@ -110,6 +106,17 @@ public static class UploadRules
             _ => IsPlainText(content, type.Extension == ".json"),
         };
         return ok ? null : new("upload.content_mismatch", "The content of the file does not match its file name extension.");
+    }
+
+    /// <summary>The accepted type a file name's extension names (case-insensitive; <c>.jpeg</c> counts as JPG), or null.</summary>
+    public static UploadType? Match(string fileName, IReadOnlyList<UploadType> accepted)
+    {
+        ArgumentNullException.ThrowIfNull(accepted);
+        var dot = (fileName ?? "").LastIndexOf('.');
+        var extension = dot >= 0 ? fileName![dot..] : "";
+        return accepted.FirstOrDefault(t => string.Equals(t.Extension, extension, StringComparison.OrdinalIgnoreCase)
+            // .jpeg is the same format as .jpg
+            || (t.Extension == ".jpg" && string.Equals(extension, ".jpeg", StringComparison.OrdinalIgnoreCase)));
     }
 
     private static bool IsPlainText(ReadOnlySpan<byte> content, bool json)

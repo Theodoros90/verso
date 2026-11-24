@@ -37,6 +37,8 @@ public static class DependencyInjection
         // Encrypts the passwords Verso stores (ADR 0015). The master key comes from the environment or a secret store, never from the database.
         services.AddSingleton<Application.Mail.ISecretProtector>(new Security.AesGcmSecretProtector(configuration["Secrets:MasterKey"]));
 
+        services.AddSingleton(Options.Create(UploadOptionsFrom(configuration)));
+
         return services;
     }
 
@@ -178,6 +180,24 @@ public static class DependencyInjection
         services.AddSingleton(ingestion);
         services.AddSingleton<IFolderAccess>(new LocalFolderAccess(Options.Create(locations)));
         return services;
+    }
+
+    /// <summary>File upload settings (ADR 0023): the ceiling from <c>Limits:MaxUploadBytes</c>, the retention from <c>Uploads:Retention</c>; defaults otherwise.</summary>
+    private static Application.Uploads.UploadOptions UploadOptionsFrom(IConfiguration configuration)
+    {
+        var options = new Application.Uploads.UploadOptions();
+        if (long.TryParse(configuration["Limits:MaxUploadBytes"], CultureInfo.InvariantCulture, out var ceiling) && ceiling > 0)
+        {
+            options.CeilingBytes = ceiling;
+        }
+
+        if (TimeSpan.TryParse(configuration[$"{Application.Uploads.UploadOptions.Section}:{nameof(Application.Uploads.UploadOptions.Retention)}"], CultureInfo.InvariantCulture, out var retention)
+            && retention > TimeSpan.Zero)
+        {
+            options.Retention = retention;
+        }
+
+        return options;
     }
 
     public static IHealthChecksBuilder AddVersoDatabaseCheck(this IHealthChecksBuilder builder) =>

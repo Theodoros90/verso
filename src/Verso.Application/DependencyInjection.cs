@@ -29,6 +29,7 @@ public static class DependencyInjection
         services.AddScoped<WorkflowService>();
         services.AddScoped<Configuration.ConfigurationService>();
         services.AddScoped<ExecutionService>();
+        services.AddScoped<Uploads.UploadService>();
         services.AddScoped<ExecutionQueries>();
         services.AddScoped<DocumentService>();
         services.AddScoped<AuditQueries>();
