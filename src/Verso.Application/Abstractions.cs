@@ -36,6 +36,7 @@ public interface IVersoDbContext
     DbSet<FolderWatch> FolderWatches { get; }
     DbSet<FolderFile> FolderFiles { get; }
     DbSet<FolderAccessTest> FolderAccessTests { get; }
+    DbSet<Upload> Uploads { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

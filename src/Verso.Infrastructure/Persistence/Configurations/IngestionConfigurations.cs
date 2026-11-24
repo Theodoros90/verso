@@ -98,7 +98,28 @@ internal sealed class FolderAccessTestConfiguration : IEntityTypeConfiguration<F
     }
 }
 
-internal sealed class TypedFolderPathConfiguration : IEntityTypeConfiguration<TypedFolderPath>
+internal sealed class UploadConfiguration : IEntityTypeConfiguration<Upload>
+{
+    public void Configure(EntityTypeBuilder<Upload> builder)
+    {
+        // Workflow and execution ids reference other schemas by value, no foreign key (plan §3).
+        builder.ToTable("Uploads", Schemas.Ingestion);
+        builder.HasKey(u => u.Id);
+        builder.Property(u => u.Id).ValueGeneratedNever();
+        builder.Property(u => u.FileName).HasMaxLength(Upload.MaxFileNameLength).IsRequired();
+        builder.Property(u => u.Extension).HasMaxLength(Upload.MaxExtensionLength).IsUnicode(false).IsRequired();
+        builder.Property(u => u.ContentType).HasMaxLength(Upload.MaxContentTypeLength).IsUnicode(false).IsRequired();
+        builder.Property(u => u.Sha256).HasMaxLength(64).IsFixedLength().IsUnicode(false).IsRequired();
+        builder.Property(u => u.Content).HasColumnType("varbinary(max)");
+        builder.Property(u => u.Status).HasConversion<string>().HasMaxLength(16).IsRequired();
+        builder.Property(u => u.UploadedBy).HasMaxLength(200).IsRequired();
+
+        builder.HasIndex(u => new { u.WorkflowId, u.Sha256 }).IsUnique().HasDatabaseName("UX_Uploads_WorkflowHash");
+        builder.HasIndex(u => new { u.Status, u.CreatedAt }).HasDatabaseName("IX_Uploads_StatusCreated");
+    }
+}
+
+internal sealed class TypedFolderPathConfiguration: IEntityTypeConfiguration<TypedFolderPath>
 {
     public void Configure(EntityTypeBuilder<TypedFolderPath> builder)
     {

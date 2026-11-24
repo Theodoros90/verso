@@ -40,6 +40,7 @@ public sealed class VersoDbContext(DbContextOptions<VersoDbContext> options) : D
     public DbSet<FolderWatch> FolderWatches => Set<FolderWatch>();
     public DbSet<FolderFile> FolderFiles => Set<FolderFile>();
     public DbSet<FolderAccessTest> FolderAccessTests => Set<FolderAccessTest>();
+    public DbSet<Upload> Uploads => Set<Upload>();
 
     public void SetOriginalRowVersion(TemplateVersion version, byte[] rowVersion) =>
         Entry(version).Property(v => v.RowVersion).OriginalValue = rowVersion;
