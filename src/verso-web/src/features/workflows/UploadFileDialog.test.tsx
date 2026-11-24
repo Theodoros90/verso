@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -33,6 +33,11 @@ class FakeXhr {
     FakeXhr.last = this
     FakeXhr.count++
   }
+  aborted = false
+  abort() {
+    this.aborted = true
+    this.onabort?.()
+  }
   finish(status: number, body: unknown) {
     this.status = status
     this.responseText = JSON.stringify(body)
@@ -43,10 +48,11 @@ class FakeXhr {
 const settings = { accept: ['.pdf', '.xml'], maxBytes: 1_048_576 }
 const submission = { executionId: 'e-123', status: 'Queued', workflowKey: 'invoice-standard', workflowVersion: 1, correlationId: 'c' }
 
+const closed = vi.fn()
 function openDialog() {
   render(
     <MemoryRouter>
-      <UploadFileDialog workflowKey="invoice-standard" workflowName="Invoice standard" open onOpenChange={() => undefined} />
+      <UploadFileDialog workflowKey="invoice-standard" workflowName="Invoice standard" open onOpenChange={closed} />
     </MemoryRouter>,
   )
 }
@@ -141,5 +147,29 @@ describe('UploadFileDialog', () => {
     xhr.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 10 })
     expect(await screen.findByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
     expect(FakeXhr.count).toBe(1)
+  })
+
+  it('cancel_while_sending_aborts_the_request_without_an_error_and_the_dialog_can_be_used_again', async () => {
+    closed.mockClear()
+    const { user, xhr } = await sendFile()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(xhr.aborted).toBe(true)
+    expect(closed).toHaveBeenCalledWith(false)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    await user.upload(screen.getByLabelText('Choose a file'), file('b.pdf'))
+    expect(screen.getByRole('button', { name: 'Upload' })).toBeEnabled()
+  })
+
+  it('unmounting_while_sending_aborts_the_request', async () => {
+    openDialog()
+    const user = setup()
+    await screen.findByText(/PDF, XML/)
+    await user.upload(screen.getByLabelText('Choose a file'), file('a.pdf'))
+    await user.click(screen.getByRole('button', { name: 'Upload' }))
+    await waitFor(() => expect(FakeXhr.last).not.toBeNull())
+    const xhr = FakeXhr.last!
+    cleanup()
+    expect(xhr.aborted).toBe(true)
   })
 })

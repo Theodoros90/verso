@@ -18,7 +18,7 @@ export const uploadsApi = {
    * Sends the file as multipart/form-data with the signed-in user's bearer token. XMLHttpRequest is used because
    * fetch can't report upload progress. A refused or interrupted connection becomes an ApiError with status 0.
    */
-  async upload(key: string, file: File, onProgress?: (fraction: number) => void): Promise<UploadResult> {
+  async upload(key: string, file: File, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<UploadResult> {
     const token = await getAccessToken()
     const form = new FormData()
     form.append('file', file)
@@ -30,9 +30,12 @@ export const uploadsApi = {
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && e.total > 0) onProgress?.(e.loaded / e.total)
       }
+      const aborted = () => reject(new DOMException('The upload was cancelled.', 'AbortError'))
+      if (signal?.aborted) return aborted()
+      signal?.addEventListener('abort', () => xhr.abort(), { once: true })
       const interrupted = () => reject(new ApiError(0, { title: 'The upload was refused or interrupted: check the file size limit and try again.' }))
       xhr.onerror = interrupted
-      xhr.onabort = interrupted
+      xhr.onabort = aborted
       xhr.ontimeout = interrupted
       xhr.onload = () => {
         if (xhr.status === 401 && token) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))

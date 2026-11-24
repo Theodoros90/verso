@@ -38,6 +38,22 @@ export function UploadFileDialog({
   const [result, setResult] = useState<UploadResult | null>(null)
   const [dragging, setDragging] = useState(false)
   const input = useRef<HTMLInputElement>(null)
+  const sending = useRef<AbortController | null>(null)
+
+  // Leaving the page (or closing the dialog) stops an upload still in flight.
+  useEffect(() => () => sending.current?.abort(), [])
+
+  /** Cancel, close or Done: stops a running upload, forgets it, and closes. */
+  const close = () => {
+    if (sending.current) {
+      sending.current.abort()
+      sending.current = null
+      setBusy(false)
+      setProgress(0)
+      setFile(null)
+    }
+    onOpenChange(false)
+  }
 
   useEffect(() => {
     if (!open) return
@@ -81,12 +97,19 @@ export function UploadFileDialog({
     setBusy(true)
     setProblem(null)
     setProgress(0)
+    const controller = new AbortController()
+    sending.current = controller
     try {
-      setResult(await uploadsApi.upload(workflowKey, file, (f) => setProgress(f)))
+      const done = await uploadsApi.upload(workflowKey, file, (f) => setProgress(f), controller.signal)
+      if (controller.signal.aborted) return
+      sending.current = null
+      setResult(done)
     } catch (e) {
+      if (controller.signal.aborted) return // the user cancelled or left: nothing to report, and the dialog may be gone
+      sending.current = null
       setProblem(e instanceof ApiError ? (e.problem.detail ?? e.problem.title ?? e.message) : 'The upload was refused or interrupted: check the file size limit and try again.')
     } finally {
-      setBusy(false)
+      if (!controller.signal.aborted) setBusy(false)
     }
   }
 
@@ -94,12 +117,12 @@ export function UploadFileDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(next) => (next ? onOpenChange(true) : close())}
       title={`Upload a file to “${workflowName}”`}
       description="The file starts a new run of this workflow. Verso checks its type and content before anything runs."
       footer={
         <>
-          <Button onClick={() => onOpenChange(false)}>{result ? 'Done' : 'Cancel'}</Button>
+          <Button onClick={close}>{result ? 'Done' : 'Cancel'}</Button>
           {!result && (
             <Button variant="primary" disabled={!file || busy || !ready} onClick={() => void send()}>
               {busy ? 'Uploading…' : 'Upload'}
