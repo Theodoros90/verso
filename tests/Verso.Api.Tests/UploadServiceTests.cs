@@ -209,6 +209,21 @@ public sealed class UploadServiceTests : IDisposable
         Assert.Equal("holders.xml", payload.GetProperty("upload").GetProperty("fileName").GetString());
     }
 
+    [Theory]
+    [InlineData("holders.json", "{\"holders\":[{\"name\":\"Synthetic Holder A\"}]}")]
+    [InlineData("holders.csv", "name,iban\nSynthetic Holder A,XX00SYNTHETIC")]
+    public async Task Text_with_a_byte_order_mark_is_accepted_and_its_content_has_no_mark(string fileName, string text)
+    {
+        var key = await PublishAsync(accept: "JSON, CSV");
+
+        var result = await AcceptAsync(key, fileName, [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes(text + "\r\n")]);
+
+        Assert.True(result.IsSuccess, result.Error?.Message);
+        var content = (await PayloadAsync(result.Value!.Execution.ExecutionId)).GetProperty("content").GetString()!;
+        Assert.Equal(text, content);
+        Assert.DoesNotContain('﻿', content);
+    }
+
     [Fact]
     public async Task Large_csv_over_payload_limit_carries_reference_only()
     {

@@ -47,6 +47,80 @@ public sealed class UploadRulesTests
     }
 
     [Fact]
+    public void Check_accepts_json_that_starts_with_a_byte_order_mark()
+    {
+        // Windows tools (Notepad, PowerShell's Out-File) write UTF-8 with EF BB BF in front.
+        Assert.Null(UploadRules.Check("a.json", [0xEF, 0xBB, 0xBF, .. Utf8("""{"a":1}""")], All));
+        Assert.Null(UploadRules.Check("a.json", [0xEF, 0xBB, 0xBF, .. Utf8(" [1, 2]\r\n")], All));
+    }
+
+    [Fact]
+    public void Check_rejects_json_with_byte_order_mark_then_invalid_content()
+    {
+        Assert.Equal("upload.content_mismatch", UploadRules.Check("a.json", [0xEF, 0xBB, 0xBF, .. Utf8("{not json")], All)!.Code);
+        Assert.Equal("upload.content_mismatch", UploadRules.Check("a.json", [0xEF, 0xBB, 0xBF], All)!.Code);
+        Assert.Equal("upload.content_mismatch", UploadRules.Check("a.json", [0xEF, 0xBB, 0xBF, 0xEF, 0xBB, 0xBF, .. Utf8("{}")], All)!.Code);
+    }
+
+    [Fact]
+    public void Check_keeps_byte_order_mark_behaviour_of_xml_csv_and_txt()
+    {
+        Assert.Null(UploadRules.Check("a.xml", [0xEF, 0xBB, 0xBF, .. Utf8("<a/>")], All));
+        Assert.Null(UploadRules.Check("a.csv", [0xEF, 0xBB, 0xBF, .. Utf8("a,b")], All));
+        Assert.Null(UploadRules.Check("a.txt", [0xEF, 0xBB, 0xBF, .. Utf8("hello")], All));
+    }
+
+    [Theory]
+    [InlineData("{\"a\":1} {\"b\":2}")] // two values
+    [InlineData("{\"a\":1,}")] // trailing comma
+    [InlineData("// comment\n{}")] // comments
+    [InlineData("{'a':1}")] // single quotes
+    [InlineData("   ")] // nothing but blank space
+    [InlineData("[1, 2")] // unfinished
+    public void Check_rejects_what_strict_json_does_not_allow(string json)
+    {
+        Assert.Equal("upload.content_mismatch", UploadRules.Check("a.json", Utf8(json), All)!.Code);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("[]")]
+    [InlineData("\"text\"")]
+    [InlineData("42")]
+    [InlineData("null")]
+    [InlineData("\r\n {\"nested\": {\"list\": [1, 2.5, true, null, \"\\u00e9\"]}} \n")]
+    public void Check_accepts_any_single_json_value(string json)
+    {
+        Assert.Null(UploadRules.Check("a.json", Utf8(json), All));
+    }
+
+    [Fact]
+    public void Check_rejects_json_with_invalid_utf8_inside_a_string()
+    {
+        Assert.Equal("upload.content_mismatch", UploadRules.Check("a.json", [.. Utf8("{\"a\":\""), 0xC3, 0x28, .. Utf8("\"}")], All)!.Code);
+    }
+
+    [Fact]
+    public void Checking_a_5_MB_text_file_allocates_almost_nothing()
+    {
+        var csv = new byte[5 * 1_048_576];
+        csv.AsSpan().Fill((byte)'a');
+        var json = new byte[5 * 1_048_576];
+        json.AsSpan().Fill((byte)' ');
+        json[0] = (byte)'[';
+        json[^1] = (byte)']';
+        Assert.Null(UploadRules.Check("a.csv", csv, All)); // warm up
+        Assert.Null(UploadRules.Check("a.json", json, All));
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        Assert.Null(UploadRules.Check("a.csv", csv, All));
+        Assert.Null(UploadRules.Check("a.json", json, All));
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(allocated < 64 * 1024, $"Allocated {allocated:N0} bytes to check two 5 MB files.");
+    }
+
+    [Fact]
     public void Check_rejects_empty()
     {
         Assert.Equal("upload.empty", UploadRules.Check("a.pdf", [], All)!.Code);

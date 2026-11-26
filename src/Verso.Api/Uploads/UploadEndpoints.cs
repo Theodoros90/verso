@@ -178,7 +178,8 @@ public static class UploadEndpoints
     /// The whole stream when it holds at most <paramref name="maxBytes"/>, otherwise null. Never asks for more than
     /// <paramref name="maxBytes"/> + 1 bytes, so a larger file (or a body that never ends) is stopped right there.
     /// Each pooled chunk is filled completely before the next one is rented (a multipart section hands out about 4 KB per read),
-    /// so the file is held about twice at most: the chunks, then the final array.
+    /// so the reader holds the file about twice at most: the chunks, then the final array. That is the reader only; the content
+    /// checks add almost nothing and a small text file's run payload adds more (the whole request: ADR 0023, implementation notes).
     /// </summary>
     internal static async Task<byte[]?> ReadLimitedAsync(Stream body, long maxBytes, CancellationToken ct)
     {

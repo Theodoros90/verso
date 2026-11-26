@@ -1,5 +1,5 @@
-using System.Text;
 using System.Text.Json;
+using System.Text.Unicode;
 using Verso.Application.Documents;
 
 namespace Verso.Application.Uploads;
@@ -40,8 +40,6 @@ public static class UploadRules
         ["10mb"] = 10_485_760,
         ["25mb"] = 26_214_400,
     };
-
-    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     private static List<string> Tokens(string accept) =>
         [.. accept.Split(',').Select(t => t.Trim().ToUpperInvariant())];
@@ -119,6 +117,11 @@ public static class UploadRules
             || (t.Extension == ".jpg" && string.Equals(extension, ".jpeg", StringComparison.OrdinalIgnoreCase)));
     }
 
+    /// <summary>
+    /// Valid UTF-8 without NUL bytes and not another known kind of file; for JSON also exactly one strict JSON value (no comments,
+    /// no trailing commas), after an optional UTF-8 byte-order mark. Works on the bytes only: no string is built, so a 25 MB file
+    /// is checked without copying it.
+    /// </summary>
     private static bool IsPlainText(ReadOnlySpan<byte> content, bool json)
     {
         // a file of another known kind hiding behind a text extension
@@ -127,17 +130,31 @@ public static class UploadRules
             return false;
         }
 
+        if (!Utf8.IsValid(content))
+        {
+            return false;
+        }
+
+        return !json || IsSingleJsonValue(content.StartsWith(Utf8Bom) ? content[Utf8Bom.Length..] : content);
+    }
+
+    private static ReadOnlySpan<byte> Utf8Bom => [0xEF, 0xBB, 0xBF];
+
+    private static bool IsSingleJsonValue(ReadOnlySpan<byte> utf8)
+    {
+        // The defaults of JsonDocument.Parse: comments and trailing commas refused, one value only, depth 64.
+        var reader = new Utf8JsonReader(utf8, new JsonReaderOptions { CommentHandling = JsonCommentHandling.Disallow, AllowTrailingCommas = false });
         try
         {
-            var text = StrictUtf8.GetString(content);
-            if (json)
+            while (reader.Read())
             {
-                using var _ = JsonDocument.Parse(text);
+                // only the structure is checked; the UTF-8 of the whole file was checked before
             }
 
-            return true;
+            // Read() returned false: the whole input was one complete value (anything after it, or nothing at all, throws).
+            return reader.BytesConsumed > 0 && reader.CurrentDepth == 0;
         }
-        catch (Exception e) when (e is DecoderFallbackException or JsonException)
+        catch (JsonException)
         {
             return false;
         }

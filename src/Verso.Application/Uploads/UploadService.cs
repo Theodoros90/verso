@@ -293,9 +293,14 @@ public sealed partial class UploadService(
     /// <summary>
     /// <c>{ "upload": { id, fileName, contentType, size, sha256 } }</c>, plus <c>"content"</c> with the text of an XML, CSV, TXT or JSON
     /// file (UTF-8 without byte-order mark, trimmed, as Folder input does) when the whole payload stays within the data limit.
+    /// A file of more than 3 bytes per allowed character cannot fit (a UTF-8 character is at most 3 bytes per UTF-16 character),
+    /// so its text is never decoded: a 25 MB CSV costs no extra memory here.
     /// </summary>
-    private static JsonDocument Payload(Upload upload, byte[] content, UploadType type)
+    internal static JsonDocument Payload(Upload upload, byte[] content, UploadType type)
     {
+        ArgumentNullException.ThrowIfNull(upload);
+        ArgumentNullException.ThrowIfNull(content);
+        ArgumentNullException.ThrowIfNull(type);
         var reference = new JsonObject
         {
             ["id"] = upload.Id,
@@ -305,7 +310,7 @@ public sealed partial class UploadService(
             ["sha256"] = upload.Sha256,
         };
 
-        if (type.IsText)
+        if (type.IsText && content.LongLength <= 3L * ExecutionService.MaxDataChars)
         {
             var bytes = content.AsSpan();
             if (bytes.StartsWith<byte>([0xEF, 0xBB, 0xBF]))
