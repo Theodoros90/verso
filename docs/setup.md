@@ -228,7 +228,7 @@ Settings (defaults in `src/Verso.Api/appsettings.json` and `src/Verso.Worker/app
 
 - `Limits:MaxUploadBytes` (API, default `26214400` = 25 MB): the largest file the server takes, whatever the step's "Largest file" says. The upload route's own request limit is this + 1 MB; every other route keeps `Limits:MaxRequestBodyBytes` (2 MB).
 - `Limits:UploadsPerMinute` (API, default `30`): uploads per signed-in user and minute, separate from `Limits:SubmissionsPerMinute`.
-- `Uploads:Retention` (Worker, default 24 hours): how long an upload no run has taken is kept; the Worker's hourly pass then expires it (its run fails `upload.expired`) or deletes it. Every Worker should have the same value. (The API's `appsettings.json` carries the same default, but the API does not use it.)
+- `Uploads:Retention` (Worker, default 24 hours, written `1.00:00:00`; `24:00:00` would mean 24 days, and a value outside 1 minute to 7 days stops the process at start): how long an upload no run has taken is kept; the Worker's hourly pass then expires it (its run fails `upload.expired`) or deletes it. Every Worker should have the same value. (The API's `appsettings.json` carries the same default, but the API does not use it.)
 
 The bytes wait in the database (`ingestion.Uploads`) until the Worker copies them into `Documents:RootPath`, so a run started by an upload needs the Worker running. There is no malware scanning. Server setup and IIS limits: [runbook B10](runbook.md#b10-file-upload).
 
