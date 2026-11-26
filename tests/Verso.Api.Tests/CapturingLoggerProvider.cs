@@ -10,28 +10,19 @@ internal sealed record CapturedLog(string Category, LogLevel Level, string Messa
     public string AllText => $"{Category} {Message} {Exception} {string.Join(' ', Scope.Select(kv => $"{kv.Key}={kv.Value}"))}";
 }
 
-/// <summary>Records every log entry of a host, with its scopes, so tests can check what reaches the logs.</summary>
-internal sealed class CapturingLoggerProvider : ILoggerProvider, ISupportExternalScope
+/// <summary>
+/// Records every log entry of a host, with its scopes, so tests can check what reaches the logs. It keeps its own scope provider
+/// (it deliberately does not implement <see cref="ISupportExternalScope"/>): the logger factory then calls this provider's
+/// <c>BeginScope</c> directly, so the shared host and every host derived with <c>WithWebHostBuilder</c> (which registers this same
+/// provider again) push their scopes here, whatever order the hosts start in.
+/// </summary>
+internal sealed class CapturingLoggerProvider : ILoggerProvider
 {
-    private IExternalScopeProvider _scopes = new LoggerExternalScopeProvider();
-    private bool _scopesSet;
+    private readonly LoggerExternalScopeProvider _scopes = new();
 
     public ConcurrentQueue<CapturedLog> Entries { get; } = new();
 
     public ILogger CreateLogger(string categoryName) => new CapturingLogger(this, categoryName);
-
-    /// <summary>
-    /// The first host's scopes win. A host derived with <c>WithWebHostBuilder</c> registers this same provider again; taking its
-    /// scope provider would hide the scopes (correlation and execution ids) of the shared host for every later test.
-    /// </summary>
-    public void SetScopeProvider(IExternalScopeProvider scopeProvider)
-    {
-        if (!_scopesSet)
-        {
-            _scopes = scopeProvider;
-            _scopesSet = true;
-        }
-    }
 
     public void Dispose()
     {

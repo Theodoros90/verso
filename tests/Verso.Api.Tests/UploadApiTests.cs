@@ -387,13 +387,21 @@ public sealed class UploadApiTests : IDisposable
             Assert.True(accepted.StatusCode == HttpStatusCode.Accepted, await accepted.Content.ReadAsStringAsync());
         }
 
+        Assert.Equal(1, await UploadRowsAsync(key));
+
         // A small file followed by 6 MB of padding after the closing boundary: the declared length is over ceiling + 1 MB.
         using (var padded = new GeneratedBody(Pdf(), 0, epilogueBytes: 6 * OneMb))
-        using (var tooLarge = await client.PostAsync(UploadUri(key), padded.Content(withLength: true)))
+        using (var request = new HttpRequestMessage(HttpMethod.Post, UploadUri(key)) { Content = padded.Content(withLength: true) })
+        using (var tooLarge = await SendOverLimitAsync(client, request))
         {
-            Assert.Equal(HttpStatusCode.RequestEntityTooLarge, tooLarge.StatusCode);
-            Assert.Equal("upload.too_large", (await ReadAsync(tooLarge)).GetProperty("code").GetString());
+            if (tooLarge is not null)
+            {
+                Assert.Equal(HttpStatusCode.RequestEntityTooLarge, tooLarge.StatusCode);
+                Assert.Equal("upload.too_large", (await ReadAsync(tooLarge)).GetProperty("code").GetString());
+            }
         }
+
+        Assert.Equal(1, await UploadRowsAsync(key));
 
         // Every other route keeps its cap: 3 MB to submit (its own 1.1 MB limit) and to create a workflow (the global 2 MB).
         var apiKey = await new ExecutionTestKit(_fixture.Factory, _admin).PublishInvoiceWorkflowAsync();
@@ -402,14 +410,36 @@ public sealed class UploadApiTests : IDisposable
         {
             submit.Headers.TryAddWithoutValidation("Idempotency-Key", Guid.NewGuid().ToString());
             submit.Content = new StringContent($$"""{ "data": { "padding": "{{padding}}" } }""", Encoding.UTF8, "application/json");
-            using var response = await client.SendAsync(submit);
-            Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+            using var response = await SendOverLimitAsync(client, submit);
+            Assert.True(response is null || response.StatusCode == HttpStatusCode.RequestEntityTooLarge, $"Expected 413 or a reset, got {(int?)response?.StatusCode}.");
         }
 
-        using (var create = await admin.PostAsync(new Uri("/api/v1/workflows", UriKind.Relative),
-                   new StringContent($$"""{ "key": "too-big", "name": "x", "description": "{{padding}}" }""", Encoding.UTF8, "application/json")))
+        using (var create = new HttpRequestMessage(HttpMethod.Post, new Uri("/api/v1/workflows", UriKind.Relative)))
         {
-            Assert.Equal(HttpStatusCode.RequestEntityTooLarge, create.StatusCode);
+            create.Content = new StringContent($$"""{ "key": "too-big", "name": "x", "description": "{{padding}}" }""", Encoding.UTF8, "application/json");
+            using var response = await SendOverLimitAsync(admin, create);
+            Assert.True(response is null || response.StatusCode == HttpStatusCode.RequestEntityTooLarge, $"Expected 413 or a reset, got {(int?)response?.StatusCode}.");
+        }
+
+        Assert.Equal(1, await UploadRowsAsync(key)); // nothing refused left a row
+        Assert.Equal(0, await _kit.WithDbAsync(db => db.Workflows.CountAsync(w => w.Key == "too-big")));
+    }
+
+    /// <summary>
+    /// Sends a body Kestrel must refuse. <c>Expect: 100-continue</c> keeps the client from sending the body before the answer; if
+    /// Kestrel still answers 413 and closes the connection while the body is being written, the client sees a reset instead of
+    /// the 413 (a race in the transport, not a different outcome): null then. Never a success either way.
+    /// </summary>
+    private static async Task<HttpResponseMessage?> SendOverLimitAsync(HttpClient client, HttpRequestMessage request)
+    {
+        request.Headers.ExpectContinue = true;
+        try
+        {
+            return await client.SendAsync(request);
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException)
+        {
+            return null;
         }
     }
 
