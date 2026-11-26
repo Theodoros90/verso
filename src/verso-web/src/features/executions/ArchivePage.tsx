@@ -9,6 +9,7 @@ import { documentsApi } from '@/lib/api/executions'
 import type { ArchivedDocumentDto, DocumentCategoryDto } from '@/lib/api/generated'
 
 import { DownloadButton } from './DownloadButton'
+import { PreviewButton } from './PreviewButton'
 import { dayEndIso, dayStartIso, formatBytes, formatDate, formatDateTime, shortId } from './format'
 
 const PAGE_SIZE = 25
@@ -144,7 +145,7 @@ export function ArchivePage() {
                   <th scope="col" className="px-3.5 py-2.5 font-medium">Archived</th>
                   <th scope="col" className="px-3.5 py-2.5 font-medium">Keep until</th>
                   <th scope="col" className="px-3.5 py-2.5 font-medium">SHA-256</th>
-                  <th scope="col" className="px-3.5 py-2.5 font-medium"><span className="sr-only">Download</span></th>
+                  <th scope="col" className="px-3.5 py-2.5 font-medium"><span className="sr-only">Preview and download</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -183,7 +184,10 @@ export function ArchivePage() {
                       {d.sha256.slice(0, 12)}…
                     </td>
                     <td className="px-3.5 py-2.5">
-                      <DownloadButton documentId={d.id} fileName={d.fileName} />
+                      <span className="inline-flex items-center gap-2">
+                        {d.contentType === 'application/pdf' && <PreviewButton documentId={d.id} fileName={d.fileName} />}
+                        <DownloadButton documentId={d.id} fileName={d.fileName} />
+                      </span>
                     </td>
                   </tr>
                 ))}

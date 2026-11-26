@@ -727,6 +727,8 @@ Archived documents only: a PDF that is generated but not yet archived isn't list
 
 **Content:** the API reads the archived file and checks its SHA-256 against the recorded one **before** sending anything. Headers: `Content-Disposition: attachment; filename=…`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`. A missing file is 409 `document.content_missing`, a mismatch 409 `document.integrity_failed` (nothing is served and nothing is audited). A served download is audited as `DocumentDownloaded` (document, execution, file name, SHA-256). The API only reads the store; the Worker writes. Both must use the same `Documents:RootPath`.
 
+**Preview:** the Archive page's Preview button (PDF documents only) reads this same `content` endpoint with the user's token and shows the bytes in a dialog from a blob URL. There is no separate preview endpoint: a preview gets the same SHA-256 check and is audited as `DocumentDownloaded`.
+
 ## Audit
 
 Auditor and Admin only.
