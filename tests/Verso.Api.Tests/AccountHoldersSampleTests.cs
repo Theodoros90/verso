@@ -2,6 +2,13 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Verso.Application;
+using Verso.Application.Executions;
+using Verso.Application.Uploads;
+using Verso.Infrastructure.Persistence;
 
 namespace Verso.Api.Tests;
 
@@ -67,10 +74,10 @@ public sealed class AccountHoldersSampleTests(MigratedDatabaseFixture fixture) :
     }
 
     /// <summary>Publishes the template and the sample workflow (as tools/samples/load-account-holders.ps1 does). Returns the workflow key.</summary>
-    private async Task<string> PublishSampleAsync()
+    private async Task<string> PublishSampleAsync(string workflowFile = "workflow.json")
     {
         var templateId = await PublishTemplateAsync();
-        var definition = JsonNode.Parse(Fixture("workflow.json").Replace("__TEMPLATE_ID__", templateId.ToString(), StringComparison.Ordinal))!.AsObject();
+        var definition = JsonNode.Parse(Fixture(workflowFile).Replace("__TEMPLATE_ID__", templateId.ToString(), StringComparison.Ordinal))!.AsObject();
         definition.Remove("_comment");
 
         var key = "acc-" + Guid.NewGuid().ToString("N")[..12];
@@ -87,6 +94,42 @@ public sealed class AccountHoldersSampleTests(MigratedDatabaseFixture fixture) :
     {
         var key = await PublishSampleAsync();
         var id = await Kit.SubmitNewAsync(key, new JsonObject { ["content"] = Fixture("Account.xml") });
+
+        await Kit.RunEngineAsync(id, _printer, _store, _jobs);
+
+        var e = await Kit.GetExecutionAsync(id);
+        Assert.True(e.GetProperty("status").GetString() == "Succeeded", e.GetRawText());
+        var documents = e.GetProperty("documents").EnumerateArray().ToList();
+        Assert.Equal(["C001.pdf", "C002.pdf", "C003.pdf", "C004.pdf"], documents.Select(d => d.GetProperty("fileName").GetString()!).Order(StringComparer.Ordinal));
+        Assert.Equal(4, _printer.Calls);
+        Assert.All(documents, d => Assert.Equal(JsonValueKind.Object, d.GetProperty("archive").ValueKind));
+    }
+
+    private sealed class Operator : ICurrentUser
+    {
+        public string Id => "synthetic.operator";
+        public string Name => "Synthetic Operator";
+        public IReadOnlyCollection<string> Roles => [Verso.Application.Roles.Operator];
+    }
+
+    /// <summary>The upload version (docs/samples/file-upload-account-holders.md): the same file is uploaded, not dropped in a folder.</summary>
+    [Fact]
+    public async Task UploadedAccountFile_GetsTheSameFourArchivedPdfs()
+    {
+        var key = await PublishSampleAsync("workflow-upload.json");
+        var xml = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "fixtures", "account-holders", "Account.xml"));
+
+        Guid id;
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<VersoDbContext>();
+            var user = new Operator();
+            var upload = new UploadService(db, new ExecutionService(db, _jobs, user, TimeProvider.System, NullLogger<ExecutionService>.Instance),
+                user, TimeProvider.System, Options.Create(new UploadOptions()), NullLogger<UploadService>.Instance);
+            var accepted = await upload.AcceptAsync(key, "Account.xml", xml, null, CancellationToken.None);
+            Assert.True(accepted.IsSuccess, accepted.Error?.Message);
+            id = accepted.Value!.Execution.ExecutionId;
+        }
 
         await Kit.RunEngineAsync(id, _printer, _store, _jobs);
 
