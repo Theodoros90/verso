@@ -37,6 +37,8 @@ public static class DependencyInjection
         // Encrypts the passwords Verso stores (ADR 0015). The master key comes from the environment or a secret store, never from the database.
         services.AddSingleton<Application.Mail.ISecretProtector>(new Security.AesGcmSecretProtector(configuration["Secrets:MasterKey"]));
 
+        services.AddSingleton(Options.Create(UploadOptionsFrom(configuration)));
+
         return services;
     }
 
@@ -178,6 +180,41 @@ public static class DependencyInjection
         services.AddSingleton(ingestion);
         services.AddSingleton<IFolderAccess>(new LocalFolderAccess(Options.Create(locations)));
         return services;
+    }
+
+    /// <summary>The shortest and longest <c>Uploads:Retention</c> a process starts with.</summary>
+    public static readonly TimeSpan MinUploadRetention = TimeSpan.FromMinutes(1);
+
+    /// <inheritdoc cref="MinUploadRetention"/>
+    public static readonly TimeSpan MaxUploadRetention = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// File upload settings (ADR 0023): the ceiling from <c>Limits:MaxUploadBytes</c>, the retention from <c>Uploads:Retention</c>;
+    /// defaults otherwise. A retention outside 1 minute to 7 days refuses to start: <c>24:00:00</c> is 24 days to
+    /// <see cref="TimeSpan"/>, not 24 hours (24 hours is <c>1.00:00:00</c>), so a typo must not keep uploaded files for weeks.
+    /// </summary>
+    public static Application.Uploads.UploadOptions UploadOptionsFrom(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var options = new Application.Uploads.UploadOptions();
+        if (long.TryParse(configuration["Limits:MaxUploadBytes"], CultureInfo.InvariantCulture, out var ceiling) && ceiling > 0)
+        {
+            options.CeilingBytes = ceiling;
+        }
+
+        const string retentionKey = $"{Application.Uploads.UploadOptions.Section}:{nameof(Application.Uploads.UploadOptions.Retention)}";
+        if (TimeSpan.TryParse(configuration[retentionKey], CultureInfo.InvariantCulture, out var retention))
+        {
+            if (retention < MinUploadRetention || retention > MaxUploadRetention)
+            {
+                throw new InvalidOperationException(
+                    $"{retentionKey} is {retention:c}, outside 1 minute to 7 days. Write 24 hours as 1.00:00:00 (24:00:00 means 24 days). See docs/runbook.md B10.");
+            }
+
+            options.Retention = retention;
+        }
+
+        return options;
     }
 
     public static IHealthChecksBuilder AddVersoDatabaseCheck(this IHealthChecksBuilder builder) =>

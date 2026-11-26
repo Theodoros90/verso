@@ -24,6 +24,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\fixtures\**\*.json" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\uploads\**\*" LinkBase="fixtures\uploads" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

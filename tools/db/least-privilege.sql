@@ -38,6 +38,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::hangfire TO verso_api;  -- the H
 GRANT SELECT                 ON SCHEMA::ingestion  TO verso_api;  -- approved locations, folder status (reported by the Worker)
 GRANT INSERT, UPDATE         ON OBJECT::ingestion.FolderAccessTests TO verso_api;  -- "Test access" requests
 GRANT INSERT, UPDATE         ON OBJECT::ingestion.TypedFolderPaths       TO verso_api;  -- paths typed into Folder input steps (recorded when a workflow is published)
+GRANT INSERT, UPDATE, DELETE ON OBJECT::ingestion.Uploads                TO verso_api;  -- File upload: stage the file, link its run, drop it when the run can't start or it expired (ADR 0023)
 
 -- ----- Worker: runs executions and previews; never authors templates or workflows -----
 GRANT SELECT                 ON SCHEMA::templates  TO verso_worker;
@@ -53,6 +54,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::hangfire TO verso_worker;  -- th
 GRANT SELECT, INSERT, UPDATE ON SCHEMA::ingestion  TO verso_worker;  -- folder input: locations, scans, files, access tests
 GRANT DELETE                 ON OBJECT::ingestion.FolderFiles       TO verso_worker;  -- releasing a claim on a file still being written
 GRANT DELETE                 ON OBJECT::ingestion.FolderAccessTests TO verso_worker;  -- 24 h cleanup
+GRANT DELETE                 ON OBJECT::ingestion.Uploads           TO verso_worker;  -- retention removes uploads no run took (ADR 0023)
 GRANT UPDATE, DELETE         ON OBJECT::mail.EmailRelayTests        TO verso_worker;  -- runs the test and records the result; 24 h cleanup
 GRANT UPDATE, DELETE         ON OBJECT::connections.DatabaseConnectionTests TO verso_worker;  -- runs the test and records the result; 24 h cleanup
 GRANT UPDATE, DELETE         ON OBJECT::connections.ApiConnectionTests      TO verso_worker;  -- runs the test and records the result; 24 h cleanup

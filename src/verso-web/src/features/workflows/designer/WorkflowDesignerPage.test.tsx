@@ -46,7 +46,7 @@ const nodeTypes: NodeTypeDto[] = [
       type: 'object',
       properties: {
         accept: { type: 'string', title: 'Accepted file types' },
-        maxSize: { type: 'string', title: 'Largest file', enum: ['10mb', '25mb'], 'x-enumLabels': ['10 MB', '25 MB'] },
+        maxSize: { type: 'string', title: 'Largest file', enum: ['1mb', '10mb', '25mb'], 'x-enumLabels': ['1 MB', '10 MB', '25 MB'] },
         who: { type: 'string', title: 'Who can upload', enum: ['staff'], 'x-enumLabels': ['Signed-in staff'] },
       },
       required: ['accept', 'maxSize', 'who'],

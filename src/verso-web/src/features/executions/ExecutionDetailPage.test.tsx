@@ -225,6 +225,24 @@ describe('Execution detail', () => {
     expect(screen.queryByRole('button', { name: /Retry/ })).not.toBeInTheDocument()
   })
 
+  it('names the uploaded file and its size on a File upload step, and nothing else of the result', async () => {
+    stubApi(
+      execution('Succeeded', [
+        step('upload', 'file-upload', 'Succeeded', {
+          title: 'File upload',
+          outputPort: 'out',
+          result: { fileName: 'customers.csv', contentType: 'text/csv', size: 2048, sha256: 'b'.repeat(64) } as never,
+        }),
+      ]),
+      [],
+    )
+    open()
+
+    const line = await screen.findByText(/Uploaded file:/)
+    expect(line.textContent).toBe('Uploaded file: customers.csv (2.0 KB)')
+    expect(screen.queryByText('b'.repeat(64))).not.toBeInTheDocument()
+  })
+
   it('lists a step once per loop item, each marked with its item', async () => {
     stubApi(
       execution('Succeeded', [

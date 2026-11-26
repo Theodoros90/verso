@@ -488,8 +488,9 @@ public sealed partial class ExecutionEngine(
     private Task<Outcome> ExecuteNodeAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct) => node.Type switch
     {
         // The payload arrived with the submission (for folder-input, the Worker read the file and submitted it).
-        NodeCatalog.ApiTrigger or NodeCatalog.ErpConnector or NodeCatalog.FileUpload or NodeCatalog.SftpFolder or NodeCatalog.EmailInbox or NodeCatalog.DatabaseQuery or NodeCatalog.FormSubmission or NodeCatalog.ScheduledTrigger
+        NodeCatalog.ApiTrigger or NodeCatalog.ErpConnector or NodeCatalog.SftpFolder or NodeCatalog.EmailInbox or NodeCatalog.DatabaseQuery or NodeCatalog.FormSubmission or NodeCatalog.ScheduledTrigger
             or NodeCatalog.ManualTrigger or NodeCatalog.FolderInput => Task.FromResult(new Outcome("out", null)),
+        NodeCatalog.FileUpload => FileUploadAsync(run, node, ct),
         NodeCatalog.LookupEnrich => Task.FromResult(LookupEnrich(node)),
         NodeCatalog.Deduplicate => Task.FromResult(Deduplicate(node)),
         NodeCatalog.WaitBranches => Task.FromResult(new Outcome("out", new { branches = Fanout.Paths.Count })),
@@ -519,6 +520,70 @@ public sealed partial class ExecutionEngine(
         NodeCatalog.Archive => ArchiveAsync(run, node, ct),
         _ => throw new StepException("node.unsupported", $"Node type '{node.Type}' can't run in this version of Verso.", retryable: false),
     };
+
+    /// <summary>
+    /// File upload (ADR 0023): takes the file the run was started with. The run's input holds only a reference
+    /// (<c>{ "upload": { "id", ... } }</c>); the bytes wait in <c>ingestion.Uploads</c>. They are copied to this step's staging key
+    /// (the row's canonical extension, never a name or path from the payload), then the row is marked Taken and its bytes dropped in
+    /// the same save that records the step as succeeded. A re-run finds the copy already in the store and does not write it again.
+    /// The row must belong to this run (its workflow and its run key <c>upload:&lt;id&gt;</c>); when its link to the run was lost
+    /// it is repaired here. A run without an <c>upload</c> object (submitted as JSON) passes through as before.
+    /// Failures are final: <c>upload.missing</c> (no such upload for this run) and <c>upload.expired</c> (its bytes are gone).
+    /// The result holds the name, type, size and hash: never the bytes or the storage key.
+    /// </summary>
+    private async Task<Outcome> FileUploadAsync(Run run, Workflows.WorkflowNode node, CancellationToken ct)
+    {
+        if (run.Data.ValueKind != JsonValueKind.Object || !run.Data.TryGetProperty("upload", out var reference) || reference.ValueKind != JsonValueKind.Object)
+        {
+            return new Outcome("out", null);
+        }
+
+        var execution = run.Execution;
+        if (!reference.TryGetProperty("id", out var idValue) || idValue.ValueKind != JsonValueKind.String || !Guid.TryParse(idValue.GetString(), out var uploadId))
+        {
+            throw UploadMissing(node);
+        }
+
+        var upload = await db.Uploads.SingleOrDefaultAsync(u => u.Id == uploadId, ct);
+        if (upload is null || upload.WorkflowId != execution.WorkflowId
+            || execution.IdempotencyKey != Uploads.UploadService.KeyPrefix + upload.Id.ToString("N")
+            || (upload.ExecutionId is { } linked && linked != execution.Id)
+            || !Uploads.UploadRules.Types.Values.Any(t => t.Extension == upload.Extension))
+        {
+            throw UploadMissing(node);
+        }
+
+        if (upload.Status == Domain.Ingestion.UploadStatus.Expired)
+        {
+            throw UploadExpired(node);
+        }
+
+        var key = DocumentKeys.Staging(execution.Id, node.Id, run.Iteration, upload.Extension);
+        var stored = await store.ReadAsync(key, ct);
+        if (stored is null || DocumentKeys.Sha256Hex(stored) != upload.Sha256)
+        {
+            if (upload.Content is not { } content)
+            {
+                throw UploadExpired(node);
+            }
+
+            await store.WriteAsync(key, content, ct);
+        }
+
+        if (upload.ExecutionId is null)
+        {
+            upload.AttachExecution(execution.Id); // the upload's own link save failed; the run key proved it is this run's file
+        }
+
+        upload.MarkTaken(); // saved with the step's success
+        return new Outcome("out", new { fileName = upload.FileName, contentType = upload.ContentType, size = upload.Size, sha256 = upload.Sha256 });
+    }
+
+    private static StepException UploadMissing(Workflows.WorkflowNode node) =>
+        new("upload.missing", $"Step '{node.Title}' found no uploaded file for this run. Upload the file again.", retryable: false);
+
+    private static StepException UploadExpired(Workflows.WorkflowNode node) =>
+        new("upload.expired", $"Step '{node.Title}' can't take the uploaded file: it was kept too long without being used and has been removed. Upload the file again.", retryable: false);
 
     /// <summary>Unparseable content is a data problem (port 'failed', the run ends Rejected unless the workflow handles it). The result holds no content.</summary>
     private static Outcome Parse(Run run, Workflows.WorkflowNode node)

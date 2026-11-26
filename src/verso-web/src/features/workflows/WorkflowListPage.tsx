@@ -14,6 +14,7 @@ import { workflowsApi } from '@/lib/api/workflows'
 
 import { DeactivateWorkflowDialog } from './DeactivateWorkflowDialog'
 import { DuplicateWorkflowDialog } from './DuplicateWorkflowDialog'
+import { UploadFileDialog } from './UploadFileDialog'
 import { buildStarterDefinition, STARTER_CATEGORIES, stepLabels, starters, type Starter } from './starters'
 
 type ListState = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; items: WorkflowSummaryDto[] }
@@ -31,8 +32,11 @@ export function WorkflowListPage() {
   const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; message: string } | null>(null)
   const [deactivating, setDeactivating] = useState<WorkflowSummaryDto | null>(null)
   const [duplicating, setDuplicating] = useState<WorkflowSummaryDto | null>(null)
+  const [uploading, setUploading] = useState<WorkflowSummaryDto | null>(null)
   const navigate = useNavigate()
-  const canCreate = usePermissions().workflowAuthoring
+  const permissions = usePermissions()
+  const canCreate = permissions.workflowAuthoring
+  const canUpload = permissions.operate
 
   useEffect(() => {
     const controller = new AbortController()
@@ -201,9 +205,12 @@ export function WorkflowListPage() {
                   <span className="rounded-lg border border-line px-3 py-1 text-[12px] text-ink">{w.hasDraft ? 'View draft' : 'Open'}</span>
                 </span>
               </Link>
-              {canCreate && (
+              {(canCreate || (canUpload && w.isActive && w.acceptsUpload)) && (
                 <WorkflowMenu
                   workflow={w}
+                  canEdit={canCreate}
+                  canUpload={canUpload && w.isActive && w.acceptsUpload}
+                  onUpload={() => setUploading(w)}
                   onDuplicate={() => setDuplicating(w)}
                   onDeactivate={() => setDeactivating(w)}
                   onActivate={() => void change(() => workflowsApi.activate(w.id), `“${w.name}” is active again and is back in the list.`)}
@@ -231,6 +238,7 @@ export function WorkflowListPage() {
         onOpenChange={(open) => !open && setStep('closed')}
         onSeedFailed={() => setReloads((n) => n + 1)}
       />
+      {uploading && <UploadFileDialog workflowKey={uploading.key} workflowName={uploading.name} open onOpenChange={(open) => !open && setUploading(null)} />}
       {duplicating && (
         <DuplicateWorkflowDialog
           workflow={duplicating}
@@ -254,14 +262,20 @@ export function WorkflowListPage() {
   )
 }
 
-/** The “⋯” menu of a card: Duplicate, then Deactivate (asks first) for an active workflow, Activate for a deactivated one. */
+/** The “⋯” menu of a card: Upload file (operators, workflows that accept uploads), then for authors Duplicate, Deactivate (asks first) or Activate. */
 function WorkflowMenu({
   workflow,
+  canEdit,
+  canUpload,
+  onUpload,
   onDuplicate,
   onDeactivate,
   onActivate,
 }: {
   workflow: WorkflowSummaryDto
+  canEdit: boolean
+  canUpload: boolean
+  onUpload: () => void
   onDuplicate: () => void
   onDeactivate: () => void
   onActivate: () => void
@@ -276,10 +290,17 @@ function WorkflowMenu({
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content align="end" sideOffset={4} className="z-50 min-w-44 rounded-lg border border-line bg-surface p-1 shadow-lg">
-          <DropdownMenu.Item className={item} onSelect={onDuplicate}>
-            Duplicate…
-          </DropdownMenu.Item>
-          {workflow.isActive ? (
+          {canUpload && (
+            <DropdownMenu.Item className={item} onSelect={onUpload}>
+              Upload file…
+            </DropdownMenu.Item>
+          )}
+          {canEdit && (
+            <DropdownMenu.Item className={item} onSelect={onDuplicate}>
+              Duplicate…
+            </DropdownMenu.Item>
+          )}
+          {!canEdit ? null : workflow.isActive ? (
             <DropdownMenu.Item className={item} onSelect={onDeactivate}>
               Deactivate…
             </DropdownMenu.Item>

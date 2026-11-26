@@ -66,9 +66,12 @@ public sealed class AuditQueries(IVersoDbContext db)
         return new PageResult<AuditEntryDto>(items, page, pageSize, total);
     }
 
-    /// <summary>The action names that occur, for the audit screen's filter.</summary>
+    /// <summary>
+    /// The action names that occur, for the audit screen's filter, in ordinal order. Sorted here, not in SQL: the database's
+    /// case-insensitive collation puts <c>FileUploaded</c> before <c>FileUploadRejected</c>, ordinal order the other way round.
+    /// </summary>
     public async Task<IReadOnlyList<string>> ActionsAsync(CancellationToken ct) =>
-        await db.AuditEntries.AsNoTracking().Select(e => e.Action).Distinct().OrderBy(a => a).ToListAsync(ct);
+        (await db.AuditEntries.AsNoTracking().Select(e => e.Action).Distinct().ToListAsync(ct)).Order(StringComparer.Ordinal).ToList();
 
     private static JsonElement ParseDetails(string json)
     {

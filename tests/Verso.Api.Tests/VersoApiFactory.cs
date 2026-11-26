@@ -51,6 +51,7 @@ internal sealed class VersoApiFactory(string connectionString) : WebApplicationF
         // The whole suite shares one host and one clock minute: the production default (120 submissions per user per minute) would
         // make late tests fail with 429 as the suite grows. LimitsTests sets its own small value to test the limiter.
         builder.UseSetting("Limits:SubmissionsPerMinute", "100000");
+        builder.UseSetting("Limits:UploadsPerMinute", "100000"); // same reason; UploadApiTests sets its own small value
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<IPreviewNotifier>(Notifications);

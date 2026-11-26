@@ -29,6 +29,7 @@ public static class DependencyInjection
         services.AddScoped<WorkflowService>();
         services.AddScoped<Configuration.ConfigurationService>();
         services.AddScoped<ExecutionService>();
+        services.AddScoped<Uploads.UploadService>();
         services.AddScoped<ExecutionQueries>();
         services.AddScoped<DocumentService>();
         services.AddScoped<AuditQueries>();
@@ -52,6 +53,7 @@ public static class DependencyInjection
         services.TryAddSingleton(new FolderIngestionOptions());
         services.AddScoped<FolderIngestion>();
         services.AddScoped<FolderAccessTestRunner>();
+        services.AddScoped<Uploads.UploadRetention>();
         services.AddScoped<Mail.EmailRelayTestRunner>();
         services.AddScoped<Connections.DatabaseConnectionTestRunner>();
         services.AddScoped<Connections.ApiConnectionTestRunner>();
