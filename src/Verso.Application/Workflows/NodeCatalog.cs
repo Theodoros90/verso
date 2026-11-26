@@ -348,8 +348,8 @@ public static class NodeCatalog
 
     public static IReadOnlyList<NodeTypeDto> All { get; } =
     [
-        Node(ApiTrigger, "API / webhook", "input",
-            "Starts a run when a system posts JSON to a URL.",
+        Node(ApiTrigger, "API submission", "input",
+            "Starts a run when a system or person submits JSON to the Verso API.",
             [], [new PortDto("out", "Out", true)],
             $$"""
             { "type": "object",

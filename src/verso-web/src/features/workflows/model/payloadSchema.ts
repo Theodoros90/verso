@@ -1,4 +1,4 @@
-// Design-time checks for the API / webhook step: is the text JSON, and does the sample fit the expected schema?
+// Design-time checks for the API submission step: is the text JSON, and does the sample fit the expected schema?
 // Only the JSON Schema basics the step's settings describe: type (incl. integer), required, properties.
 
 /** The JSON parse error for non-blank text, or null when it parses (blank text is not an error). */

@@ -16,7 +16,7 @@ export interface TemplateSample {
 }
 
 /**
- * Settings for the API / webhook step, laid out as in the design reference: endpoint (mock path, mock URL,
+ * Settings for the API submission step, laid out as in the design reference: endpoint (mock path, mock URL,
  * authentication method), expected JSON schema, sample payload and live checks of the sample against the schema.
  */
 export function ApiTriggerSettings({

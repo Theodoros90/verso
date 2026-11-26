@@ -11,7 +11,7 @@ const TPL = '22222222-2222-2222-2222-222222222222'
 
 const nodeTypes: NodeTypeDto[] = [
   {
-    type: 'api-trigger', label: 'API / webhook', category: 'input', description: 'Starts a run when a system posts JSON to a URL.',
+    type: 'api-trigger', label: 'API submission', category: 'input', description: 'Starts a run when a system posts JSON to a URL.',
     inputs: [], outputs: [{ id: 'out', label: 'Out', required: true }],
     configSchema: {
       type: 'object',
@@ -518,7 +518,7 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
 
     await waitFor(() => expect(screen.getByLabelText(/^Generate invoice PDF, Generate PDF: Needs attention/)).toBeInTheDocument())
     expect(screen.getByLabelText(/^Validate invoice data, Validate data: Check/)).toBeInTheDocument()
-    expect(screen.getByLabelText(/^ERP webhook, API \/ webhook: Configured/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^ERP webhook, API submission: Configured/)).toBeInTheDocument()
     const issues = screen.getByRole('region', { name: 'Issues' })
     expect(within(issues).getByText("Connect 'Success' to the next step.")).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Publish/ })).toBeDisabled()
@@ -610,7 +610,7 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Expand all' }))
 
-    expect(screen.getByRole('button', { name: 'Add API / webhook' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add API submission' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add ERP connector' })).toBeDisabled() // inputs share the one-trigger rule
     expect(screen.getByRole('button', { name: 'Add File upload' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add SFTP folder' })).toBeDisabled()
@@ -1069,7 +1069,7 @@ describe('Workflow designer', { timeout: 20_000 }, () => {
     expect(screen.getByRole('status')).toHaveTextContent("'invoice-standard' accepts runs again")
   })
 
-  it('edits the API / webhook endpoint, authentication, schema and sample, with live checks', async () => {
+  it('edits the API submission endpoint, authentication, schema and sample, with live checks', async () => {
     mockApi()
     await open()
 

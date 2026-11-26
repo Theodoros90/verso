@@ -29,7 +29,7 @@ export const starters: Starter[] = [
     name: 'Invoice generation & delivery',
     category: 'Finance',
     description: 'Validate incoming invoice data, generate a document, send it and archive a copy.',
-    trigger: 'API / webhook',
+    trigger: 'API submission',
     steps: ['api-trigger', 'validate', 'map-fields', 'generate-pdf', 'send-email', 'archive'],
     requirements: ['Required fields and rules in Validate', 'A published invoice template in Generate PDF', 'Recipient and subject in Send email', 'Archive retention'],
   },

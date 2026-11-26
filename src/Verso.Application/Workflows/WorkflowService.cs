@@ -54,7 +54,7 @@ public sealed partial class WorkflowService(IVersoDbContext db, ICurrentUser use
 
     /// <summary>A new workflow starts with just its trigger (plan §5.2), configured with the catalog defaults.</summary>
     public static readonly string InitialDefinition =
-        $$"""{"nodes":[{"id":"trigger","type":"api-trigger","title":"API / webhook","position":{"x":0,"y":0},"config":{{NodeCatalog.Find(NodeCatalog.ApiTrigger)!.Defaults.GetRawText()}}}],"edges":[]}""";
+        $$"""{"nodes":[{"id":"trigger","type":"api-trigger","title":"API submission","position":{"x":0,"y":0},"config":{{NodeCatalog.Find(NodeCatalog.ApiTrigger)!.Defaults.GetRawText()}}}],"edges":[]}""";
 
     [GeneratedRegex("^[a-z][a-z0-9]*(-[a-z0-9]+)*$")]
     private static partial Regex KeyPattern();
