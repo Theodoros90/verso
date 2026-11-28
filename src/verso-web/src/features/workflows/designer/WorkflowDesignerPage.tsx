@@ -31,6 +31,9 @@ import { addNode, asDefinition, connect, moveNode, nextPosition, removeEdges, re
 import { backEdges, canConnect } from '../model/loops'
 import { sampleLists, sampleValue, sourceFields } from '../model/sourceFields'
 import { AI_PREVIEW_CATEGORY, AI_PREVIEW_STEPS } from './aiPreviewSteps'
+
+/** Steps the palette shows but cannot add: placeholders until an ADR approves a real integration (ERP connector, SFTP folder). */
+const NOT_AVAILABLE_TYPES: ReadonlySet<string> = new Set(['erp-connector', 'sftp-folder'])
 import { CATEGORY_COLORS, CATEGORY_LABELS, NODE_ICONS, NodeCard, portLabel, type VersoFlowNode } from './NodeCard'
 import { parseJsonObject } from '../model/payloadSchema'
 import { ApiTriggerSettings, type TemplateSample } from './ApiTriggerSettings'
@@ -352,7 +355,7 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
   )
 
   const addType = (type: NodeTypeDto, position?: { x: number; y: number }) => {
-    if (readOnly) return
+    if (readOnly || NOT_AVAILABLE_TYPES.has(type.type)) return
     const result = addNode(def, type, position ?? nextPosition(def, state.selection ?? undefined))
     actions.edit(() => result.def, { select: result.id })
   }
@@ -527,7 +530,8 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
               <div className="flex flex-col gap-1.5">
                 {(searching || expanded.has(category)) && types.map((t) => {
                   const Icon = NODE_ICONS[t.type] ?? CircleAlert
-                  const disabled = readOnly || (t.category === 'input' && hasTrigger)
+                  const notAvailable = NOT_AVAILABLE_TYPES.has(t.type)
+                  const disabled = readOnly || notAvailable || (t.category === 'input' && hasTrigger)
                   return (
                     <Tooltip
                       key={t.type}
@@ -535,7 +539,10 @@ function Designer({ loaded, flash, onReload }: { loaded: Loaded; flash: string |
                       content={
                         <>
                           {t.description}
-                          {t.category === 'input' && hasTrigger && (
+                          {notAvailable && (
+                            <span className="mt-1.5 block border-t border-line pt-1.5 text-ink-3">Not available yet: this integration is not connected.</span>
+                          )}
+                          {!notAvailable && t.category === 'input' && hasTrigger && (
                             <span className="mt-1.5 block border-t border-line pt-1.5 text-ink-3">A workflow has exactly one trigger.</span>
                           )}
                         </>
