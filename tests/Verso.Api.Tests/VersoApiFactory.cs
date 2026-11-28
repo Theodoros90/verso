@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Verso.Api.Realtime;
 using Verso.Application.Executions;
@@ -56,6 +57,7 @@ internal sealed class VersoApiFactory(string connectionString) : WebApplicationF
         {
             services.AddSingleton<IPreviewNotifier>(Notifications);
             services.AddSingleton<IExecutionNotifier>(ExecutionNotifications);
+            services.AddSingleton<IHostedService, HangfireLogProviderReset>(); // also on every WithWebHostBuilder host
         });
     }
 
@@ -64,6 +66,22 @@ internal sealed class VersoApiFactory(string connectionString) : WebApplicationF
         base.ConfigureClient(client);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", DevUsers.Token(DefaultUser));
     }
+}
+
+/// <summary>
+/// Each host that builds Hangfire points Hangfire's process-wide log provider at its own logger factory. When that host (a
+/// <c>WithWebHostBuilder</c> host, or a short-lived one) is disposed, the provider would throw ObjectDisposedException the next time
+/// another host enqueues a job, and the API would answer 500. A hosted service built by the container is disposed with the host, so
+/// this clears the provider then; Hangfire falls back to its no-op logger until a host sets it again.
+/// (A provider handed to the container as an instance, like <see cref="CapturingLoggerProvider"/>, is never disposed by it.)
+/// </summary>
+internal sealed class HangfireLogProviderReset : IHostedService, IDisposable
+{
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public void Dispose() => Hangfire.Logging.LogProvider.SetCurrentLogProvider(null);
 }
 
 internal static class ApiClients

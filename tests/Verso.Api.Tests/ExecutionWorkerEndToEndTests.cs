@@ -65,6 +65,9 @@ public sealed class ExecutionWorkerFixture : IAsyncLifetime
         {
             await _worker.StopAsync();
             _worker.Dispose();
+            // The Worker host has no CapturingLoggerProvider, so nothing else clears Hangfire's process-wide log provider that its
+            // Hangfire setup pointed at this host's (now disposed) logger factory; later classes would fail to enqueue jobs.
+            Hangfire.Logging.LogProvider.SetCurrentLogProvider(null);
         }
 
         await Factory.DisposeAsync();
