@@ -24,9 +24,13 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider
 
     public ILogger CreateLogger(string categoryName) => new CapturingLogger(this, categoryName);
 
-    public void Dispose()
-    {
-    }
+    /// <summary>
+    /// Every host registers this provider, so this runs whenever a host's logger factory is disposed. Each host that builds Hangfire
+    /// points Hangfire's process-wide log provider at its own logger factory; once that host is gone (a derived
+    /// <c>WithWebHostBuilder</c> host, or a short-lived test host) the provider would throw ObjectDisposedException the next time any
+    /// other host enqueues a job, and the API answers 500. Clearing it makes Hangfire fall back to its no-op logger until a host sets it again.
+    /// </summary>
+    public void Dispose() => Hangfire.Logging.LogProvider.SetCurrentLogProvider(null);
 
     private sealed class CapturingLogger(CapturingLoggerProvider owner, string category) : ILogger
     {
